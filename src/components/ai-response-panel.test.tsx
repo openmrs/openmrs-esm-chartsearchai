@@ -95,4 +95,37 @@ describe('AiResponsePanel reference links', () => {
     expect(tag.tagName).toBe('A');
     expect(tag).toHaveAttribute('href', expect.stringContaining(`/patient/${patientUuid}/chart/Patient Summary`));
   });
+
+  it('shows only the error when there is no partial answer', () => {
+    render(
+      <AiResponsePanel
+        answer=""
+        disclaimer=""
+        references={[]}
+        error="Server error: 500"
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    expect(screen.getByText('Server error: 500')).toBeInTheDocument();
+    expect(screen.queryByText(/Response interrupted/)).not.toBeInTheDocument();
+  });
+
+  it('shows partial answer with error banner when stream fails mid-response', () => {
+    render(
+      <AiResponsePanel
+        answer="The patient has been taking"
+        disclaimer=""
+        references={[]}
+        error="Connection lost"
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    expect(screen.getByText('The patient has been taking')).toBeInTheDocument();
+    expect(screen.getByText(/Response interrupted:/)).toBeInTheDocument();
+    expect(screen.getByText(/Connection lost/)).toBeInTheDocument();
+  });
 });

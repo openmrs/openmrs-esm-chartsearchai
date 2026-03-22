@@ -84,7 +84,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({ answer, disclaimer, r
     [answer, references, patientUuid],
   );
 
-  if (error) {
+  if (error && !answer) {
     return (
       <div className={styles.errorContainer}>
         <p className={styles.errorText}>{error}</p>
@@ -98,6 +98,12 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({ answer, disclaimer, r
         <div className={styles.answerSection}>
           <p className={styles.answerText}>{renderedAnswer}</p>
           {isLoading && <InlineLoading className={styles.streamingIndicator} />}
+        </div>
+      )}
+
+      {error && answer && (
+        <div className={styles.errorContainer}>
+          <p className={styles.errorText}>{t('streamInterrupted', 'Response interrupted:')} {error}</p>
         </div>
       )}
 
