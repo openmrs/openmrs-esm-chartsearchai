@@ -173,4 +173,19 @@ describe('useChartSearchAi', () => {
 
     expect(result.current.error).toBeNull();
   });
+
+  it('aborts in-flight request on unmount', () => {
+    mockSearchPatientChart.mockReturnValue(new Promise(() => {}));
+    const { result, unmount } = renderHook(() => useChartSearchAi());
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Question?');
+    });
+
+    const abortController = mockSearchPatientChart.mock.calls[0][2] as AbortController;
+    expect(abortController.signal.aborted).toBe(false);
+
+    unmount();
+    expect(abortController.signal.aborted).toBe(true);
+  });
 });
