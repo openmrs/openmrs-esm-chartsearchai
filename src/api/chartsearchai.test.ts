@@ -3,21 +3,21 @@ import { openmrsFetch } from '@openmrs/esm-framework';
 import { searchPatientChart, searchPatientChartStream, type AiSearchResponse } from './chartsearchai';
 
 // Polyfill for jsdom
-(globalThis as Record<string, unknown>).TextEncoder = TextEncoder;
-(globalThis as Record<string, unknown>).TextDecoder = TextDecoder;
+(globalThis as unknown as Record<string, unknown>).TextEncoder = TextEncoder;
+(globalThis as unknown as Record<string, unknown>).TextDecoder = TextDecoder;
 
 const mockOpenmrsFetch = openmrsFetch as jest.Mock;
 
 beforeAll(() => {
-  (window as Record<string, unknown>).openmrsBase = '/openmrs';
+  (window as unknown as Record<string, unknown>).openmrsBase = '/openmrs';
   // jsdom may not define window.fetch; ensure it exists so we can mock it
   if (!window.fetch) {
-    (window as Record<string, unknown>).fetch = () => Promise.reject(new Error('not mocked'));
+    (window as unknown as Record<string, unknown>).fetch = () => Promise.reject(new Error('not mocked'));
   }
 });
 
 afterAll(() => {
-  delete (window as Record<string, unknown>).openmrsBase;
+  delete (window as unknown as Record<string, unknown>).openmrsBase;
 });
 
 /**

@@ -10,7 +10,7 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  delete (window as Record<string, unknown>).spaBase;
+  delete (window as unknown as Record<string, unknown>).spaBase;
 });
 
 describe('AiResponsePanel reference links', () => {
