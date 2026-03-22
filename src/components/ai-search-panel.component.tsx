@@ -80,8 +80,15 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
 
   return (
     <div className={styles.panelContainer}>
-      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
-      <div className={styles.panel} ref={panelRef} onKeyDown={handlePanelKeyDown}>
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- dialog needs onKeyDown for focus trap and Escape handling */}
+      <div
+        className={styles.panel}
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('aiChartSearch', 'AI Chart Search')}
+        onKeyDown={handlePanelKeyDown}
+      >
         <div className={styles.panelHeader}>
           <span className={styles.panelTitle}>
             <span className={styles.sparkle}>&#10024;</span>
