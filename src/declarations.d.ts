@@ -4,7 +4,6 @@ declare module '*.svg' {
   const content: string;
   export default content;
 }
-declare type SideNavProps = object;
 
 interface Window {
   openmrsBase: string;
