@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { WatsonHealthAiResults } from '@carbon/react/icons';
@@ -7,20 +7,24 @@ import styles from './ai-search-button.scss';
 
 const PORTAL_CONTAINER_ID = 'chartsearchai-portal';
 
-function getPortalContainer(): HTMLElement {
-  let container = document.getElementById(PORTAL_CONTAINER_ID);
-  if (!container) {
-    container = document.createElement('div');
-    container.id = PORTAL_CONTAINER_ID;
-    document.body.appendChild(container);
-  }
-  return container;
-}
-
 const AiSearchButton: React.FC = () => {
   const { t } = useTranslation();
   const [isPanelOpen, setIsPanelOpen] = useState(false);
-  const portalContainer = useMemo(() => getPortalContainer(), []);
+  const portalContainerRef = useRef<HTMLDivElement | null>(null);
+
+  if (!portalContainerRef.current) {
+    const container = document.createElement('div');
+    container.id = PORTAL_CONTAINER_ID;
+    portalContainerRef.current = container;
+  }
+
+  useEffect(() => {
+    const container = portalContainerRef.current!;
+    document.body.appendChild(container);
+    return () => {
+      container.remove();
+    };
+  }, []);
 
   const togglePanel = useCallback(() => {
     setIsPanelOpen((prev) => !prev);
@@ -43,7 +47,7 @@ const AiSearchButton: React.FC = () => {
       </button>
       {isPanelOpen && <AiSearchPanel onClose={closePanel} />}
     </>,
-    portalContainer,
+    portalContainerRef.current!,
   );
 };
 
