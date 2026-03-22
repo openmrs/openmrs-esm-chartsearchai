@@ -82,10 +82,11 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   patientUuid,
 }) => {
   const { t } = useTranslation();
-  const renderedAnswer = useMemo(
-    () => (answer ? renderAnswerWithCitations(answer, references, patientUuid) : null),
-    [answer, references, patientUuid],
-  );
+  const renderedAnswer = useMemo(() => {
+    if (!answer) return null;
+    if (isLoading) return answer;
+    return renderAnswerWithCitations(answer, references, patientUuid);
+  }, [answer, references, patientUuid, isLoading]);
 
   if (error && !answer) {
     return (
