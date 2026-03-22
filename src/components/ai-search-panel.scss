@@ -12,7 +12,7 @@
 }
 
 .panel {
-  background-color: #fff;
+  background-color: colors.$white-0;
   border: 1px solid colors.$gray-30;
   border-radius: 0.5rem;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
@@ -83,8 +83,8 @@
   transition: border-color 0.2s ease;
 
   &:focus {
-    border-color: #0f62fe;
-    background-color: #fff;
+    border-color: colors.$blue-60;
+    background-color: colors.$white-0;
   }
 
   &:disabled {
@@ -105,14 +105,14 @@
   height: 2rem;
   border: none;
   border-radius: 50%;
-  background-color: #0f62fe;
-  color: #fff;
+  background-color: colors.$blue-60;
+  color: colors.$white-0;
   cursor: pointer;
   flex-shrink: 0;
   transition: background-color 0.2s ease;
 
   &:hover {
-    background-color: #0353e9;
+    background-color: colors.$blue-70;
   }
 
   &:disabled {

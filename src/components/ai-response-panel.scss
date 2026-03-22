@@ -42,14 +42,14 @@
 
 .errorContainer {
   padding: layout.$spacing-04;
-  background-color: #fff1f1;
+  background-color: colors.$red-10;
   border-radius: 0.25rem;
-  border-left: 3px solid #da1e28;
+  border-left: 3px solid colors.$red-60;
 }
 
 .errorText {
   @include type.type-style('body-compact-01');
-  color: #da1e28;
+  color: colors.$red-60;
   margin: 0;
 }
 
