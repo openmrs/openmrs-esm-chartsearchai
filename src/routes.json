@@ -9,6 +9,7 @@
       "name": "ai-search-button",
       "component": "aiSearchButton",
       "slot": "patient-banner-tags-slot",
+      "privilege": "AI Query Patient Data",
       "order": 100
     }
   ]
