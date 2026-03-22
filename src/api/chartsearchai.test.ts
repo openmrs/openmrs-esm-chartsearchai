@@ -82,10 +82,7 @@ describe('searchPatientChart', () => {
 
     await searchPatientChart('uuid-1', 'q', ac);
 
-    expect(mockOpenmrsFetch).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ signal: ac.signal }),
-    );
+    expect(mockOpenmrsFetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ signal: ac.signal }));
   });
 });
 
@@ -98,11 +95,7 @@ describe('searchPatientChartStream', () => {
     fetchSpy?.mockRestore();
   });
 
-  function callStream(callbacks: {
-    onToken: jest.Mock;
-    onDone: jest.Mock;
-    onError: jest.Mock;
-  }) {
+  function callStream(callbacks: { onToken: jest.Mock; onDone: jest.Mock; onError: jest.Mock }) {
     searchPatientChartStream('uuid-1', 'question?', callbacks);
   }
 
@@ -116,12 +109,14 @@ describe('searchPatientChartStream', () => {
 
   it('parses token events and delivers them to onToken', async () => {
     const cb = makeCallbacks();
-    fetchSpy = jest.spyOn(window, 'fetch').mockResolvedValueOnce(
-      mockStreamResponse([
-        'event:token\ndata: Hello\n\nevent:token\ndata:  world\n\n',
-        'event:done\ndata: {"answer":"Hello world","disclaimer":"d","references":[]}\n\n',
-      ]),
-    );
+    fetchSpy = jest
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:token\ndata: Hello\n\nevent:token\ndata:  world\n\n',
+          'event:done\ndata: {"answer":"Hello world","disclaimer":"d","references":[]}\n\n',
+        ]),
+      );
 
     callStream(cb);
     await flushPromises();
@@ -138,12 +133,14 @@ describe('searchPatientChartStream', () => {
 
   it('concatenates multiple data: lines with newlines per SSE spec', async () => {
     const cb = makeCallbacks();
-    fetchSpy = jest.spyOn(window, 'fetch').mockResolvedValueOnce(
-      mockStreamResponse([
-        'event:token\ndata: line1\ndata: line2\ndata: line3\n\n',
-        'event:done\ndata: {"answer":"a","disclaimer":"","references":[]}\n\n',
-      ]),
-    );
+    fetchSpy = jest
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:token\ndata: line1\ndata: line2\ndata: line3\n\n',
+          'event:done\ndata: {"answer":"a","disclaimer":"","references":[]}\n\n',
+        ]),
+      );
 
     callStream(cb);
     await flushPromises();
@@ -154,13 +151,15 @@ describe('searchPatientChartStream', () => {
   it('handles data split across chunks (partial buffer)', async () => {
     const cb = makeCallbacks();
     // Split "event:token\ndata: partial\n\n" across two chunks
-    fetchSpy = jest.spyOn(window, 'fetch').mockResolvedValueOnce(
-      mockStreamResponse([
-        'event:tok',
-        'en\ndata: partial\n\n',
-        'event:done\ndata: {"answer":"p","disclaimer":"","references":[]}\n\n',
-      ]),
-    );
+    fetchSpy = jest
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:tok',
+          'en\ndata: partial\n\n',
+          'event:done\ndata: {"answer":"p","disclaimer":"","references":[]}\n\n',
+        ]),
+      );
 
     callStream(cb);
     await flushPromises();
@@ -171,12 +170,14 @@ describe('searchPatientChartStream', () => {
 
   it('strips only a single leading space from data field value', async () => {
     const cb = makeCallbacks();
-    fetchSpy = jest.spyOn(window, 'fetch').mockResolvedValueOnce(
-      mockStreamResponse([
-        'event:token\ndata:  two spaces\n\n',
-        'event:done\ndata: {"answer":"","disclaimer":"","references":[]}\n\n',
-      ]),
-    );
+    fetchSpy = jest
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:token\ndata:  two spaces\n\n',
+          'event:done\ndata: {"answer":"","disclaimer":"","references":[]}\n\n',
+        ]),
+      );
 
     callStream(cb);
     await flushPromises();
@@ -187,12 +188,14 @@ describe('searchPatientChartStream', () => {
 
   it('handles data field with no space after colon', async () => {
     const cb = makeCallbacks();
-    fetchSpy = jest.spyOn(window, 'fetch').mockResolvedValueOnce(
-      mockStreamResponse([
-        'event:token\ndata:noSpace\n\n',
-        'event:done\ndata:{"answer":"","disclaimer":"","references":[]}\n\n',
-      ]),
-    );
+    fetchSpy = jest
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:token\ndata:noSpace\n\n',
+          'event:done\ndata:{"answer":"","disclaimer":"","references":[]}\n\n',
+        ]),
+      );
 
     callStream(cb);
     await flushPromises();
@@ -203,9 +206,9 @@ describe('searchPatientChartStream', () => {
 
   it('dispatches error event from SSE stream', async () => {
     const cb = makeCallbacks();
-    fetchSpy = jest.spyOn(window, 'fetch').mockResolvedValueOnce(
-      mockStreamResponse(['event:error\ndata: Something went wrong\n\n']),
-    );
+    fetchSpy = jest
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(mockStreamResponse(['event:error\ndata: Something went wrong\n\n']));
 
     callStream(cb);
     await flushPromises();
@@ -216,9 +219,7 @@ describe('searchPatientChartStream', () => {
 
   it('calls onError when stream ends without done or error event', async () => {
     const cb = makeCallbacks();
-    fetchSpy = jest.spyOn(window, 'fetch').mockResolvedValueOnce(
-      mockStreamResponse(['event:token\ndata: hello\n\n']),
-    );
+    fetchSpy = jest.spyOn(window, 'fetch').mockResolvedValueOnce(mockStreamResponse(['event:token\ndata: hello\n\n']));
 
     callStream(cb);
     await flushPromises();
@@ -229,9 +230,9 @@ describe('searchPatientChartStream', () => {
 
   it('calls onError when done event contains invalid JSON', async () => {
     const cb = makeCallbacks();
-    fetchSpy = jest.spyOn(window, 'fetch').mockResolvedValueOnce(
-      mockStreamResponse(['event:done\ndata: {not json}\n\n']),
-    );
+    fetchSpy = jest
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(mockStreamResponse(['event:done\ndata: {not json}\n\n']));
 
     callStream(cb);
     await flushPromises();
@@ -288,12 +289,14 @@ describe('searchPatientChartStream', () => {
 
   it('ignores blank lines that have no pending event (no false dispatch)', async () => {
     const cb = makeCallbacks();
-    fetchSpy = jest.spyOn(window, 'fetch').mockResolvedValueOnce(
-      mockStreamResponse([
-        '\n\n\nevent:token\ndata: hi\n\n',
-        'event:done\ndata: {"answer":"","disclaimer":"","references":[]}\n\n',
-      ]),
-    );
+    fetchSpy = jest
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          '\n\n\nevent:token\ndata: hi\n\n',
+          'event:done\ndata: {"answer":"","disclaimer":"","references":[]}\n\n',
+        ]),
+      );
 
     callStream(cb);
     await flushPromises();
@@ -327,9 +330,11 @@ describe('searchPatientChartStream', () => {
   it('dispatches pending event at end of stream (no trailing blank line)', async () => {
     const cb = makeCallbacks();
     // Stream ends with data but no trailing \n\n
-    fetchSpy = jest.spyOn(window, 'fetch').mockResolvedValueOnce(
-      mockStreamResponse(['event:done\ndata: {"answer":"a","disclaimer":"","references":[]}\n']),
-    );
+    fetchSpy = jest
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse(['event:done\ndata: {"answer":"a","disclaimer":"","references":[]}\n']),
+      );
 
     callStream(cb);
     await flushPromises();
