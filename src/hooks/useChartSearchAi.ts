@@ -41,9 +41,10 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
 
   const submitQuestion = useCallback(
     (patientUuid: string, question: string) => {
-      // Abort any ongoing request
+      // Guard against rapid duplicate submissions (ref is synchronous,
+      // unlike the isLoading state which only updates on next render)
       if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
+        return;
       }
 
       const abortController = new AbortController();
@@ -64,12 +65,14 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
               setAnswer((prev) => prev + token);
             },
             onDone: (response: AiSearchResponse) => {
+              abortControllerRef.current = null;
               setAnswer(response.answer);
               setDisclaimer(response.disclaimer);
               setReferences(response.references);
               setIsLoading(false);
             },
             onError: (errMessage) => {
+              abortControllerRef.current = null;
               setError(errMessage);
               setIsLoading(false);
             },
@@ -79,6 +82,7 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
       } else {
         searchPatientChart(patientUuid, question, abortController)
           .then((response) => {
+            abortControllerRef.current = null;
             setAnswer(response.answer);
             setDisclaimer(response.disclaimer);
             setReferences(response.references);
@@ -86,6 +90,7 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
           })
           .catch((err) => {
             if (err.name !== 'AbortError') {
+              abortControllerRef.current = null;
               setError(err?.responseBody?.error ?? err?.message ?? 'An unknown error occurred');
               setIsLoading(false);
             }
