@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConfig, usePatient } from '@openmrs/esm-framework';
 import { Close, Send, StopFilled } from '@carbon/react/icons';
@@ -19,6 +19,7 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
   const [question, setQuestion] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const responseAreaRef = useRef<HTMLDivElement>(null);
 
   const { answer, disclaimer, references, isLoading, error, submitQuestion, clearResults } = useChartSearchAi();
 
@@ -72,6 +73,12 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
     [onClose],
   );
 
+  useEffect(() => {
+    if (isLoading && responseAreaRef.current) {
+      responseAreaRef.current.scrollTop = responseAreaRef.current.scrollHeight;
+    }
+  }, [isLoading, answer]);
+
   const handleClear = useCallback(() => {
     clearResults();
     setQuestion('');
@@ -100,7 +107,7 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
         </div>
 
         {hasResponse && (
-          <div className={styles.responseArea} role="log" aria-live="polite">
+          <div className={styles.responseArea} ref={responseAreaRef} role="log" aria-live="polite">
             <AiResponsePanel
               answer={answer}
               disclaimer={disclaimer}
