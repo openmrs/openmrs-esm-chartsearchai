@@ -127,7 +127,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
               const label = `[${ref.index}] ${ref.resourceType} — ${ref.date}`;
               return url ? (
                 <a
-                  key={`${ref.resourceType}-${ref.resourceId}`}
+                  key={ref.index}
                   className={styles.referenceTag}
                   href={url}
                   onClick={(e) => {
@@ -138,7 +138,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                   {label}
                 </a>
               ) : (
-                <span key={`${ref.resourceType}-${ref.resourceId}`} className={styles.referenceTagInert}>
+                <span key={ref.index} className={styles.referenceTagInert}>
                   {label}
                 </span>
               );
