@@ -108,7 +108,8 @@ export function searchPatientChartStream(
           if (line.startsWith('event:')) {
             currentEvent = line.slice(6).trim();
           } else if (line.startsWith('data:')) {
-            const data = line.slice(5).trim();
+            const raw = line.slice(5);
+            const data = raw.startsWith(' ') ? raw.slice(1) : raw;
             if (currentEvent === 'token') {
               callbacks.onToken(data);
             } else if (currentEvent === 'done') {
