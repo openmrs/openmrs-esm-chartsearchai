@@ -77,7 +77,7 @@ describe('AiResponsePanel reference links', () => {
     });
   });
 
-  it('renders unknown resource types as inert spans, not links', () => {
+  it('renders unknown resource types as links to Patient Summary', () => {
     const unknownRef = [{ index: 1, resourceType: 'UnknownType', resourceId: 999, date: '2025-06-01' }];
 
     render(
@@ -92,6 +92,7 @@ describe('AiResponsePanel reference links', () => {
     );
 
     const tag = screen.getByText('[1] UnknownType — 2025-06-01');
-    expect(tag.tagName).toBe('SPAN');
+    expect(tag.tagName).toBe('A');
+    expect(tag).toHaveAttribute('href', expect.stringContaining(`/patient/${patientUuid}/chart/Patient Summary`));
   });
 });
