@@ -91,6 +91,17 @@ describe('AiSearchPanel', () => {
     expect(mockSubmitQuestion).toHaveBeenCalledWith('test-patient-uuid', 'Any allergies?');
   });
 
+  it('closes the panel when Escape is pressed', async () => {
+    const user = userEvent.setup();
+    render(<AiSearchPanel onClose={onClose} />);
+
+    const input = screen.getByPlaceholderText('Ask AI about this patient...');
+    await user.click(input);
+    await user.keyboard('{Escape}');
+
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it('disables send button when input is empty', () => {
     render(<AiSearchPanel onClose={onClose} />);
 
