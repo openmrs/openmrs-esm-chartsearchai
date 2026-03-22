@@ -83,7 +83,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
 }) => {
   const { t } = useTranslation();
   const renderedAnswer = useMemo(
-    () => (answer ? renderAnswerWithCitations(answer, references ?? [], patientUuid) : null),
+    () => (answer ? renderAnswerWithCitations(answer, references, patientUuid) : null),
     [answer, references, patientUuid],
   );
 
@@ -118,7 +118,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
         </div>
       )}
 
-      {references?.length > 0 && (
+      {references.length > 0 && (
         <div className={styles.referencesSection}>
           <span className={styles.referencesLabel}>{t('references', 'References')}:</span>
           <div className={styles.referencesList}>
