@@ -1,12 +1,13 @@
 {
-  "aiSearch": "AI Search",
   "aiChartSearch": "AI Chart Search",
+  "aiSearch": "AI Search",
   "askAiAboutPatient": "Ask AI about this patient",
+  "clearAndAskNew": "Clear and ask new question",
   "close": "Close",
+  "noPatientSelected": "No patient selected",
+  "references": "References",
   "send": "Send",
   "stop": "Stop",
-  "clearAndAskNew": "Clear and ask new question",
-  "thinkingEllipsis": "Thinking...",
-  "references": "References",
-  "searchWithAi": "Search with AI"
+  "streamInterrupted": "Response interrupted:",
+  "thinkingEllipsis": "Thinking..."
 }
