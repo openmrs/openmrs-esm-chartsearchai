@@ -16,11 +16,6 @@ declare interface RequireContext {
 
 declare namespace NodeJS {
   interface Require {
-    context(
-      directory: string,
-      useSubdirectories?: boolean,
-      regExp?: RegExp,
-      mode?: string,
-    ): RequireContext;
+    context(directory: string, useSubdirectories?: boolean, regExp?: RegExp, mode?: string): RequireContext;
   }
 }

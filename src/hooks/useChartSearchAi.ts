@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useConfig } from '@openmrs/esm-framework';
-import { type AiReference, type AiSearchResponse, searchPatientChart, searchPatientChartStream } from '../api/chartsearchai';
+import {
+  type AiReference,
+  type AiSearchResponse,
+  searchPatientChart,
+  searchPatientChartStream,
+} from '../api/chartsearchai';
 import { type ChartSearchAiConfig } from '../config-schema';
 
 export interface UseChartSearchAiReturn {

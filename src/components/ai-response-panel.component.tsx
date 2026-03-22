@@ -34,11 +34,7 @@ function buildReferenceUrl(ref: AiReference, patientUuid: string): string | null
   return `${window.spaBase}/patient/${patientUuid}/chart/${chartPage ?? 'Patient Summary'}`;
 }
 
-function renderAnswerWithCitations(
-  answer: string,
-  references: AiReference[],
-  patientUuid: string,
-): React.ReactNode[] {
+function renderAnswerWithCitations(answer: string, references: AiReference[], patientUuid: string): React.ReactNode[] {
   const refByIndex = new Map(references.map((r) => [r.index, r]));
   const parts: React.ReactNode[] = [];
   const pattern = /\[(\d+)\]/g;
@@ -77,7 +73,14 @@ function renderAnswerWithCitations(
   return parts;
 }
 
-const AiResponsePanel: React.FC<AiResponsePanelProps> = ({ answer, disclaimer, references, error, isLoading, patientUuid }) => {
+const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
+  answer,
+  disclaimer,
+  references,
+  error,
+  isLoading,
+  patientUuid,
+}) => {
   const { t } = useTranslation();
   const renderedAnswer = useMemo(
     () => (answer ? renderAnswerWithCitations(answer, references ?? [], patientUuid) : null),
@@ -103,7 +106,9 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({ answer, disclaimer, r
 
       {error && answer && (
         <div className={styles.errorContainer}>
-          <p className={styles.errorText}>{t('streamInterrupted', 'Response interrupted:')} {error}</p>
+          <p className={styles.errorText}>
+            {t('streamInterrupted', 'Response interrupted:')} {error}
+          </p>
         </div>
       )}
 

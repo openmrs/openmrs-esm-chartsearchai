@@ -14,7 +14,8 @@ describe('AiResponsePanel reference links', () => {
     { index: 5, resourceType: 'Diagnosis', resourceId: 505, date: '2025-05-12' },
   ];
 
-  const answer = 'The patient has lab results [1] and an active order [2]. They have an allergy [3], a condition [4], and a diagnosis [5].';
+  const answer =
+    'The patient has lab results [1] and an active order [2]. They have an allergy [3], a condition [4], and a diagnosis [5].';
 
   it('renders reference tags as clickable <a> elements with correct href', () => {
     render(

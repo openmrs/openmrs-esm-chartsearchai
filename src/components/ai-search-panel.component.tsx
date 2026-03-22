@@ -64,7 +64,14 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
 
         {hasResponse && (
           <div className={styles.responseArea}>
-            <AiResponsePanel answer={answer} disclaimer={disclaimer} references={references} error={error} isLoading={isLoading} patientUuid={patient?.id ?? ''} />
+            <AiResponsePanel
+              answer={answer}
+              disclaimer={disclaimer}
+              references={references}
+              error={error}
+              isLoading={isLoading}
+              patientUuid={patient?.id ?? ''}
+            />
           </div>
         )}
 
@@ -86,7 +93,12 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
               <StopFilled size={20} />
             </button>
           ) : hasResponse ? (
-            <button className={styles.actionButton} onClick={handleClear} aria-label={t('clearAndAskNew', 'Clear and ask new question')} type="button">
+            <button
+              className={styles.actionButton}
+              onClick={handleClear}
+              aria-label={t('clearAndAskNew', 'Clear and ask new question')}
+              type="button"
+            >
               <Close size={20} />
             </button>
           ) : (

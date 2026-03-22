@@ -11,7 +11,4 @@ export function startupApp() {
 }
 
 // Floating AI button — appears on the patient chart page (bottom-right corner)
-export const aiSearchButton = getAsyncLifecycle(
-  () => import('./components/ai-search-button.component'),
-  options,
-);
+export const aiSearchButton = getAsyncLifecycle(() => import('./components/ai-search-button.component'), options);

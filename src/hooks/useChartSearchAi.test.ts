@@ -85,7 +85,11 @@ describe('useChartSearchAi', () => {
     expect(mockSearchPatientChartStream).toHaveBeenCalledWith(
       'patient-uuid',
       'Any allergies?',
-      expect.objectContaining({ onToken: expect.any(Function), onDone: expect.any(Function), onError: expect.any(Function) }),
+      expect.objectContaining({
+        onToken: expect.any(Function),
+        onDone: expect.any(Function),
+        onError: expect.any(Function),
+      }),
       expect.any(AbortController),
     );
   });
