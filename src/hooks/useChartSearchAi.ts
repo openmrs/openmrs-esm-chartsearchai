@@ -8,7 +8,7 @@ import {
 } from '../api/chartsearchai';
 import { type ChartSearchAiConfig } from '../config-schema';
 
-export interface UseChartSearchAiReturn {
+interface UseChartSearchAiReturn {
   answer: string;
   disclaimer: string;
   references: AiReference[];
