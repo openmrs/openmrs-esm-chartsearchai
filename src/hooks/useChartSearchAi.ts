@@ -56,45 +56,51 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
       setError(null);
       setIsLoading(true);
 
-      if (config.useStreaming) {
-        searchPatientChartStream(
-          patientUuid,
-          question,
-          {
-            onToken: (token) => {
-              setAnswer((prev) => prev + token);
+      try {
+        if (config.useStreaming) {
+          searchPatientChartStream(
+            patientUuid,
+            question,
+            {
+              onToken: (token) => {
+                setAnswer((prev) => prev + token);
+              },
+              onDone: (response: AiSearchResponse) => {
+                abortControllerRef.current = null;
+                setAnswer(response.answer);
+                setDisclaimer(response.disclaimer);
+                setReferences(response.references);
+                setIsLoading(false);
+              },
+              onError: (errMessage) => {
+                abortControllerRef.current = null;
+                setError(errMessage);
+                setIsLoading(false);
+              },
             },
-            onDone: (response: AiSearchResponse) => {
+            abortController,
+          );
+        } else {
+          searchPatientChart(patientUuid, question, abortController)
+            .then((response) => {
               abortControllerRef.current = null;
               setAnswer(response.answer);
               setDisclaimer(response.disclaimer);
               setReferences(response.references);
               setIsLoading(false);
-            },
-            onError: (errMessage) => {
-              abortControllerRef.current = null;
-              setError(errMessage);
-              setIsLoading(false);
-            },
-          },
-          abortController,
-        );
-      } else {
-        searchPatientChart(patientUuid, question, abortController)
-          .then((response) => {
-            abortControllerRef.current = null;
-            setAnswer(response.answer);
-            setDisclaimer(response.disclaimer);
-            setReferences(response.references);
-            setIsLoading(false);
-          })
-          .catch((err) => {
-            if (err.name !== 'AbortError') {
-              abortControllerRef.current = null;
-              setError(err?.responseBody?.error ?? err?.message ?? 'An unknown error occurred');
-              setIsLoading(false);
-            }
-          });
+            })
+            .catch((err) => {
+              if (err.name !== 'AbortError') {
+                abortControllerRef.current = null;
+                setError(err?.responseBody?.error ?? err?.message ?? 'An unknown error occurred');
+                setIsLoading(false);
+              }
+            });
+        }
+      } catch (err) {
+        abortControllerRef.current = null;
+        setError(err instanceof Error ? err.message : 'An unknown error occurred');
+        setIsLoading(false);
       }
     },
     [config.useStreaming],
