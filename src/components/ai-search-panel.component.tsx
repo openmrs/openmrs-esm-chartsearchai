@@ -15,7 +15,7 @@ interface AiSearchPanelProps {
 const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
   const { t } = useTranslation();
   const config = useConfig<ChartSearchAiConfig>();
-  const { patient } = usePatient();
+  const { patient, isLoading: isPatientLoading } = usePatient();
   const [question, setQuestion] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -104,6 +104,12 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
         {isLoading && !answer && (
           <div className={styles.loadingArea}>
             <InlineLoading description={t('thinkingEllipsis', 'Thinking...')} />
+          </div>
+        )}
+
+        {!isPatientLoading && !patient?.id && (
+          <div className={styles.loadingArea}>
+            <p className={styles.noPatientText}>{t('noPatientSelected', 'No patient selected')}</p>
           </div>
         )}
       </div>

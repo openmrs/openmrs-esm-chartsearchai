@@ -129,4 +129,17 @@ describe('AiSearchPanel', () => {
 
     expect(screen.getByText('Something went wrong')).toBeInTheDocument();
   });
+
+  it('shows no patient selected message when patient is unavailable', () => {
+    mockUsePatient.mockReturnValue({
+      patient: null,
+      isLoading: false,
+      error: null,
+      patientUuid: null,
+    });
+    render(<AiSearchPanel onClose={onClose} />);
+
+    expect(screen.getByText('No patient selected')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /send/i })).toBeDisabled();
+  });
 });
