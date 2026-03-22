@@ -18,6 +18,7 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
   const { patient, isLoading: isPatientLoading } = usePatient();
   const [question, setQuestion] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const { answer, disclaimer, references, isLoading, error, submitQuestion, clearResults } = useChartSearchAi();
 
@@ -33,16 +34,42 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
     [question, patient?.id, isLoading, submitQuestion],
   );
 
-  const handleKeyDown = useCallback(
+  const handleInputKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         handleSubmit();
-      } else if (e.key === 'Escape') {
-        onClose();
       }
     },
-    [handleSubmit, onClose],
+    [handleSubmit],
+  );
+
+  const handlePanelKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+
+      if (e.key !== 'Tab' || !panelRef.current) return;
+
+      const focusable = panelRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    },
+    [onClose],
   );
 
   const handleClear = useCallback(() => {
@@ -53,7 +80,8 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
 
   return (
     <div className={styles.panelContainer}>
-      <div className={styles.panel}>
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+      <div className={styles.panel} ref={panelRef} onKeyDown={handlePanelKeyDown}>
         <div className={styles.panelHeader}>
           <span className={styles.panelTitle}>
             <span className={styles.sparkle}>&#10024;</span>
@@ -84,7 +112,7 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
             type="text"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            onKeyDown={handleKeyDown}
+            onKeyDown={handleInputKeyDown}
             placeholder={config.aiSearchPlaceholder}
             maxLength={config.maxQuestionLength}
             disabled={isLoading}
