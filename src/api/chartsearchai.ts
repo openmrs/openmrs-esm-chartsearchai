@@ -92,6 +92,7 @@ export function searchPatientChartStream(
       const textDecoder = new TextDecoder();
       const streamReader = reader.getReader();
       let buffer = '';
+      let currentEvent = '';
 
       while (true) {
         const { done, value } = await streamReader.read();
@@ -101,7 +102,6 @@ export function searchPatientChartStream(
         const lines = buffer.split('\n');
         buffer = lines.pop() ?? '';
 
-        let currentEvent = '';
         for (const line of lines) {
           if (line.startsWith('event:')) {
             currentEvent = line.slice(6).trim();
