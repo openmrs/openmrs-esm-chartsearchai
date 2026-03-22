@@ -21,7 +21,7 @@ const RESOURCE_TYPE_TO_CHART_PAGE: Record<string, string> = {
   condition: 'Conditions',
   diagnosis: 'Visits',
   program: 'Programs',
-  medication_dispense: 'Orders',
+  medication_dispense: 'Medications',
 };
 
 function buildReferenceUrl(ref: AiReference, patientUuid: string): string | null {
