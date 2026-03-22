@@ -93,6 +93,7 @@ export function searchPatientChartStream(
       const streamReader = reader.getReader();
       let buffer = '';
       let currentEvent = '';
+      let streamFinalized = false;
 
       while (true) {
         const { done, value } = await streamReader.read();
@@ -110,6 +111,7 @@ export function searchPatientChartStream(
             if (currentEvent === 'token') {
               callbacks.onToken(data);
             } else if (currentEvent === 'done') {
+              streamFinalized = true;
               try {
                 const parsed: AiSearchResponse = JSON.parse(data);
                 callbacks.onDone(parsed);
@@ -117,10 +119,15 @@ export function searchPatientChartStream(
                 callbacks.onError('Failed to parse final response');
               }
             } else if (currentEvent === 'error') {
+              streamFinalized = true;
               callbacks.onError(data);
             }
           }
         }
+      }
+
+      if (!streamFinalized) {
+        callbacks.onError('Stream ended unexpectedly without a response');
       }
     })
     .catch((err) => {
