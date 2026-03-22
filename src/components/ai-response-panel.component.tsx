@@ -15,22 +15,20 @@ interface AiResponsePanelProps {
 }
 
 const RESOURCE_TYPE_TO_CHART_PAGE: Record<string, string> = {
-  Obs: 'Results',
-  Order: 'Orders',
-  DrugOrder: 'Orders',
-  TestOrder: 'Orders',
-  Allergy: 'Allergies',
-  Condition: 'Conditions',
-  Diagnosis: 'Visits',
-  PatientProgram: 'Programs',
-  MedicationDispense: 'Orders',
+  obs: 'Results',
+  order: 'Orders',
+  allergy: 'Allergies',
+  condition: 'Conditions',
+  diagnosis: 'Visits',
+  program: 'Programs',
+  medication_dispense: 'Orders',
 };
 
 function buildReferenceUrl(ref: AiReference, patientUuid: string): string | null {
   if (!patientUuid) {
     return null;
   }
-  const chartPage = RESOURCE_TYPE_TO_CHART_PAGE[ref.resourceType];
+  const chartPage = RESOURCE_TYPE_TO_CHART_PAGE[ref.resourceType.toLowerCase()];
   return `${window.spaBase}/patient/${patientUuid}/chart/${chartPage ?? 'Patient Summary'}`;
 }
 

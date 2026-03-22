@@ -15,11 +15,11 @@ afterAll(() => {
 
 describe('AiResponsePanel reference links', () => {
   const references = [
-    { index: 1, resourceType: 'Obs', resourceId: 101, date: '2025-01-15' },
-    { index: 2, resourceType: 'Order', resourceId: 202, date: '2025-02-20' },
-    { index: 3, resourceType: 'Allergy', resourceId: 303, date: '2025-03-10' },
-    { index: 4, resourceType: 'Condition', resourceId: 404, date: '2025-04-05' },
-    { index: 5, resourceType: 'Diagnosis', resourceId: 505, date: '2025-05-12' },
+    { index: 1, resourceType: 'obs', resourceId: 101, date: '2025-01-15' },
+    { index: 2, resourceType: 'order', resourceId: 202, date: '2025-02-20' },
+    { index: 3, resourceType: 'allergy', resourceId: 303, date: '2025-03-10' },
+    { index: 4, resourceType: 'condition', resourceId: 404, date: '2025-04-05' },
+    { index: 5, resourceType: 'diagnosis', resourceId: 505, date: '2025-05-12' },
   ];
 
   const answer =
@@ -41,24 +41,24 @@ describe('AiResponsePanel reference links', () => {
     // 5 inline citations + 5 reference tags = 10 links
     expect(refLinks.length).toBe(10);
 
-    // Check reference tag links (the ones with label text like "[1] Obs — 2025-01-15")
-    const obsLink = screen.getByText('[1] Obs — 2025-01-15');
+    // Check reference tag links (the ones with label text like "[1] obs — 2025-01-15")
+    const obsLink = screen.getByText('[1] obs — 2025-01-15');
     expect(obsLink.tagName).toBe('A');
     expect(obsLink).toHaveAttribute('href', `/openmrs/spa/patient/${patientUuid}/chart/Results`);
 
-    const orderLink = screen.getByText('[2] Order — 2025-02-20');
+    const orderLink = screen.getByText('[2] order — 2025-02-20');
     expect(orderLink.tagName).toBe('A');
     expect(orderLink).toHaveAttribute('href', `/openmrs/spa/patient/${patientUuid}/chart/Orders`);
 
-    const allergyLink = screen.getByText('[3] Allergy — 2025-03-10');
+    const allergyLink = screen.getByText('[3] allergy — 2025-03-10');
     expect(allergyLink.tagName).toBe('A');
     expect(allergyLink).toHaveAttribute('href', `/openmrs/spa/patient/${patientUuid}/chart/Allergies`);
 
-    const conditionLink = screen.getByText('[4] Condition — 2025-04-05');
+    const conditionLink = screen.getByText('[4] condition — 2025-04-05');
     expect(conditionLink.tagName).toBe('A');
     expect(conditionLink).toHaveAttribute('href', `/openmrs/spa/patient/${patientUuid}/chart/Conditions`);
 
-    const diagnosisLink = screen.getByText('[5] Diagnosis — 2025-05-12');
+    const diagnosisLink = screen.getByText('[5] diagnosis — 2025-05-12');
     expect(diagnosisLink.tagName).toBe('A');
     expect(diagnosisLink).toHaveAttribute('href', `/openmrs/spa/patient/${patientUuid}/chart/Visits`);
   });
