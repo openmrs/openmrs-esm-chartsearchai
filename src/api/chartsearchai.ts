@@ -30,7 +30,7 @@ export async function searchPatientChart(
   const response = await openmrsFetch(`${BASE_PATH}/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: { patient: patientUuid, question },
+    body: JSON.stringify({ patient: patientUuid, question }),
     signal: abortController?.signal,
   });
   return response.data;
