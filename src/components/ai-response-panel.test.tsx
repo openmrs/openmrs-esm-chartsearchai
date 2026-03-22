@@ -5,6 +5,14 @@ import AiResponsePanel from './ai-response-panel.component';
 
 const patientUuid = 'test-patient-uuid';
 
+beforeAll(() => {
+  window.spaBase = '/openmrs/spa';
+});
+
+afterAll(() => {
+  delete (window as Record<string, unknown>).spaBase;
+});
+
 describe('AiResponsePanel reference links', () => {
   const references = [
     { index: 1, resourceType: 'Obs', resourceId: 101, date: '2025-01-15' },
@@ -36,23 +44,23 @@ describe('AiResponsePanel reference links', () => {
     // Check reference tag links (the ones with label text like "[1] Obs — 2025-01-15")
     const obsLink = screen.getByText('[1] Obs — 2025-01-15');
     expect(obsLink.tagName).toBe('A');
-    expect(obsLink).toHaveAttribute('href', expect.stringContaining(`/patient/${patientUuid}/chart/Results`));
+    expect(obsLink).toHaveAttribute('href', `/openmrs/spa/patient/${patientUuid}/chart/Results`);
 
     const orderLink = screen.getByText('[2] Order — 2025-02-20');
     expect(orderLink.tagName).toBe('A');
-    expect(orderLink).toHaveAttribute('href', expect.stringContaining(`/patient/${patientUuid}/chart/Orders`));
+    expect(orderLink).toHaveAttribute('href', `/openmrs/spa/patient/${patientUuid}/chart/Orders`);
 
     const allergyLink = screen.getByText('[3] Allergy — 2025-03-10');
     expect(allergyLink.tagName).toBe('A');
-    expect(allergyLink).toHaveAttribute('href', expect.stringContaining(`/patient/${patientUuid}/chart/Allergies`));
+    expect(allergyLink).toHaveAttribute('href', `/openmrs/spa/patient/${patientUuid}/chart/Allergies`);
 
     const conditionLink = screen.getByText('[4] Condition — 2025-04-05');
     expect(conditionLink.tagName).toBe('A');
-    expect(conditionLink).toHaveAttribute('href', expect.stringContaining(`/patient/${patientUuid}/chart/Conditions`));
+    expect(conditionLink).toHaveAttribute('href', `/openmrs/spa/patient/${patientUuid}/chart/Conditions`);
 
     const diagnosisLink = screen.getByText('[5] Diagnosis — 2025-05-12');
     expect(diagnosisLink.tagName).toBe('A');
-    expect(diagnosisLink).toHaveAttribute('href', expect.stringContaining(`/patient/${patientUuid}/chart/Visits`));
+    expect(diagnosisLink).toHaveAttribute('href', `/openmrs/spa/patient/${patientUuid}/chart/Visits`);
   });
 
   it('renders inline citations as clickable <a> elements', () => {
@@ -73,8 +81,15 @@ describe('AiResponsePanel reference links', () => {
     expect(inlineCitations.length).toBe(5);
 
     // Each inline citation should have a valid href
+    const expectedHrefs = [
+      `/openmrs/spa/patient/${patientUuid}/chart/Results`,
+      `/openmrs/spa/patient/${patientUuid}/chart/Orders`,
+      `/openmrs/spa/patient/${patientUuid}/chart/Allergies`,
+      `/openmrs/spa/patient/${patientUuid}/chart/Conditions`,
+      `/openmrs/spa/patient/${patientUuid}/chart/Visits`,
+    ];
     inlineCitations.forEach((citation) => {
-      expect(citation).toHaveAttribute('href', expect.stringContaining(`/patient/${patientUuid}/chart/`));
+      expect(expectedHrefs).toContain(citation.getAttribute('href'));
     });
   });
 
@@ -94,7 +109,7 @@ describe('AiResponsePanel reference links', () => {
 
     const tag = screen.getByText('[1] UnknownType — 2025-06-01');
     expect(tag.tagName).toBe('A');
-    expect(tag).toHaveAttribute('href', expect.stringContaining(`/patient/${patientUuid}/chart/Patient Summary`));
+    expect(tag).toHaveAttribute('href', `/openmrs/spa/patient/${patientUuid}/chart/Patient Summary`);
   });
 
   it('shows only the error when there is no partial answer', () => {
