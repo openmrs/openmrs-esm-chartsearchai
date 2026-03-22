@@ -6,6 +6,11 @@ declare module '*.svg' {
 }
 declare type SideNavProps = object;
 
+interface Window {
+  openmrsBase: string;
+  spaBase: string;
+}
+
 declare interface RequireContext {
   keys(): string[];
   (id: string): unknown;
