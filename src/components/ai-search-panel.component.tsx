@@ -93,7 +93,7 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
         </div>
 
         {hasResponse && (
-          <div className={styles.responseArea}>
+          <div className={styles.responseArea} role="log" aria-live="polite">
             <AiResponsePanel
               answer={answer}
               disclaimer={disclaimer}
