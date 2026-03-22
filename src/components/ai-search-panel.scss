@@ -1,0 +1,126 @@
+@use '@carbon/layout';
+@use '@carbon/colors';
+@use '@carbon/type';
+
+.panelContainer {
+  position: fixed;
+  bottom: calc(layout.$spacing-07 + 3.5rem);
+  right: layout.$spacing-07;
+  z-index: 9000;
+  width: 28rem;
+  max-width: calc(100vw - 2 * layout.$spacing-07);
+}
+
+.panel {
+  background-color: #fff;
+  border: 1px solid colors.$gray-30;
+  border-radius: 0.5rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: layout.$spacing-03 layout.$spacing-05;
+  border-bottom: 1px solid colors.$gray-20;
+  background-color: colors.$gray-10;
+}
+
+.panelTitle {
+  @include type.type-style('heading-compact-01');
+  display: flex;
+  align-items: center;
+  gap: layout.$spacing-02;
+}
+
+.sparkle {
+  font-size: 1rem;
+}
+
+.closeButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: colors.$gray-70;
+  cursor: pointer;
+
+  &:hover {
+    background-color: colors.$gray-20;
+  }
+}
+
+.responseArea {
+  max-height: 20rem;
+  overflow-y: auto;
+  padding: layout.$spacing-04 layout.$spacing-05;
+}
+
+.inputArea {
+  display: flex;
+  align-items: center;
+  gap: layout.$spacing-03;
+  padding: layout.$spacing-04 layout.$spacing-05;
+  border-top: 1px solid colors.$gray-20;
+}
+
+.searchInput {
+  @include type.type-style('body-01');
+  flex: 1;
+  border: 1px solid colors.$gray-30;
+  border-radius: 1.5rem;
+  padding: layout.$spacing-03 layout.$spacing-05;
+  outline: none;
+  background-color: colors.$gray-10;
+  transition: border-color 0.2s ease;
+
+  &:focus {
+    border-color: #0f62fe;
+    background-color: #fff;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  &::placeholder {
+    color: colors.$gray-50;
+  }
+}
+
+.actionButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: none;
+  border-radius: 50%;
+  background-color: #0f62fe;
+  color: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.2s ease;
+
+  &:hover {
+    background-color: #0353e9;
+  }
+
+  &:disabled {
+    background-color: colors.$gray-30;
+    cursor: not-allowed;
+  }
+}
+
+.loadingArea {
+  padding: 0 layout.$spacing-05 layout.$spacing-04;
+}

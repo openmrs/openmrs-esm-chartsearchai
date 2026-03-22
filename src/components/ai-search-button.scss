@@ -1,0 +1,40 @@
+@use '@carbon/layout';
+@use '@carbon/colors';
+
+.aiButton {
+  position: fixed;
+  bottom: layout.$spacing-07;
+  right: layout.$spacing-07;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border: none;
+  border-radius: 50%;
+  background-color: #0f62fe;
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  transition: background-color 0.2s ease, transform 0.2s ease;
+
+  &:hover {
+    background-color: #0353e9;
+    transform: scale(1.05);
+  }
+
+  &:focus {
+    outline: 2px solid #0f62fe;
+    outline-offset: 2px;
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+}
+
+.aiButtonActive {
+  background-color: #0353e9;
+  transform: scale(1.05);
+}

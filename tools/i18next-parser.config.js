@@ -1,0 +1,20 @@
+module.exports = {
+  contextSeparator: '_',
+  createOldCatalogs: false,
+  defaultNamespace: 'default',
+  defaultValue: '',
+  indentation: 2,
+  keepRemoved: false,
+  keySeparator: false,
+  lexers: {
+    tsx: ['JsxLexer'],
+    ts: ['JavascriptLexer'],
+  },
+  lineEnding: 'auto',
+  locales: ['en'],
+  namespaceSeparator: ':',
+  output: 'translations/$LOCALE.json',
+  pluralSeparator: '_',
+  input: undefined,
+  sort: true,
+};
