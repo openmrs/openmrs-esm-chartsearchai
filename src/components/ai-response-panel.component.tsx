@@ -90,7 +90,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
 
   if (error && !answer) {
     return (
-      <div className={styles.errorContainer}>
+      <div className={styles.errorContainer} role="alert">
         <p className={styles.errorText}>{error}</p>
       </div>
     );
@@ -106,7 +106,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
       )}
 
       {error && answer && (
-        <div className={styles.errorContainer}>
+        <div className={styles.errorContainer} role="alert">
           <p className={styles.errorText}>
             {t('streamInterrupted', 'Response interrupted:')} {error}
           </p>
