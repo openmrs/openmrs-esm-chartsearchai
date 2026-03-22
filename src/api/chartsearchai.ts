@@ -92,8 +92,33 @@ export function searchPatientChartStream(
       const textDecoder = new TextDecoder();
       const streamReader = reader.getReader();
       let buffer = '';
-      let currentEvent = '';
+      let eventType = '';
+      let dataLines: string[] = [];
       let streamFinalized = false;
+
+      function dispatchEvent() {
+        if (dataLines.length === 0) {
+          eventType = '';
+          return;
+        }
+        const data = dataLines.join('\n');
+        if (eventType === 'token') {
+          callbacks.onToken(data);
+        } else if (eventType === 'done') {
+          streamFinalized = true;
+          try {
+            const parsed: AiSearchResponse = JSON.parse(data);
+            callbacks.onDone(parsed);
+          } catch {
+            callbacks.onError('Failed to parse final response');
+          }
+        } else if (eventType === 'error') {
+          streamFinalized = true;
+          callbacks.onError(data);
+        }
+        eventType = '';
+        dataLines = [];
+      }
 
       // eslint-disable-next-line no-constant-condition
       while (true) {
@@ -106,29 +131,18 @@ export function searchPatientChartStream(
 
         for (const line of lines) {
           if (line === '') {
-            currentEvent = '';
+            dispatchEvent();
           } else if (line.startsWith('event:')) {
-            currentEvent = line.slice(6).trim();
+            eventType = line.slice(6).trim();
           } else if (line.startsWith('data:')) {
             const raw = line.slice(5);
-            const data = raw.startsWith(' ') ? raw.slice(1) : raw;
-            if (currentEvent === 'token') {
-              callbacks.onToken(data);
-            } else if (currentEvent === 'done') {
-              streamFinalized = true;
-              try {
-                const parsed: AiSearchResponse = JSON.parse(data);
-                callbacks.onDone(parsed);
-              } catch {
-                callbacks.onError('Failed to parse final response');
-              }
-            } else if (currentEvent === 'error') {
-              streamFinalized = true;
-              callbacks.onError(data);
-            }
+            dataLines.push(raw.startsWith(' ') ? raw.slice(1) : raw);
           }
         }
       }
+
+      // Dispatch any pending event at end of stream
+      dispatchEvent();
 
       if (!streamFinalized) {
         callbacks.onError('Stream ended unexpectedly without a response');
