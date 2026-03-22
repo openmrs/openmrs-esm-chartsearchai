@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import ReactDOM from 'react-dom';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { WatsonHealthAiResults } from '@carbon/react/icons';
 import AiSearchPanel from './ai-search-panel.component';
@@ -30,7 +30,7 @@ const AiSearchButton: React.FC = () => {
     setIsPanelOpen(false);
   }, []);
 
-  return ReactDOM.createPortal(
+  return createPortal(
     <>
       <button
         className={`${styles.aiButton} ${isPanelOpen ? styles.aiButtonActive : ''}`}
