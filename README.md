@@ -68,13 +68,94 @@ Response:
   "answer": "The patient is currently on metformin [1] and lisinopril [2]...",
   "disclaimer": "AI-generated summary. Verify with the full chart.",
   "references": [
-    { "index": 1, "resourceType": "DrugOrder", "resourceId": 456, "date": "2025-12-01" },
-    { "index": 2, "resourceType": "DrugOrder", "resourceId": 789, "date": "2025-11-15" }
+    { "index": 1, "resourceType": "order", "resourceId": 456, "date": "2025-12-01" },
+    { "index": 2, "resourceType": "order", "resourceId": 789, "date": "2025-11-15" }
   ]
 }
 ```
 
 The required privilege is **AI Query Patient Data**.
+
+## Deploying to an O3 Standalone Instance
+
+If you are running an OpenMRS O3 standalone instance and want to add this module without publishing to npm:
+
+### 1. Clone and build
+
+```sh
+git clone https://github.com/openmrs/openmrs-esm-chartsearchai.git
+cd openmrs-esm-chartsearchai
+yarn install
+yarn build
+```
+
+### 2. Locate your standalone frontend directory
+
+Find the `frontend/` folder inside your standalone's `appdata/` directory. For example:
+
+```
+<standalone-directory>/appdata/frontend/
+```
+
+Confirm by checking that `importmap.json` exists inside it.
+
+### 3. Copy the built files
+
+```sh
+mkdir -p <frontend-directory>/openmrs-esm-chartsearchai-app
+cp dist/* <frontend-directory>/openmrs-esm-chartsearchai-app/
+```
+
+### 4. Add the module to the import map
+
+Edit `<frontend-directory>/importmap.json` and add this entry inside the `"imports"` object:
+
+```json
+"@openmrs/esm-chartsearchai-app": "./openmrs-esm-chartsearchai-app/openmrs-esm-chartsearchai-app.js"
+```
+
+### 5. Register the module's routes
+
+Edit `<frontend-directory>/routes.registry.json` and add this entry to the top-level JSON object:
+
+```json
+"@openmrs/esm-chartsearchai-app": {
+  "$schema": "https://json.openmrs.org/routes.schema.json",
+  "backendDependencies": {
+    "webservices.rest": ">=2.44.0",
+    "chartsearchai": ">=1.0.0-SNAPSHOT"
+  },
+  "extensions": [
+    {
+      "name": "ai-search-button",
+      "component": "aiSearchButton",
+      "slot": "patient-banner-tags-slot",
+      "privilege": "AI Query Patient Data",
+      "order": 100
+    }
+  ],
+  "version": "1.0.0"
+}
+```
+
+### 6. Ensure your user has the required privilege
+
+The logged-in user's role must include the **"AI Query Patient Data"** privilege. You can assign this via the OpenMRS admin UI under **Administration > Manage Roles**.
+
+### 7. Hard-refresh the browser
+
+Press **Cmd+Shift+R** (Mac) or **Ctrl+Shift+R** (Windows/Linux) to bypass the cache. Navigate to a patient chart and the AI search button should appear in the patient banner.
+
+### Updating after code changes
+
+After making changes, rebuild and copy:
+
+```sh
+yarn build
+cp dist/* <frontend-directory>/openmrs-esm-chartsearchai-app/
+```
+
+Then hard-refresh the browser. No server restart is needed.
 
 ## Running tests
 
