@@ -151,7 +151,7 @@ export function searchPatientChartStream(
       dispatchEvent();
 
       if (!streamFinalized) {
-        callbacks.onError('Stream ended unexpectedly. Your session may have expired — please log in again.');
+        callbacks.onError('Stream ended unexpectedly without a response');
       }
     })
     .catch((err) => {
