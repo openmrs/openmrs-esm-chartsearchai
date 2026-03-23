@@ -65,9 +65,15 @@ export function searchPatientChartStream(
       },
       body: JSON.stringify({ patient: patientUuid, question }),
       credentials: 'include',
+      redirect: 'manual',
       signal: abortController?.signal,
     })
     .then(async (response) => {
+      if (response.type === 'opaqueredirect' || response.status === 0) {
+        callbacks.onError('Your session has expired. Please log in again.');
+        return;
+      }
+
       if (!response.ok) {
         let message = `Server error: ${response.status}`;
         try {
@@ -145,7 +151,7 @@ export function searchPatientChartStream(
       dispatchEvent();
 
       if (!streamFinalized) {
-        callbacks.onError('Stream ended unexpectedly without a response');
+        callbacks.onError('Stream ended unexpectedly. Your session may have expired — please log in again.');
       }
     })
     .catch((err) => {

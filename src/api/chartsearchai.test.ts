@@ -41,9 +41,12 @@ function mockStreamResponse(chunks: string[], status = 200): Response {
     },
   };
 
+  const headers = new Map([['Content-Type', 'text/event-stream']]);
+
   return {
     ok: status >= 200 && status < 300,
     status,
+    headers: { get: (name: string) => headers.get(name) ?? null },
     body,
     json: () => Promise.reject(new Error('no json')),
   } as unknown as Response;
@@ -225,7 +228,7 @@ describe('searchPatientChartStream', () => {
     await flushPromises();
 
     expect(cb.onToken).toHaveBeenCalledWith('hello');
-    expect(cb.onError).toHaveBeenCalledWith('Stream ended unexpectedly without a response');
+    expect(cb.onError).toHaveBeenCalledWith('Stream ended unexpectedly. Your session may have expired — please log in again.');
   });
 
   it('calls onError when done event contains invalid JSON', async () => {
@@ -277,6 +280,7 @@ describe('searchPatientChartStream', () => {
     const resp = {
       ok: true,
       status: 200,
+      headers: { get: () => 'text/event-stream' },
       body: null,
     } as unknown as Response;
     fetchSpy = jest.spyOn(window, 'fetch').mockResolvedValueOnce(resp);
@@ -285,6 +289,22 @@ describe('searchPatientChartStream', () => {
     await flushPromises();
 
     expect(cb.onError).toHaveBeenCalledWith('Streaming not supported by this browser.');
+  });
+
+  it('calls onError with session expired message on redirect (302 to login)', async () => {
+    const cb = makeCallbacks();
+    const resp = {
+      type: 'opaqueredirect',
+      ok: false,
+      status: 0,
+      body: null,
+    } as unknown as Response;
+    fetchSpy = jest.spyOn(window, 'fetch').mockResolvedValueOnce(resp);
+
+    callStream(cb);
+    await flushPromises();
+
+    expect(cb.onError).toHaveBeenCalledWith('Your session has expired. Please log in again.');
   });
 
   it('ignores blank lines that have no pending event (no false dispatch)', async () => {
