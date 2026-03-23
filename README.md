@@ -76,9 +76,9 @@ Response:
 
 The required privilege is **AI Query Patient Data**.
 
-## Deploying to an O3 Standalone Instance
+## Deploying to an O3 Instance (without publishing to npm)
 
-If you are running an OpenMRS O3 standalone instance and want to add this module without publishing to npm:
+These steps work for both the **OpenMRS SDK** and the **O3 Standalone** distribution.
 
 ### 1. Clone and build
 
@@ -89,13 +89,12 @@ yarn install
 yarn build
 ```
 
-### 2. Locate your standalone frontend directory
+### 2. Locate your frontend directory
 
-Find the `frontend/` folder inside your standalone's `appdata/` directory. For example:
+Find the `frontend/` folder that contains `importmap.json`:
 
-```
-<standalone-directory>/appdata/frontend/
-```
+- **OpenMRS SDK**: `~/openmrs/<server-name>/frontend/`
+- **O3 Standalone**: `<standalone-directory>/appdata/frontend/`
 
 Confirm by checking that `importmap.json` exists inside it.
 
