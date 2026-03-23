@@ -228,7 +228,9 @@ describe('searchPatientChartStream', () => {
     await flushPromises();
 
     expect(cb.onToken).toHaveBeenCalledWith('hello');
-    expect(cb.onError).toHaveBeenCalledWith('Stream ended unexpectedly. Your session may have expired — please log in again.');
+    expect(cb.onError).toHaveBeenCalledWith(
+      'Stream ended unexpectedly. Your session may have expired — please log in again.',
+    );
   });
 
   it('calls onError when done event contains invalid JSON', async () => {
