@@ -78,7 +78,7 @@ The required privilege is **AI Query Patient Data**.
 
 ## Deploying to an O3 Instance (without publishing to npm)
 
-These steps work for both the **OpenMRS SDK** and the **O3 Standalone** distribution.
+These steps work for the **OpenMRS SDK**, **O3 Standalone**, and **Docker** deployments.
 
 ### 1. Clone and build
 
@@ -95,27 +95,77 @@ Find the `frontend/` folder that contains `importmap.json`:
 
 - **OpenMRS SDK**: `~/openmrs/<server-name>/frontend/`
 - **O3 Standalone**: `<standalone-directory>/appdata/frontend/`
+- **Docker**: the frontend files are inside the `frontend` container (see below)
 
-Confirm by checking that `importmap.json` exists inside it.
+Confirm by checking that `importmap.json` exists inside the directory.
+
+For **Docker**, find the frontend directory inside the container:
+
+```sh
+# Find the frontend container name
+docker ps --format '{{.Names}}' | grep frontend
+
+# The frontend files are typically at /usr/share/nginx/html/
+# Verify by checking for importmap.json
+docker exec <frontend-container> ls /usr/share/nginx/html/importmap.json
+```
 
 ### 3. Copy the built files
+
+**SDK / Standalone:**
 
 ```sh
 mkdir -p <frontend-directory>/openmrs-esm-chartsearchai-app
 cp dist/* <frontend-directory>/openmrs-esm-chartsearchai-app/
 ```
 
+**Docker:**
+
+```sh
+# Create the directory inside the container
+docker exec <frontend-container> mkdir -p /usr/share/nginx/html/openmrs-esm-chartsearchai-app
+
+# Copy the built files into the container
+docker cp dist/. <frontend-container>:/usr/share/nginx/html/openmrs-esm-chartsearchai-app/
+```
+
 ### 4. Add the module to the import map
 
-Edit `<frontend-directory>/importmap.json` and add this entry inside the `"imports"` object:
+Edit `importmap.json` and add this entry inside the `"imports"` object:
 
 ```json
 "@openmrs/esm-chartsearchai-app": "./openmrs-esm-chartsearchai-app/openmrs-esm-chartsearchai-app.js"
 ```
 
+For **Docker**, you can edit the file in-place:
+
+```sh
+docker exec <frontend-container> sh -c "cat /usr/share/nginx/html/importmap.json | \
+  sed 's/}}/,\"@openmrs\/esm-chartsearchai-app\":\"\.\/openmrs-esm-chartsearchai-app\/openmrs-esm-chartsearchai-app.js\"}}/' \
+  > /tmp/importmap.json && mv /tmp/importmap.json /usr/share/nginx/html/importmap.json"
+```
+
+Or copy the file out, edit locally, and copy it back:
+
+```sh
+docker cp <frontend-container>:/usr/share/nginx/html/importmap.json .
+# Edit importmap.json with your editor
+docker cp importmap.json <frontend-container>:/usr/share/nginx/html/importmap.json
+```
+
 ### 5. Register the module's routes
 
-Edit `<frontend-directory>/routes.registry.json` and add this entry to the top-level JSON object:
+Edit `routes.registry.json` and add this entry to the top-level JSON object.
+
+For **Docker**, copy the file out, edit, and copy back:
+
+```sh
+docker cp <frontend-container>:/usr/share/nginx/html/routes.registry.json .
+# Edit routes.registry.json with your editor
+docker cp routes.registry.json <frontend-container>:/usr/share/nginx/html/routes.registry.json
+```
+
+Add this entry:
 
 ```json
 "@openmrs/esm-chartsearchai-app": {
@@ -149,9 +199,18 @@ Press **Cmd+Shift+R** (Mac) or **Ctrl+Shift+R** (Windows/Linux) to bypass the ca
 
 After making changes, rebuild and copy:
 
+**SDK / Standalone:**
+
 ```sh
 yarn build
 cp dist/* <frontend-directory>/openmrs-esm-chartsearchai-app/
+```
+
+**Docker:**
+
+```sh
+yarn build
+docker cp dist/. <frontend-container>:/usr/share/nginx/html/openmrs-esm-chartsearchai-app/
 ```
 
 Then hard-refresh the browser. No server restart is needed.
