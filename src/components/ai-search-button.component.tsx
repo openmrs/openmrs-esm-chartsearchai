@@ -1,30 +1,14 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { WatsonHealthAiResults } from '@carbon/react/icons';
+import { usePatient } from '@openmrs/esm-framework';
 import AiSearchPanel from './ai-search-panel.component';
 import styles from './ai-search-button.scss';
 
-const PORTAL_CONTAINER_ID = 'chartsearchai-portal';
-
 const AiSearchButton: React.FC = () => {
+  const { patientUuid } = usePatient();
   const { t } = useTranslation();
   const [isPanelOpen, setIsPanelOpen] = useState(false);
-  const portalContainerRef = useRef<HTMLDivElement | null>(null);
-
-  if (!portalContainerRef.current) {
-    const container = document.createElement('div');
-    container.id = PORTAL_CONTAINER_ID;
-    portalContainerRef.current = container;
-  }
-
-  useEffect(() => {
-    const container = portalContainerRef.current!;
-    document.body.appendChild(container);
-    return () => {
-      container.remove();
-    };
-  }, []);
 
   const togglePanel = useCallback(() => {
     setIsPanelOpen((prev) => !prev);
@@ -34,7 +18,11 @@ const AiSearchButton: React.FC = () => {
     setIsPanelOpen(false);
   }, []);
 
-  return createPortal(
+  if (!patientUuid) {
+    return null;
+  }
+
+  return (
     <>
       <button
         className={`${styles.aiButton} ${isPanelOpen ? styles.aiButtonActive : ''}`}
@@ -46,8 +34,7 @@ const AiSearchButton: React.FC = () => {
         <WatsonHealthAiResults size={20} />
       </button>
       {isPanelOpen && <AiSearchPanel onClose={closePanel} />}
-    </>,
-    portalContainerRef.current!,
+    </>
   );
 };
 
