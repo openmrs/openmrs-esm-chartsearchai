@@ -2,7 +2,10 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
+import { usePatient } from '@openmrs/esm-framework';
 import AiSearchButton from './ai-search-button.component';
+
+const mockUsePatient = usePatient as jest.Mock;
 
 jest.mock('./ai-search-panel.component', () => {
   const MockPanel = ({ onClose }: { onClose: () => void }) => (
@@ -14,6 +17,10 @@ jest.mock('./ai-search-panel.component', () => {
 });
 
 describe('AiSearchButton', () => {
+  beforeEach(() => {
+    mockUsePatient.mockReturnValue({ patientUuid: 'test-patient-uuid' });
+  });
+
   it('renders the AI button', () => {
     render(<AiSearchButton />);
     expect(screen.getByRole('button', { name: /ai search/i })).toBeInTheDocument();
