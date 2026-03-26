@@ -97,6 +97,52 @@
   }
 }
 
+.micButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: colors.$gray-70;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.2s ease, color 0.2s ease;
+
+  &:hover:not(:disabled) {
+    background-color: colors.$gray-20;
+  }
+
+  &:disabled {
+    color: colors.$gray-30;
+    cursor: not-allowed;
+  }
+}
+
+.micButtonActive {
+  color: colors.$red-60;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .micButtonActive {
+    animation: none;
+  }
+}
+
 .actionButton {
   display: flex;
   align-items: center;
@@ -111,7 +157,7 @@
   flex-shrink: 0;
   transition: background-color 0.2s ease;
 
-  &:hover {
+  &:hover:not(:disabled) {
     background-color: colors.$blue-70;
   }
 

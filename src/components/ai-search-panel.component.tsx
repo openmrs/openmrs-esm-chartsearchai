@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConfig, usePatient } from '@openmrs/esm-framework';
-import { Close, Send, StopFilled } from '@carbon/react/icons';
+import { Close, Microphone, MicrophoneFilled, Send, StopFilled } from '@carbon/react/icons';
 import { InlineLoading } from '@carbon/react';
 import { useChartSearchAi } from '../hooks/useChartSearchAi';
+import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { type ChartSearchAiConfig } from '../config-schema';
 import AiResponsePanel from './ai-response-panel.component';
 import styles from './ai-search-panel.scss';
@@ -23,6 +24,24 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
 
   const { answer, disclaimer, references, isLoading, error, submitQuestion, clearResults } = useChartSearchAi();
 
+  const questionRef = useRef(question);
+  questionRef.current = question;
+
+  const handleSpeechResult = useCallback(
+    (transcript: string) => {
+      const fullQuestion = questionRef.current ? questionRef.current + ' ' + transcript : transcript;
+      setQuestion(fullQuestion);
+      const trimmed = fullQuestion.trim();
+      if (trimmed && patient?.id && !isLoading) {
+        submitQuestion(patient.id, trimmed);
+      }
+    },
+    [patient?.id, isLoading, submitQuestion],
+  );
+
+  const { isListening, isSupported: isSpeechSupported, error: speechError, startListening, stopListening, clearError: clearSpeechError } =
+    useSpeechRecognition(handleSpeechResult);
+
   const hasResponse = answer || error;
 
   const handleSubmit = useCallback(
@@ -30,9 +49,10 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
       e?.preventDefault();
       const trimmedQuestion = question.trim();
       if (!trimmedQuestion || !patient?.id || isLoading) return;
+      clearSpeechError();
       submitQuestion(patient.id, trimmedQuestion);
     },
-    [question, patient?.id, isLoading, submitQuestion],
+    [question, patient?.id, isLoading, submitQuestion, clearSpeechError],
   );
 
   const handleInputKeyDown = useCallback(
@@ -79,11 +99,24 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
     }
   }, [isLoading, answer]);
 
+  const handleMicClick = useCallback(() => {
+    if (isListening) {
+      stopListening();
+    } else {
+      if (hasResponse) {
+        clearResults();
+        setQuestion('');
+      }
+      startListening();
+    }
+  }, [isListening, hasResponse, stopListening, startListening, clearResults]);
+
   const handleClear = useCallback(() => {
     clearResults();
+    clearSpeechError();
     setQuestion('');
     inputRef.current?.focus();
-  }, [clearResults]);
+  }, [clearResults, clearSpeechError]);
 
   return (
     <div className={styles.panelContainer}>
@@ -132,6 +165,17 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
             disabled={isLoading}
             autoFocus
           />
+          {isSpeechSupported && !isLoading && (
+            <button
+              className={`${styles.micButton} ${isListening ? styles.micButtonActive : ''}`}
+              onClick={handleMicClick}
+              aria-label={isListening ? t('stopListening', 'Stop listening') : t('voiceInput', 'Voice input')}
+              type="button"
+              disabled={!patient?.id}
+            >
+              {isListening ? <MicrophoneFilled size={20} /> : <Microphone size={20} />}
+            </button>
+          )}
           {isLoading ? (
             <button className={styles.actionButton} onClick={clearResults} aria-label={t('stop', 'Stop')} type="button">
               <StopFilled size={20} />
@@ -166,6 +210,16 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
         {!isPatientLoading && !patient?.id && (
           <div className={styles.loadingArea}>
             <p className={styles.noPatientText}>{t('noPatientSelected', 'No patient selected')}</p>
+          </div>
+        )}
+
+        {speechError && (
+          <div className={styles.loadingArea}>
+            <p className={styles.noPatientText}>
+              {speechError === 'not-allowed'
+                ? t('microphonePermissionDenied', 'Microphone access was denied. Please allow microphone permissions.')
+                : t('speechRecognitionError', 'Speech recognition failed. Please try again.')}
+            </p>
           </div>
         )}
       </div>
