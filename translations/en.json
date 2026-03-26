@@ -4,10 +4,14 @@
   "askAiAboutPatient": "Ask AI about this patient",
   "clearAndAskNew": "Clear and ask new question",
   "close": "Close",
+  "microphonePermissionDenied": "Microphone access was denied. Please allow microphone permissions.",
   "noPatientSelected": "No patient selected",
   "references": "References",
   "send": "Send",
+  "speechRecognitionError": "Speech recognition failed. Please try again.",
   "stop": "Stop",
+  "stopListening": "Stop listening",
   "streamInterrupted": "Response interrupted:",
-  "thinkingEllipsis": "Thinking..."
+  "thinkingEllipsis": "Thinking...",
+  "voiceInput": "Voice input"
 }
