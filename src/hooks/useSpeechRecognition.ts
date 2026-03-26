@@ -40,10 +40,11 @@ interface UseSpeechRecognitionReturn {
   clearError: () => void;
 }
 
-const SpeechRecognitionAPI: { new (): SpeechRecognitionInstance } | null =
-  typeof window !== 'undefined'
-    ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    : null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const w = typeof window !== 'undefined' ? (window as any) : null;
+const SpeechRecognitionAPI: { new (): SpeechRecognitionInstance } | null = w
+  ? w.SpeechRecognition || w.webkitSpeechRecognition
+  : null;
 
 export function useSpeechRecognition(onResult: (transcript: string) => void): UseSpeechRecognitionReturn {
   const [isListening, setIsListening] = useState(false);

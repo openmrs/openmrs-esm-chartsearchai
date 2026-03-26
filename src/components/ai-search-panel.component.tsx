@@ -39,8 +39,14 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
     [patient?.id, isLoading, submitQuestion],
   );
 
-  const { isListening, isSupported: isSpeechSupported, error: speechError, startListening, stopListening, clearError: clearSpeechError } =
-    useSpeechRecognition(handleSpeechResult);
+  const {
+    isListening,
+    isSupported: isSpeechSupported,
+    error: speechError,
+    startListening,
+    stopListening,
+    clearError: clearSpeechError,
+  } = useSpeechRecognition(handleSpeechResult);
 
   const hasResponse = answer || error;
 

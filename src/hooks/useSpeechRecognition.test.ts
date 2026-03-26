@@ -1,12 +1,18 @@
 import { renderHook, act } from '@testing-library/react';
 
+interface MockEvent {
+  results?: { 0: { transcript: string; confidence: number } }[];
+  resultIndex?: number;
+  error?: string;
+}
+
 class MockSpeechRecognition {
   continuous = false;
   interimResults = false;
   lang = '';
   onstart: (() => void) | null = null;
-  onresult: ((event: any) => void) | null = null;
-  onerror: ((event: any) => void) | null = null;
+  onresult: ((event: MockEvent) => void) | null = null;
+  onerror: ((event: MockEvent) => void) | null = null;
   onend: (() => void) | null = null;
 
   start() {
@@ -18,8 +24,7 @@ class MockSpeechRecognition {
   }
 }
 
-// Set up the global before the module is loaded so the module-level
-// constant `SpeechRecognitionAPI` picks it up.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 (window as any).SpeechRecognition = MockSpeechRecognition;
 
 // Use require after setting the global so the module-level constant is initialized.
@@ -27,6 +32,7 @@ class MockSpeechRecognition {
 const { useSpeechRecognition } = require('./useSpeechRecognition');
 
 afterAll(() => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   delete (window as any).SpeechRecognition;
 });
 
@@ -35,12 +41,12 @@ beforeEach(() => {
 });
 
 function createInstanceCapture() {
-  let captured: MockSpeechRecognition | null = null;
+  const instances: MockSpeechRecognition[] = [];
   jest.spyOn(MockSpeechRecognition.prototype, 'start').mockImplementation(function (this: MockSpeechRecognition) {
-    captured = this;
+    instances.push(this);
     this.onstart?.();
   });
-  return () => captured;
+  return () => instances[instances.length - 1] ?? null;
 }
 
 describe('useSpeechRecognition', () => {
