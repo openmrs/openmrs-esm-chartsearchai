@@ -1,7 +1,7 @@
 {
   "aiChartSearch": "AI Chart Search",
   "aiSearch": "AI Search",
-  "askAiAboutPatient": "Ask AI about this patient",
+  "askAiAboutPatient": "Ask AI about this patient's medical history",
   "clearAndAskNew": "Clear and ask new question",
   "close": "Close",
   "microphonePermissionDenied": "Microphone access was denied. Please allow microphone permissions.",
