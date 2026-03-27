@@ -16,6 +16,16 @@ A floating AI button appears on the patient chart page. Clicking it opens a sear
 
 The module streams an answer token-by-token (via SSE) with numbered citations (e.g. `[1]`, `[2]`) that link back to the relevant section of the patient chart (Results, Orders, Allergies, etc.).
 
+## Simple Explanation (For Beginners)
+
+This module allows clinicians to ask questions about a patient's medical data in natural language and receive AI-generated answers.
+
+It works in two main steps:
+1. When a user asks a question, the system retrieves the most relevant patient records based on the query.
+2. An AI model generates a response using that information, along with references to the original data.
+
+This makes it easier for healthcare professionals to quickly understand patient history without manually searching through records.
+
 ## Backend
 
 This frontend requires the [Chart Search AI backend module](https://github.com/openmrs/openmrs-module-chartsearchai), which uses a RAG (Retrieval Augmented Generation) architecture:
