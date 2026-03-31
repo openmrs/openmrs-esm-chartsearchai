@@ -13,7 +13,6 @@ const mockSubmitFeedback = submitFeedback as jest.Mock;
 
 const defaultProps = {
   questionId: 'q-123',
-  patientUuid: 'patient-456',
 };
 
 beforeEach(() => {
@@ -41,7 +40,6 @@ describe('AiFeedback', () => {
 
     expect(mockSubmitFeedback).toHaveBeenCalledWith({
       questionId: 'q-123',
-      patient: 'patient-456',
       rating: 'positive',
     });
   });
@@ -72,7 +70,6 @@ describe('AiFeedback', () => {
 
     expect(mockSubmitFeedback).toHaveBeenCalledWith({
       questionId: 'q-123',
-      patient: 'patient-456',
       rating: 'negative',
       comment: 'Answer was inaccurate',
     });
@@ -91,7 +88,6 @@ describe('AiFeedback', () => {
 
     expect(mockSubmitFeedback).toHaveBeenCalledWith({
       questionId: 'q-123',
-      patient: 'patient-456',
       rating: 'negative',
       comment: undefined,
     });

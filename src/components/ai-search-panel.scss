@@ -69,7 +69,7 @@
   align-items: center;
   gap: layout.$spacing-03;
   padding: layout.$spacing-04 layout.$spacing-05;
-  border-top: 1px solid colors.$gray-20;
+  border-bottom: 1px solid colors.$gray-20;
 }
 
 .searchInput {
@@ -171,7 +171,7 @@
   padding: 0 layout.$spacing-05 layout.$spacing-04;
 }
 
-.noPatientText {
+.infoText {
   @include type.type-style('label-01');
   color: colors.$gray-60;
   margin: 0;

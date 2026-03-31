@@ -70,9 +70,38 @@
   }
 }
 
+.commentActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: layout.$spacing-03;
+}
+
+.cancelButton {
+  @include type.type-style('body-compact-01');
+  padding: layout.$spacing-02 layout.$spacing-05;
+  border: 1px solid colors.$gray-30;
+  border-radius: 0.25rem;
+  background-color: transparent;
+  color: colors.$gray-70;
+  cursor: pointer;
+
+  &:hover {
+    background-color: colors.$gray-10;
+  }
+
+  &:focus {
+    outline: 2px solid colors.$blue-60;
+    outline-offset: 2px;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+}
+
 .submitButton {
   @include type.type-style('body-compact-01');
-  align-self: flex-end;
   padding: layout.$spacing-02 layout.$spacing-05;
   border: none;
   border-radius: 0.25rem;

@@ -22,23 +22,26 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
   const panelRef = useRef<HTMLDivElement>(null);
   const responseAreaRef = useRef<HTMLDivElement>(null);
 
-  const { answer, disclaimer, references, questionId, isLoading, error, submitQuestion, clearResults } =
-    useChartSearchAi();
+  const {
+    submittedQuestion,
+    answer,
+    disclaimer,
+    references,
+    questionId,
+    isLoading,
+    error,
+    submitQuestion,
+    clearResults,
+  } = useChartSearchAi();
 
   const questionRef = useRef(question);
   questionRef.current = question;
 
-  const handleSpeechResult = useCallback(
-    (transcript: string) => {
-      const fullQuestion = questionRef.current ? questionRef.current + ' ' + transcript : transcript;
-      setQuestion(fullQuestion);
-      const trimmed = fullQuestion.trim();
-      if (trimmed && patient?.id && !isLoading) {
-        submitQuestion(patient.id, trimmed);
-      }
-    },
-    [patient?.id, isLoading, submitQuestion],
-  );
+  const handleSpeechResult = useCallback((transcript: string) => {
+    const existing = questionRef.current.trimEnd();
+    const fullQuestion = existing ? existing + ' ' + transcript : transcript;
+    setQuestion(fullQuestion);
+  }, []);
 
   const {
     isListening,
@@ -49,7 +52,7 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
     clearError: clearSpeechError,
   } = useSpeechRecognition(handleSpeechResult);
 
-  const hasResponse = answer || error;
+  const hasResponse = !!(answer || error || submittedQuestion);
 
   const handleSubmit = useCallback(
     (e?: React.FormEvent) => {
@@ -57,9 +60,12 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
       const trimmedQuestion = question.trim();
       if (!trimmedQuestion || !patient?.id || isLoading) return;
       clearSpeechError();
+      if (hasResponse) {
+        clearResults();
+      }
       submitQuestion(patient.id, trimmedQuestion);
     },
-    [question, patient?.id, isLoading, submitQuestion, clearSpeechError],
+    [question, patient?.id, isLoading, submitQuestion, clearSpeechError, hasResponse, clearResults],
   );
 
   const handleInputKeyDown = useCallback(
@@ -82,7 +88,7 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
       if (e.key !== 'Tab' || !panelRef.current) return;
 
       const focusable = panelRef.current.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+        'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
       );
       if (focusable.length === 0) return;
 
@@ -100,10 +106,18 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
     [onClose],
   );
 
+  const prevIsLoadingRef = useRef(false);
+
   useEffect(() => {
     if (isLoading && responseAreaRef.current) {
       responseAreaRef.current.scrollTop = responseAreaRef.current.scrollHeight;
     }
+
+    if (prevIsLoadingRef.current && !isLoading) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+    prevIsLoadingRef.current = isLoading;
   }, [isLoading, answer]);
 
   const handleMicClick = useCallback(() => {
@@ -117,6 +131,10 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
       startListening();
     }
   }, [isListening, hasResponse, stopListening, startListening, clearResults]);
+
+  const handleFeedbackComplete = useCallback(() => {
+    inputRef.current?.focus();
+  }, []);
 
   const handleClear = useCallback(() => {
     clearResults();
@@ -132,7 +150,6 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
         className={styles.panel}
         ref={panelRef}
         role="dialog"
-        aria-modal="true"
         aria-label={t('aiChartSearch', 'AI Chart Search')}
         onKeyDown={handlePanelKeyDown}
       >
@@ -146,27 +163,18 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
           </button>
         </div>
 
-        {hasResponse && (
-          <div className={styles.responseArea} ref={responseAreaRef} role="log" aria-live="polite">
-            <AiResponsePanel
-              answer={answer}
-              disclaimer={disclaimer}
-              references={references}
-              questionId={questionId}
-              error={error}
-              isLoading={isLoading}
-              patientUuid={patient?.id ?? ''}
-            />
-          </div>
-        )}
-
         <form className={styles.inputArea} onSubmit={handleSubmit}>
           <input
             ref={inputRef}
             className={styles.searchInput}
             type="text"
             value={question}
-            onChange={(e) => setQuestion(e.target.value)}
+            onChange={(e) => {
+              setQuestion(e.target.value);
+              if (!e.target.value.trim() && hasResponse) {
+                clearResults();
+              }
+            }}
             onKeyDown={handleInputKeyDown}
             placeholder={config.aiSearchPlaceholder}
             maxLength={config.maxQuestionLength}
@@ -178,6 +186,7 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
               className={`${styles.micButton} ${isListening ? styles.micButtonActive : ''}`}
               onClick={handleMicClick}
               aria-label={isListening ? t('stopListening', 'Stop listening') : t('voiceInput', 'Voice input')}
+              title={isListening ? t('stopListening', 'Stop listening') : t('voiceInput', 'Voice input')}
               type="button"
               disabled={!patient?.id}
             >
@@ -185,7 +194,13 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
             </button>
           )}
           {isLoading ? (
-            <button className={styles.actionButton} onClick={clearResults} aria-label={t('stop', 'Stop')} type="button">
+            <button
+              className={styles.actionButton}
+              onClick={clearResults}
+              aria-label={t('stop', 'Stop')}
+              title={t('stop', 'Stop')}
+              type="button"
+            >
               <StopFilled size={20} />
             </button>
           ) : hasResponse ? (
@@ -193,6 +208,7 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
               className={styles.actionButton}
               onClick={handleClear}
               aria-label={t('clearAndAskNew', 'Clear and ask new question')}
+              title={t('clearAndAskNew', 'Clear and ask new question')}
               type="button"
             >
               <Close size={20} />
@@ -202,6 +218,7 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
               className={styles.actionButton}
               type="submit"
               aria-label={t('send', 'Send')}
+              title={t('send', 'Send')}
               disabled={!question.trim() || !patient?.id}
             >
               <Send size={20} />
@@ -209,21 +226,31 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
           )}
         </form>
 
-        {isLoading && !answer && (
-          <div className={styles.loadingArea}>
-            <InlineLoading description={t('thinkingEllipsis', 'Thinking...')} />
+        {hasResponse && (
+          <div className={styles.responseArea} ref={responseAreaRef} role="log" aria-live="polite">
+            <AiResponsePanel
+              answer={answer}
+              disclaimer={disclaimer}
+              references={references}
+              questionId={questionId}
+              error={error}
+              isLoading={isLoading}
+              patientUuid={patient?.id ?? ''}
+              onFeedbackComplete={handleFeedbackComplete}
+            />
+            {isLoading && !answer && <InlineLoading description={t('thinkingEllipsis', 'Thinking...')} />}
           </div>
         )}
 
         {!isPatientLoading && !patient?.id && (
           <div className={styles.loadingArea}>
-            <p className={styles.noPatientText}>{t('noPatientSelected', 'No patient selected')}</p>
+            <p className={styles.infoText}>{t('noPatientSelected', 'No patient selected')}</p>
           </div>
         )}
 
         {speechError && (
           <div className={styles.loadingArea}>
-            <p className={styles.noPatientText}>
+            <p className={styles.infoText}>
               {speechError === 'not-allowed'
                 ? t('microphonePermissionDenied', 'Microphone access was denied. Please allow microphone permissions.')
                 : t('speechRecognitionError', 'Speech recognition failed. Please try again.')}

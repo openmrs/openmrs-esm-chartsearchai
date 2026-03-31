@@ -112,7 +112,7 @@ describe('AiResponsePanel reference links', () => {
 
     const tag = screen.getByText('[1] UnknownType — 2025-06-01');
     expect(tag.tagName).toBe('A');
-    expect(tag).toHaveAttribute('href', `/openmrs/spa/patient/${patientUuid}/chart/Patient Summary`);
+    expect(tag).toHaveAttribute('href', `/openmrs/spa/patient/${patientUuid}/chart/Patient%20Summary`);
   });
 
   it('shows only the error when there is no partial answer', () => {

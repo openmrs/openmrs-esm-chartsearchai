@@ -14,6 +14,7 @@ interface AiResponsePanelProps {
   error: string | null;
   isLoading: boolean;
   patientUuid: string;
+  onFeedbackComplete?: () => void;
 }
 
 const RESOURCE_TYPE_TO_CHART_PAGE: Record<string, string> = {
@@ -31,7 +32,7 @@ function buildReferenceUrl(ref: AiReference, patientUuid: string): string | null
     return null;
   }
   const chartPage = RESOURCE_TYPE_TO_CHART_PAGE[ref.resourceType.toLowerCase()];
-  return `${window.spaBase}/patient/${patientUuid}/chart/${chartPage ?? 'Patient Summary'}`;
+  return `${window.spaBase}/patient/${patientUuid}/chart/${encodeURIComponent(chartPage ?? 'Patient Summary')}`;
 }
 
 function renderAnswerWithCitations(answer: string, references: AiReference[], patientUuid: string): React.ReactNode[] {
@@ -81,6 +82,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   error,
   isLoading,
   patientUuid,
+  onFeedbackComplete,
 }) => {
   const { t } = useTranslation();
   const renderedAnswer = useMemo(() => {
@@ -114,12 +116,6 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
         </div>
       )}
 
-      {disclaimer && (
-        <div className={styles.disclaimerSection}>
-          <p className={styles.disclaimerText}>{disclaimer}</p>
-        </div>
-      )}
-
       {references.length > 0 && (
         <div className={styles.referencesSection}>
           <span className={styles.referencesLabel}>{t('references', 'References')}:</span>
@@ -149,8 +145,14 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
         </div>
       )}
 
+      {disclaimer && (
+        <div className={styles.disclaimerSection}>
+          <p className={styles.disclaimerText}>{disclaimer}</p>
+        </div>
+      )}
+
       {answer && !isLoading && questionId && (
-        <AiFeedback key={questionId} questionId={questionId} patientUuid={patientUuid} />
+        <AiFeedback key={questionId} questionId={questionId} onComplete={onFeedbackComplete} />
       )}
     </div>
   );

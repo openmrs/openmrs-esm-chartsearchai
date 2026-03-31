@@ -9,6 +9,7 @@ import {
 import { type ChartSearchAiConfig } from '../config-schema';
 
 interface UseChartSearchAiReturn {
+  submittedQuestion: string;
   answer: string;
   disclaimer: string;
   references: AiReference[];
@@ -21,6 +22,7 @@ interface UseChartSearchAiReturn {
 
 export function useChartSearchAi(): UseChartSearchAiReturn {
   const config = useConfig<ChartSearchAiConfig>();
+  const [submittedQuestion, setSubmittedQuestion] = useState('');
   const [answer, setAnswer] = useState('');
   const [disclaimer, setDisclaimer] = useState('');
   const [references, setReferences] = useState<AiReference[]>([]);
@@ -30,6 +32,7 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const clearResults = useCallback(() => {
+    setSubmittedQuestion('');
     setAnswer('');
     setDisclaimer('');
     setReferences([]);
@@ -53,6 +56,7 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
 
+      setSubmittedQuestion(question);
       setAnswer('');
       setDisclaimer('');
       setReferences([]);
@@ -70,7 +74,9 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
                 setAnswer((prev) => prev + token);
               },
               onDone: (response: AiSearchResponse) => {
-                abortControllerRef.current = null;
+                if (abortControllerRef.current === abortController) {
+                  abortControllerRef.current = null;
+                }
                 setAnswer(response.answer);
                 setDisclaimer(response.disclaimer);
                 setReferences(response.references);
@@ -78,7 +84,9 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
                 setIsLoading(false);
               },
               onError: (errMessage) => {
-                abortControllerRef.current = null;
+                if (abortControllerRef.current === abortController) {
+                  abortControllerRef.current = null;
+                }
                 setError(errMessage);
                 setIsLoading(false);
               },
@@ -88,7 +96,9 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
         } else {
           searchPatientChart(patientUuid, question, abortController)
             .then((response) => {
-              abortControllerRef.current = null;
+              if (abortControllerRef.current === abortController) {
+                abortControllerRef.current = null;
+              }
               setAnswer(response.answer);
               setDisclaimer(response.disclaimer);
               setReferences(response.references);
@@ -97,7 +107,9 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
             })
             .catch((err) => {
               if (err.name !== 'AbortError') {
-                abortControllerRef.current = null;
+                if (abortControllerRef.current === abortController) {
+                  abortControllerRef.current = null;
+                }
                 setError(err?.responseBody?.error ?? err?.message ?? 'An unknown error occurred');
                 setIsLoading(false);
               }
@@ -122,6 +134,7 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
   }, []);
 
   return {
+    submittedQuestion,
     answer,
     disclaimer,
     references,

@@ -6,10 +6,10 @@ import styles from './ai-feedback.scss';
 
 interface AiFeedbackProps {
   questionId: string;
-  patientUuid: string;
+  onComplete?: () => void;
 }
 
-const AiFeedback: React.FC<AiFeedbackProps> = ({ questionId, patientUuid }) => {
+const AiFeedback: React.FC<AiFeedbackProps> = ({ questionId, onComplete }) => {
   const { t } = useTranslation();
   const [rating, setRating] = useState<FeedbackRating | null>(null);
   const [comment, setComment] = useState('');
@@ -22,14 +22,15 @@ const AiFeedback: React.FC<AiFeedbackProps> = ({ questionId, patientUuid }) => {
 
       if (selectedRating === 'positive') {
         setSubmitted(true);
+        onComplete?.();
         try {
-          await submitFeedback({ questionId, patient: patientUuid, rating: selectedRating });
+          await submitFeedback({ questionId, rating: selectedRating });
         } catch {
           // Silently fail — feedback is non-critical
         }
       }
     },
-    [questionId, patientUuid],
+    [questionId, onComplete],
   );
 
   const handleCommentSubmit = useCallback(async () => {
@@ -37,7 +38,6 @@ const AiFeedback: React.FC<AiFeedbackProps> = ({ questionId, patientUuid }) => {
     try {
       await submitFeedback({
         questionId,
-        patient: patientUuid,
         rating: 'negative',
         comment: comment.trim() || undefined,
       });
@@ -46,7 +46,8 @@ const AiFeedback: React.FC<AiFeedbackProps> = ({ questionId, patientUuid }) => {
     }
     setIsSubmitting(false);
     setSubmitted(true);
-  }, [questionId, patientUuid, comment]);
+    onComplete?.();
+  }, [questionId, comment, onComplete]);
 
   const handleCommentKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -75,6 +76,7 @@ const AiFeedback: React.FC<AiFeedbackProps> = ({ questionId, patientUuid }) => {
             className={styles.ratingButton}
             onClick={() => handleRate('positive')}
             aria-label={t('helpful', 'Helpful')}
+            title={t('helpful', 'Helpful')}
             type="button"
             disabled={isSubmitting}
           >
@@ -84,6 +86,7 @@ const AiFeedback: React.FC<AiFeedbackProps> = ({ questionId, patientUuid }) => {
             className={styles.ratingButton}
             onClick={() => handleRate('negative')}
             aria-label={t('notHelpful', 'Not helpful')}
+            title={t('notHelpful', 'Not helpful')}
             type="button"
             disabled={isSubmitting}
           >
@@ -100,14 +103,29 @@ const AiFeedback: React.FC<AiFeedbackProps> = ({ questionId, patientUuid }) => {
             onChange={(e) => setComment(e.target.value)}
             onKeyDown={handleCommentKeyDown}
             placeholder={t('feedbackPlaceholder', 'What was wrong? (optional)')}
+            aria-label={t('feedbackPlaceholder', 'What was wrong? (optional)')}
             rows={2}
             maxLength={500}
             disabled={isSubmitting}
             autoFocus
           />
-          <button className={styles.submitButton} onClick={handleCommentSubmit} type="button" disabled={isSubmitting}>
-            {t('submitFeedback', 'Submit')}
-          </button>
+          <div className={styles.commentActions}>
+            <button
+              className={styles.cancelButton}
+              onClick={() => {
+                setRating(null);
+                setComment('');
+                onComplete?.();
+              }}
+              type="button"
+              disabled={isSubmitting}
+            >
+              {t('cancel', 'Cancel')}
+            </button>
+            <button className={styles.submitButton} onClick={handleCommentSubmit} type="button" disabled={isSubmitting}>
+              {t('submitFeedback', 'Submit')}
+            </button>
+          </div>
         </div>
       )}
     </div>

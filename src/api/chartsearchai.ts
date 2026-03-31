@@ -20,7 +20,6 @@ export type FeedbackRating = 'positive' | 'negative';
 
 export interface AiFeedback {
   questionId: string;
-  patient: string;
   rating: FeedbackRating;
   comment?: string;
 }
@@ -165,6 +164,18 @@ export function searchPatientChartStream(
             const raw = line.slice(5);
             dataLines.push(raw.startsWith(' ') ? raw.slice(1) : raw);
           }
+        }
+      }
+
+      // Process any remaining data in the buffer (stream ended without trailing newline)
+      if (buffer) {
+        const line = buffer;
+        buffer = '';
+        if (line.startsWith('event:')) {
+          eventType = line.slice(6).trim();
+        } else if (line.startsWith('data:')) {
+          const raw = line.slice(5);
+          dataLines.push(raw.startsWith(' ') ? raw.slice(1) : raw);
         }
       }
 
