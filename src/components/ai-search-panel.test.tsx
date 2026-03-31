@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { act } from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
@@ -31,16 +31,20 @@ const mockClearSpeechError = jest.fn();
 let mockIsListening = false;
 let mockIsSpeechSupported = false;
 let mockSpeechError: string | null = null;
+let capturedOnResult: ((transcript: string) => void) | null = null;
 
 jest.mock('../hooks/useSpeechRecognition', () => ({
-  useSpeechRecognition: () => ({
-    isListening: mockIsListening,
-    isSupported: mockIsSpeechSupported,
-    error: mockSpeechError,
-    startListening: mockStartListening,
-    stopListening: mockStopListening,
-    clearError: mockClearSpeechError,
-  }),
+  useSpeechRecognition: (onResult: (transcript: string) => void) => {
+    capturedOnResult = onResult;
+    return {
+      isListening: mockIsListening,
+      isSupported: mockIsSpeechSupported,
+      error: mockSpeechError,
+      startListening: mockStartListening,
+      stopListening: mockStopListening,
+      clearError: mockClearSpeechError,
+    };
+  },
 }));
 
 jest.mock('../api/chartsearchai', () => ({
@@ -71,6 +75,7 @@ beforeEach(() => {
   mockStartListening.mockClear();
   mockStopListening.mockClear();
   mockClearSpeechError.mockClear();
+  capturedOnResult = null;
 
   mockUseConfig.mockReturnValue({
     aiSearchPlaceholder: 'Ask AI about this patient...',
@@ -240,6 +245,16 @@ describe('AiSearchPanel', () => {
       render(<AiSearchPanel onClose={onClose} />);
 
       expect(screen.getByText(/speech recognition failed/i)).toBeInTheDocument();
+    });
+
+    it('auto-submits after speech result', () => {
+      render(<AiSearchPanel onClose={onClose} />);
+
+      act(() => {
+        capturedOnResult?.('What are the allergies?');
+      });
+
+      expect(mockSubmitQuestion).toHaveBeenCalledWith('test-patient-uuid', 'What are the allergies?');
     });
 
     it('hides mic button while loading', () => {
