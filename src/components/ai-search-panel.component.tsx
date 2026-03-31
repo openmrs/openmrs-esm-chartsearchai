@@ -37,11 +37,17 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
   const questionRef = useRef(question);
   questionRef.current = question;
 
-  const handleSpeechResult = useCallback((transcript: string) => {
-    const existing = questionRef.current.trimEnd();
-    const fullQuestion = existing ? existing + ' ' + transcript : transcript;
-    setQuestion(fullQuestion);
-  }, []);
+  const handleSpeechResult = useCallback(
+    (transcript: string) => {
+      const existing = questionRef.current.trimEnd();
+      const fullQuestion = existing ? existing + ' ' + transcript : transcript;
+      setQuestion(fullQuestion);
+      if (fullQuestion.trim() && patient?.id && !isLoading) {
+        submitQuestion(patient.id, fullQuestion.trim());
+      }
+    },
+    [patient?.id, isLoading, submitQuestion],
+  );
 
   const {
     isListening,
