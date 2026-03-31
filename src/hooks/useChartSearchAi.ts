@@ -12,6 +12,7 @@ interface UseChartSearchAiReturn {
   answer: string;
   disclaimer: string;
   references: AiReference[];
+  questionId: string;
   isLoading: boolean;
   error: string | null;
   submitQuestion: (patientUuid: string, question: string) => void;
@@ -23,6 +24,7 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
   const [answer, setAnswer] = useState('');
   const [disclaimer, setDisclaimer] = useState('');
   const [references, setReferences] = useState<AiReference[]>([]);
+  const [questionId, setQuestionId] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -31,6 +33,7 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
     setAnswer('');
     setDisclaimer('');
     setReferences([]);
+    setQuestionId('');
     setError(null);
     setIsLoading(false);
     if (abortControllerRef.current) {
@@ -53,6 +56,7 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
       setAnswer('');
       setDisclaimer('');
       setReferences([]);
+      setQuestionId('');
       setError(null);
       setIsLoading(true);
 
@@ -70,6 +74,7 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
                 setAnswer(response.answer);
                 setDisclaimer(response.disclaimer);
                 setReferences(response.references);
+                setQuestionId(response.questionId ?? '');
                 setIsLoading(false);
               },
               onError: (errMessage) => {
@@ -87,6 +92,7 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
               setAnswer(response.answer);
               setDisclaimer(response.disclaimer);
               setReferences(response.references);
+              setQuestionId(response.questionId ?? '');
               setIsLoading(false);
             })
             .catch((err) => {
@@ -119,6 +125,7 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
     answer,
     disclaimer,
     references,
+    questionId,
     isLoading,
     error,
     submitQuestion,

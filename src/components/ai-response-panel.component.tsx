@@ -3,12 +3,14 @@ import { useTranslation } from 'react-i18next';
 import { InlineLoading } from '@carbon/react';
 import { navigate } from '@openmrs/esm-framework';
 import { type AiReference } from '../api/chartsearchai';
+import AiFeedback from './ai-feedback.component';
 import styles from './ai-response-panel.scss';
 
 interface AiResponsePanelProps {
   answer: string;
   disclaimer: string;
   references: AiReference[];
+  questionId: string;
   error: string | null;
   isLoading: boolean;
   patientUuid: string;
@@ -75,6 +77,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   answer,
   disclaimer,
   references,
+  questionId,
   error,
   isLoading,
   patientUuid,
@@ -144,6 +147,10 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
             })}
           </div>
         </div>
+      )}
+
+      {answer && !isLoading && questionId && (
+        <AiFeedback key={questionId} questionId={questionId} patientUuid={patientUuid} />
       )}
     </div>
   );

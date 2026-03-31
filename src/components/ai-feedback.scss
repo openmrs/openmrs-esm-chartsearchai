@@ -1,0 +1,101 @@
+@use '@carbon/layout';
+@use '@carbon/colors';
+@use '@carbon/type';
+
+.feedbackContainer {
+  padding-top: layout.$spacing-03;
+  border-top: 1px solid colors.$gray-20;
+}
+
+.ratingRow {
+  display: flex;
+  align-items: center;
+  gap: layout.$spacing-03;
+}
+
+.promptText {
+  @include type.type-style('label-01');
+  color: colors.$gray-60;
+}
+
+.ratingButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: layout.$spacing-02;
+  border: none;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: colors.$gray-60;
+  cursor: pointer;
+
+  &:hover {
+    background-color: colors.$gray-20;
+    color: colors.$gray-90;
+  }
+
+  &:focus {
+    outline: 2px solid colors.$blue-60;
+    outline-offset: -2px;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+}
+
+.commentSection {
+  display: flex;
+  flex-direction: column;
+  gap: layout.$spacing-03;
+}
+
+.commentInput {
+  @include type.type-style('body-compact-01');
+  width: 100%;
+  padding: layout.$spacing-03;
+  border: 1px solid colors.$gray-30;
+  border-radius: 0.25rem;
+  resize: vertical;
+  font-family: inherit;
+
+  &:focus {
+    outline: 2px solid colors.$blue-60;
+    outline-offset: -2px;
+  }
+
+  &::placeholder {
+    color: colors.$gray-50;
+  }
+}
+
+.submitButton {
+  @include type.type-style('body-compact-01');
+  align-self: flex-end;
+  padding: layout.$spacing-02 layout.$spacing-05;
+  border: none;
+  border-radius: 0.25rem;
+  background-color: colors.$blue-60;
+  color: colors.$white-0;
+  cursor: pointer;
+
+  &:hover {
+    background-color: colors.$blue-70;
+  }
+
+  &:focus {
+    outline: 2px solid colors.$blue-80;
+    outline-offset: 2px;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+}
+
+.thanksText {
+  @include type.type-style('label-01');
+  color: colors.$gray-60;
+}

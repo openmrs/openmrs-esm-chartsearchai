@@ -13,10 +13,31 @@ export interface AiSearchResponse {
   answer: string;
   disclaimer: string;
   references: AiReference[];
+  questionId?: string;
+}
+
+export type FeedbackRating = 'positive' | 'negative';
+
+export interface AiFeedback {
+  questionId: string;
+  patient: string;
+  rating: FeedbackRating;
+  comment?: string;
 }
 
 export interface AiSearchError {
   error: string;
+}
+
+/**
+ * Submits user feedback (thumbs up/down + optional comment) for an AI response.
+ */
+export async function submitFeedback(feedback: AiFeedback): Promise<void> {
+  await openmrsFetch(`${BASE_PATH}/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(feedback),
+  });
 }
 
 /**

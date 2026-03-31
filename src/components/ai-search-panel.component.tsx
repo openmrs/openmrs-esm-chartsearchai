@@ -22,7 +22,8 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
   const panelRef = useRef<HTMLDivElement>(null);
   const responseAreaRef = useRef<HTMLDivElement>(null);
 
-  const { answer, disclaimer, references, isLoading, error, submitQuestion, clearResults } = useChartSearchAi();
+  const { answer, disclaimer, references, questionId, isLoading, error, submitQuestion, clearResults } =
+    useChartSearchAi();
 
   const questionRef = useRef(question);
   questionRef.current = question;
@@ -151,6 +152,7 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
               answer={answer}
               disclaimer={disclaimer}
               references={references}
+              questionId={questionId}
               error={error}
               isLoading={isLoading}
               patientUuid={patient?.id ?? ''}
