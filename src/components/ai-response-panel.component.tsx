@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { InlineLoading } from '@carbon/react';
 import { navigate } from '@openmrs/esm-framework';
 import { type AiReference } from '../api/chartsearchai';
+import { highlightReference } from '../utils/highlight-reference';
 import AiFeedback from './ai-feedback.component';
 import styles from './ai-response-panel.scss';
 
@@ -49,7 +50,7 @@ function renderAnswerWithCitations(answer: string, references: AiReference[], pa
     const citIndex = parseInt(match[1], 10);
     const ref = refByIndex.get(citIndex);
     const url = ref ? buildReferenceUrl(ref, patientUuid) : null;
-    if (url) {
+    if (url && ref) {
       parts.push(
         <a
           key={`cit-${match.index}`}
@@ -58,6 +59,7 @@ function renderAnswerWithCitations(answer: string, references: AiReference[], pa
           onClick={(e) => {
             e.preventDefault();
             navigate({ to: url });
+            highlightReference(ref.resourceId, ref.date);
           }}
         >
           {match[0]}
@@ -131,6 +133,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                   onClick={(e) => {
                     e.preventDefault();
                     navigate({ to: url });
+                    highlightReference(ref.resourceId, ref.date);
                   }}
                 >
                   {label}

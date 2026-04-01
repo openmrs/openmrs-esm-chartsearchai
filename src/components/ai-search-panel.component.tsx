@@ -37,17 +37,26 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
   const questionRef = useRef(question);
   questionRef.current = question;
 
-  const handleSpeechResult = useCallback(
-    (transcript: string) => {
-      const existing = questionRef.current.trimEnd();
-      const fullQuestion = existing ? existing + ' ' + transcript : transcript;
-      setQuestion(fullQuestion);
-      if (fullQuestion.trim() && patient?.id && !isLoading) {
-        submitQuestion(patient.id, fullQuestion.trim());
-      }
-    },
-    [patient?.id, isLoading, submitQuestion],
-  );
+  const pendingSpeechSubmitRef = useRef(false);
+
+  const handleSpeechResult = useCallback((transcript: string) => {
+    const existing = questionRef.current.trimEnd();
+    const fullQuestion = existing ? existing + ' ' + transcript : transcript;
+    setQuestion(fullQuestion);
+    pendingSpeechSubmitRef.current = true;
+  }, []);
+
+  // Auto-submit after speech recognition sets the question. Runs in a
+  // useEffect so that React has committed the state update before we
+  // call submitQuestion, avoiding stale closure / ref timing issues.
+  useEffect(() => {
+    if (!pendingSpeechSubmitRef.current) return;
+    pendingSpeechSubmitRef.current = false;
+    const trimmed = question.trim();
+    if (trimmed && patient?.id && !isLoading) {
+      submitQuestion(patient.id, trimmed);
+    }
+  }, [question, patient?.id, isLoading, submitQuestion]);
 
   const {
     isListening,
