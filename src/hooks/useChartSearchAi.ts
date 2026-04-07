@@ -53,8 +53,10 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
     }
     setMessages((prev) => {
       if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
+      if (!last.isLoading) return prev;
       const updated = [...prev];
-      updated[updated.length - 1] = { ...updated[updated.length - 1], isLoading: false };
+      updated[updated.length - 1] = { ...last, isLoading: false };
       return updated;
     });
   }, []);
@@ -78,16 +80,18 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
       };
 
       setMessages((prev) => [...prev, newMessage]);
+      const messageId = newMessage.id;
 
       const done = (response: AiSearchResponse) => {
         if (abortControllerRef.current === abortController) {
           abortControllerRef.current = null;
         }
         setMessages((prev) => {
-          if (prev.length === 0) return prev;
+          const idx = prev.findIndex((m) => m.id === messageId);
+          if (idx === -1) return prev;
           const updated = [...prev];
-          updated[updated.length - 1] = {
-            ...updated[updated.length - 1],
+          updated[idx] = {
+            ...updated[idx],
             answer: response.answer,
             disclaimer: response.disclaimer,
             references: response.references,
@@ -103,13 +107,10 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
           abortControllerRef.current = null;
         }
         setMessages((prev) => {
-          if (prev.length === 0) return prev;
+          const idx = prev.findIndex((m) => m.id === messageId);
+          if (idx === -1) return prev;
           const updated = [...prev];
-          updated[updated.length - 1] = {
-            ...updated[updated.length - 1],
-            error: errMessage,
-            isLoading: false,
-          };
+          updated[idx] = { ...updated[idx], error: errMessage, isLoading: false };
           return updated;
         });
       };
@@ -122,12 +123,10 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
             {
               onToken: (token) => {
                 setMessages((prev) => {
-                  if (prev.length === 0) return prev;
+                  const idx = prev.findIndex((m) => m.id === messageId);
+                  if (idx === -1) return prev;
                   const updated = [...prev];
-                  updated[updated.length - 1] = {
-                    ...updated[updated.length - 1],
-                    answer: updated[updated.length - 1].answer + token,
-                  };
+                  updated[idx] = { ...updated[idx], answer: updated[idx].answer + token };
                   return updated;
                 });
               },

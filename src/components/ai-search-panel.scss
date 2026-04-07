@@ -18,6 +18,7 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
   display: flex;
   flex-direction: column;
+  height: 32rem;
   overflow: hidden;
 }
 
@@ -28,6 +29,7 @@
   padding: layout.$spacing-03 layout.$spacing-05;
   border-bottom: 1px solid colors.$gray-20;
   background-color: colors.$gray-10;
+  flex-shrink: 0;
 }
 
 .panelTitle {
@@ -58,10 +60,46 @@
   }
 }
 
-.responseArea {
-  max-height: 20rem;
+.historyArea {
+  flex: 1;
   overflow-y: auto;
   padding: layout.$spacing-04 layout.$spacing-05;
+  display: flex;
+  flex-direction: column;
+  gap: layout.$spacing-05;
+}
+
+.emptyState {
+  @include type.type-style('body-01');
+  color: colors.$gray-50;
+  text-align: center;
+  margin: auto;
+}
+
+.messagePair {
+  display: flex;
+  flex-direction: column;
+  gap: layout.$spacing-03;
+}
+
+.questionBubble {
+  @include type.type-style('body-01');
+  align-self: flex-end;
+  background-color: colors.$blue-60;
+  color: colors.$white-0;
+  border-radius: 1rem 1rem 0.25rem 1rem;
+  padding: layout.$spacing-03 layout.$spacing-04;
+  max-width: 85%;
+  word-break: break-word;
+}
+
+.answerBubble {
+  @include type.type-style('body-01');
+  align-self: flex-start;
+  background-color: colors.$gray-20;
+  border-radius: 0.25rem 1rem 1rem 1rem;
+  padding: layout.$spacing-04 layout.$spacing-05;
+  max-width: 95%;
 }
 
 .inputArea {
@@ -69,7 +107,8 @@
   align-items: center;
   gap: layout.$spacing-03;
   padding: layout.$spacing-04 layout.$spacing-05;
-  border-bottom: 1px solid colors.$gray-20;
+  border-top: 1px solid colors.$gray-20;
+  flex-shrink: 0;
 }
 
 .searchInput {
@@ -167,12 +206,16 @@
   }
 }
 
-.loadingArea {
-  padding: 0 layout.$spacing-05 layout.$spacing-04;
-}
-
 .infoText {
   @include type.type-style('label-01');
   color: colors.$gray-60;
   margin: 0;
+}
+
+.speechError {
+  @include type.type-style('label-01');
+  color: colors.$red-60;
+  margin: 0;
+  padding: layout.$spacing-02 layout.$spacing-05;
+  flex-shrink: 0;
 }
