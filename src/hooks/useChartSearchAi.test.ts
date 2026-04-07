@@ -19,17 +19,14 @@ beforeEach(() => {
 });
 
 describe('useChartSearchAi', () => {
-  it('returns initial state', () => {
+  it('returns empty messages and not loading initially', () => {
     const { result } = renderHook(() => useChartSearchAi());
 
-    expect(result.current.answer).toBe('');
-    expect(result.current.disclaimer).toBe('');
-    expect(result.current.references).toEqual([]);
-    expect(result.current.isLoading).toBe(false);
-    expect(result.current.error).toBeNull();
+    expect(result.current.messages).toEqual([]);
+    expect(result.current.isAnyLoading).toBe(false);
   });
 
-  it('sets loading state on submit', () => {
+  it('appends a loading message on submitQuestion', () => {
     mockSearchPatientChart.mockReturnValue(new Promise(() => {}));
     const { result } = renderHook(() => useChartSearchAi());
 
@@ -37,8 +34,16 @@ describe('useChartSearchAi', () => {
       result.current.submitQuestion('patient-uuid', 'What meds?');
     });
 
-    expect(result.current.isLoading).toBe(true);
-    expect(mockSearchPatientChart).toHaveBeenCalledWith('patient-uuid', 'What meds?', expect.any(AbortController));
+    expect(result.current.messages).toHaveLength(1);
+    expect(result.current.messages[0].question).toBe('What meds?');
+    expect(result.current.messages[0].isLoading).toBe(true);
+    expect(result.current.messages[0].answer).toBe('');
+    expect(result.current.isAnyLoading).toBe(true);
+    expect(mockSearchPatientChart).toHaveBeenCalledWith(
+      'patient-uuid',
+      'What meds?',
+      expect.any(AbortController),
+    );
   });
 
   it('populates answer on successful sync response', async () => {
@@ -46,6 +51,7 @@ describe('useChartSearchAi', () => {
       answer: 'The patient is on metformin.',
       disclaimer: 'AI-generated.',
       references: [{ index: 1, resourceType: 'DrugOrder', resourceId: 1, date: '2025-01-01' }],
+      questionId: 'q-abc',
     };
     mockSearchPatientChart.mockResolvedValue(response);
 
@@ -55,10 +61,13 @@ describe('useChartSearchAi', () => {
       result.current.submitQuestion('patient-uuid', 'What meds?');
     });
 
-    expect(result.current.answer).toBe('The patient is on metformin.');
-    expect(result.current.disclaimer).toBe('AI-generated.');
-    expect(result.current.references).toEqual(response.references);
-    expect(result.current.isLoading).toBe(false);
+    expect(result.current.messages).toHaveLength(1);
+    expect(result.current.messages[0].answer).toBe('The patient is on metformin.');
+    expect(result.current.messages[0].disclaimer).toBe('AI-generated.');
+    expect(result.current.messages[0].references).toEqual(response.references);
+    expect(result.current.messages[0].questionId).toBe('q-abc');
+    expect(result.current.messages[0].isLoading).toBe(false);
+    expect(result.current.isAnyLoading).toBe(false);
   });
 
   it('sets error on failed sync response', async () => {
@@ -70,8 +79,31 @@ describe('useChartSearchAi', () => {
       result.current.submitQuestion('patient-uuid', 'What meds?');
     });
 
-    expect(result.current.error).toBe('Server error');
-    expect(result.current.isLoading).toBe(false);
+    expect(result.current.messages[0].error).toBe('Server error');
+    expect(result.current.messages[0].isLoading).toBe(false);
+    expect(result.current.isAnyLoading).toBe(false);
+  });
+
+  it('appends a second message without removing the first', async () => {
+    const response1 = { answer: 'Answer 1.', disclaimer: '', references: [], questionId: 'q-1' };
+    const response2 = { answer: 'Answer 2.', disclaimer: '', references: [], questionId: 'q-2' };
+    mockSearchPatientChart.mockResolvedValueOnce(response1).mockResolvedValueOnce(response2);
+
+    const { result } = renderHook(() => useChartSearchAi());
+
+    await act(async () => {
+      result.current.submitQuestion('patient-uuid', 'First question?');
+    });
+
+    await act(async () => {
+      result.current.submitQuestion('patient-uuid', 'Second question?');
+    });
+
+    expect(result.current.messages).toHaveLength(2);
+    expect(result.current.messages[0].question).toBe('First question?');
+    expect(result.current.messages[0].answer).toBe('Answer 1.');
+    expect(result.current.messages[1].question).toBe('Second question?');
+    expect(result.current.messages[1].answer).toBe('Answer 2.');
   });
 
   it('uses streaming endpoint when configured', () => {
@@ -94,7 +126,7 @@ describe('useChartSearchAi', () => {
     );
   });
 
-  it('accumulates tokens during streaming', () => {
+  it('accumulates tokens into the last message during streaming', () => {
     mockUseConfig.mockReturnValue({ useStreaming: true });
     const { result } = renderHook(() => useChartSearchAi());
 
@@ -109,11 +141,11 @@ describe('useChartSearchAi', () => {
       callbacks.onToken(' world');
     });
 
-    expect(result.current.answer).toBe('Hello world');
-    expect(result.current.isLoading).toBe(true);
+    expect(result.current.messages[0].answer).toBe('Hello world');
+    expect(result.current.messages[0].isLoading).toBe(true);
   });
 
-  it('finalizes state on streaming done', () => {
+  it('finalizes last message on streaming done', () => {
     mockUseConfig.mockReturnValue({ useStreaming: true });
     const { result } = renderHook(() => useChartSearchAi());
 
@@ -126,43 +158,67 @@ describe('useChartSearchAi', () => {
       answer: 'Final answer.',
       disclaimer: 'Disclaimer text.',
       references: [{ index: 1, resourceType: 'Obs', resourceId: 10, date: '2025-06-01' }],
+      questionId: 'q-stream-1',
     };
 
     act(() => {
       callbacks.onDone(finalResponse);
     });
 
-    expect(result.current.answer).toBe('Final answer.');
-    expect(result.current.disclaimer).toBe('Disclaimer text.');
-    expect(result.current.references).toEqual(finalResponse.references);
-    expect(result.current.isLoading).toBe(false);
+    expect(result.current.messages[0].answer).toBe('Final answer.');
+    expect(result.current.messages[0].disclaimer).toBe('Disclaimer text.');
+    expect(result.current.messages[0].references).toEqual(finalResponse.references);
+    expect(result.current.messages[0].questionId).toBe('q-stream-1');
+    expect(result.current.messages[0].isLoading).toBe(false);
   });
 
-  it('clears results', async () => {
-    const response = {
-      answer: 'Answer.',
-      disclaimer: 'Disclaimer.',
-      references: [],
-    };
+  it('clearMessages resets to empty array and aborts in-flight request', () => {
+    mockSearchPatientChart.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useChartSearchAi());
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Question?');
+    });
+
+    const abortController = mockSearchPatientChart.mock.calls[0][2] as AbortController;
+    expect(result.current.messages).toHaveLength(1);
+    expect(abortController.signal.aborted).toBe(false);
+
+    act(() => {
+      result.current.clearMessages();
+    });
+
+    expect(result.current.messages).toEqual([]);
+    expect(result.current.isAnyLoading).toBe(false);
+    expect(abortController.signal.aborted).toBe(true);
+  });
+
+  it('stopCurrent stops loading on last message without clearing history', async () => {
+    const response = { answer: 'Answer.', disclaimer: '', references: [], questionId: 'q-1' };
     mockSearchPatientChart.mockResolvedValue(response);
 
     const { result } = renderHook(() => useChartSearchAi());
 
     await act(async () => {
-      result.current.submitQuestion('patient-uuid', 'Question?');
+      result.current.submitQuestion('patient-uuid', 'First?');
     });
 
-    expect(result.current.answer).toBe('Answer.');
+    // Second question — will hang
+    mockSearchPatientChart.mockReturnValue(new Promise(() => {}));
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Second?');
+    });
+
+    expect(result.current.messages).toHaveLength(2);
+    expect(result.current.messages[1].isLoading).toBe(true);
 
     act(() => {
-      result.current.clearResults();
+      result.current.stopCurrent();
     });
 
-    expect(result.current.answer).toBe('');
-    expect(result.current.disclaimer).toBe('');
-    expect(result.current.references).toEqual([]);
-    expect(result.current.error).toBeNull();
-    expect(result.current.isLoading).toBe(false);
+    expect(result.current.messages).toHaveLength(2);
+    expect(result.current.messages[0].answer).toBe('Answer.');
+    expect(result.current.messages[1].isLoading).toBe(false);
   });
 
   it('ignores AbortError on cancelled requests', async () => {
@@ -175,7 +231,7 @@ describe('useChartSearchAi', () => {
       result.current.submitQuestion('patient-uuid', 'Question?');
     });
 
-    expect(result.current.error).toBeNull();
+    expect(result.current.messages[0]?.error).toBeNull();
   });
 
   it('aborts in-flight request on unmount', () => {

@@ -8,61 +8,111 @@ import {
 } from '../api/chartsearchai';
 import { type ChartSearchAiConfig } from '../config-schema';
 
-interface UseChartSearchAiReturn {
-  submittedQuestion: string;
+export interface ChatMessage {
+  id: string;
+  question: string;
   answer: string;
   disclaimer: string;
   references: AiReference[];
   questionId: string;
   isLoading: boolean;
   error: string | null;
+}
+
+interface UseChartSearchAiReturn {
+  messages: ChatMessage[];
+  isAnyLoading: boolean;
   submitQuestion: (patientUuid: string, question: string) => void;
-  clearResults: () => void;
+  clearMessages: () => void;
+  stopCurrent: () => void;
+}
+
+function generateId(): string {
+  return typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2);
 }
 
 export function useChartSearchAi(): UseChartSearchAiReturn {
   const config = useConfig<ChartSearchAiConfig>();
-  const [submittedQuestion, setSubmittedQuestion] = useState('');
-  const [answer, setAnswer] = useState('');
-  const [disclaimer, setDisclaimer] = useState('');
-  const [references, setReferences] = useState<AiReference[]>([]);
-  const [questionId, setQuestionId] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const clearResults = useCallback(() => {
-    setSubmittedQuestion('');
-    setAnswer('');
-    setDisclaimer('');
-    setReferences([]);
-    setQuestionId('');
-    setError(null);
-    setIsLoading(false);
+  const clearMessages = useCallback(() => {
+    setMessages([]);
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
   }, []);
 
+  const stopCurrent = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setMessages((prev) => {
+      if (prev.length === 0) return prev;
+      const updated = [...prev];
+      updated[updated.length - 1] = { ...updated[updated.length - 1], isLoading: false };
+      return updated;
+    });
+  }, []);
+
   const submitQuestion = useCallback(
     (patientUuid: string, question: string) => {
-      // Guard against rapid duplicate submissions (ref is synchronous,
-      // unlike the isLoading state which only updates on next render)
-      if (abortControllerRef.current) {
-        return;
-      }
+      if (abortControllerRef.current) return;
 
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
 
-      setSubmittedQuestion(question);
-      setAnswer('');
-      setDisclaimer('');
-      setReferences([]);
-      setQuestionId('');
-      setError(null);
-      setIsLoading(true);
+      const newMessage: ChatMessage = {
+        id: generateId(),
+        question,
+        answer: '',
+        disclaimer: '',
+        references: [],
+        questionId: '',
+        isLoading: true,
+        error: null,
+      };
+
+      setMessages((prev) => [...prev, newMessage]);
+
+      const done = (response: AiSearchResponse) => {
+        if (abortControllerRef.current === abortController) {
+          abortControllerRef.current = null;
+        }
+        setMessages((prev) => {
+          if (prev.length === 0) return prev;
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            ...updated[updated.length - 1],
+            answer: response.answer,
+            disclaimer: response.disclaimer,
+            references: response.references,
+            questionId: response.questionId ?? '',
+            isLoading: false,
+          };
+          return updated;
+        });
+      };
+
+      const fail = (errMessage: string) => {
+        if (abortControllerRef.current === abortController) {
+          abortControllerRef.current = null;
+        }
+        setMessages((prev) => {
+          if (prev.length === 0) return prev;
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            ...updated[updated.length - 1],
+            error: errMessage,
+            isLoading: false,
+          };
+          return updated;
+        });
+      };
 
       try {
         if (config.useStreaming) {
@@ -71,60 +121,38 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
             question,
             {
               onToken: (token) => {
-                setAnswer((prev) => prev + token);
+                setMessages((prev) => {
+                  if (prev.length === 0) return prev;
+                  const updated = [...prev];
+                  updated[updated.length - 1] = {
+                    ...updated[updated.length - 1],
+                    answer: updated[updated.length - 1].answer + token,
+                  };
+                  return updated;
+                });
               },
-              onDone: (response: AiSearchResponse) => {
-                if (abortControllerRef.current === abortController) {
-                  abortControllerRef.current = null;
-                }
-                setAnswer(response.answer);
-                setDisclaimer(response.disclaimer);
-                setReferences(response.references);
-                setQuestionId(response.questionId ?? '');
-                setIsLoading(false);
-              },
-              onError: (errMessage) => {
-                if (abortControllerRef.current === abortController) {
-                  abortControllerRef.current = null;
-                }
-                setError(errMessage);
-                setIsLoading(false);
-              },
+              onDone: done,
+              onError: fail,
             },
             abortController,
           );
         } else {
           searchPatientChart(patientUuid, question, abortController)
-            .then((response) => {
-              if (abortControllerRef.current === abortController) {
-                abortControllerRef.current = null;
-              }
-              setAnswer(response.answer);
-              setDisclaimer(response.disclaimer);
-              setReferences(response.references);
-              setQuestionId(response.questionId ?? '');
-              setIsLoading(false);
-            })
+            .then(done)
             .catch((err) => {
               if (err.name !== 'AbortError') {
-                if (abortControllerRef.current === abortController) {
-                  abortControllerRef.current = null;
-                }
-                setError(err?.responseBody?.error ?? err?.message ?? 'An unknown error occurred');
-                setIsLoading(false);
+                fail(err?.responseBody?.error ?? err?.message ?? 'An unknown error occurred');
               }
             });
         }
       } catch (err) {
         abortControllerRef.current = null;
-        setError(err instanceof Error ? err.message : 'An unknown error occurred');
-        setIsLoading(false);
+        fail(err instanceof Error ? err.message : 'An unknown error occurred');
       }
     },
     [config.useStreaming],
   );
 
-  // Abort any in-flight request when the component unmounts
   useEffect(() => {
     return () => {
       if (abortControllerRef.current) {
@@ -133,15 +161,15 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
     };
   }, []);
 
+  // Only the last message can ever be loading because submitQuestion guards against
+  // concurrent requests via abortControllerRef.
+  const isAnyLoading = messages.length > 0 && messages[messages.length - 1].isLoading;
+
   return {
-    submittedQuestion,
-    answer,
-    disclaimer,
-    references,
-    questionId,
-    isLoading,
-    error,
+    messages,
+    isAnyLoading,
     submitQuestion,
-    clearResults,
+    clearMessages,
+    stopCurrent,
   };
 }
