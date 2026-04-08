@@ -193,32 +193,122 @@ describe('useChartSearchAi', () => {
     expect(abortController.signal.aborted).toBe(true);
   });
 
-  it('stopCurrent stops loading on last message without clearing history', async () => {
+  it('stopCurrent preserves history of completed messages when second message has partial answer', async () => {
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi());
+
+    // First question resolves via streaming
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'First?');
+    });
+    const firstCallbacks = mockSearchPatientChartStream.mock.calls[0][2];
+    act(() => {
+      firstCallbacks.onDone({ answer: 'Answer.', disclaimer: '', references: [], questionId: 'q-1' });
+    });
+
+    // Second question — receives a partial token then hangs
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Second?');
+    });
+    const secondCallbacks = mockSearchPatientChartStream.mock.calls[1][2];
+    act(() => {
+      secondCallbacks.onToken('Partial...');
+    });
+
+    expect(result.current.messages).toHaveLength(2);
+    expect(result.current.messages[1].answer).toBe('Partial...');
+
+    act(() => {
+      result.current.stopCurrent();
+    });
+
+    // Partial-answer message is kept; first message history preserved
+    expect(result.current.messages).toHaveLength(2);
+    expect(result.current.messages[0].answer).toBe('Answer.');
+    expect(result.current.messages[1].isLoading).toBe(false);
+    expect(result.current.messages[1].answer).toBe('Partial...');
+  });
+
+  it('stopCurrent aborts the in-flight request', async () => {
     const response = { answer: 'Answer.', disclaimer: '', references: [], questionId: 'q-1' };
     mockSearchPatientChart.mockResolvedValue(response);
-
     const { result } = renderHook(() => useChartSearchAi());
 
     await act(async () => {
       result.current.submitQuestion('patient-uuid', 'First?');
     });
 
-    // Second question — will hang
+    mockSearchPatientChart.mockReturnValue(new Promise(() => {}));
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Second?');
+    });
+
+    const abortController = mockSearchPatientChart.mock.calls[1][2] as AbortController;
+    expect(abortController.signal.aborted).toBe(false);
+
+    act(() => {
+      result.current.stopCurrent();
+    });
+
+    expect(abortController.signal.aborted).toBe(true);
+  });
+
+  it('stopCurrent removes the message bubble when no answer was received', async () => {
+    const response = { answer: 'Answer.', disclaimer: '', references: [], questionId: 'q-1' };
+    mockSearchPatientChart.mockResolvedValue(response);
+    const { result } = renderHook(() => useChartSearchAi());
+
+    await act(async () => {
+      result.current.submitQuestion('patient-uuid', 'First?');
+    });
+
     mockSearchPatientChart.mockReturnValue(new Promise(() => {}));
     act(() => {
       result.current.submitQuestion('patient-uuid', 'Second?');
     });
 
     expect(result.current.messages).toHaveLength(2);
-    expect(result.current.messages[1].isLoading).toBe(true);
+    expect(result.current.messages[1].answer).toBe('');
 
     act(() => {
       result.current.stopCurrent();
     });
 
-    expect(result.current.messages).toHaveLength(2);
+    // Empty-answer message is removed; history of first message preserved
+    expect(result.current.messages).toHaveLength(1);
     expect(result.current.messages[0].answer).toBe('Answer.');
-    expect(result.current.messages[1].isLoading).toBe(false);
+  });
+
+  it('drops a second submitQuestion call while the first is in flight', () => {
+    mockSearchPatientChart.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useChartSearchAi());
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'First?');
+      result.current.submitQuestion('patient-uuid', 'Second?');
+    });
+
+    expect(result.current.messages).toHaveLength(1);
+    expect(mockSearchPatientChart).toHaveBeenCalledTimes(1);
+  });
+
+  it('sets error on streaming onError', () => {
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi());
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'What meds?');
+    });
+
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+
+    act(() => {
+      callbacks.onError('Stream failed');
+    });
+
+    expect(result.current.messages[0].error).toBe('Stream failed');
+    expect(result.current.messages[0].isLoading).toBe(false);
+    expect(result.current.isAnyLoading).toBe(false);
   });
 
   it('ignores AbortError on cancelled requests', async () => {

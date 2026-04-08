@@ -37,6 +37,14 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
   const config = useConfig<ChartSearchAiConfig>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const inFlightMessageIdRef = useRef<string | null>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const clearMessages = useCallback(() => {
     setMessages([]);
@@ -44,6 +52,7 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    inFlightMessageIdRef.current = null;
   }, []);
 
   const stopCurrent = useCallback(() => {
@@ -51,14 +60,23 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
-    setMessages((prev) => {
-      if (prev.length === 0) return prev;
-      const last = prev[prev.length - 1];
-      if (!last.isLoading) return prev;
-      const updated = [...prev];
-      updated[updated.length - 1] = { ...last, isLoading: false };
-      return updated;
-    });
+    const stoppedId = inFlightMessageIdRef.current;
+    inFlightMessageIdRef.current = null;
+    if (stoppedId) {
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.id === stoppedId);
+        if (idx === -1) return prev;
+        const msg = prev[idx];
+        if (!msg.isLoading) return prev;
+        // Remove the message bubble entirely if no content was received yet
+        if (!msg.answer) {
+          return prev.filter((_, i) => i !== idx);
+        }
+        const updated = [...prev];
+        updated[idx] = { ...msg, isLoading: false };
+        return updated;
+      });
+    }
   }, []);
 
   const submitQuestion = useCallback(
@@ -81,10 +99,15 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
 
       setMessages((prev) => [...prev, newMessage]);
       const messageId = newMessage.id;
+      inFlightMessageIdRef.current = messageId;
 
       const done = (response: AiSearchResponse) => {
+        if (!isMountedRef.current) return;
         if (abortControllerRef.current === abortController) {
           abortControllerRef.current = null;
+        }
+        if (inFlightMessageIdRef.current === messageId) {
+          inFlightMessageIdRef.current = null;
         }
         setMessages((prev) => {
           const idx = prev.findIndex((m) => m.id === messageId);
@@ -103,9 +126,14 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
       };
 
       const fail = (errMessage: string) => {
+        if (!isMountedRef.current) return;
         if (abortControllerRef.current === abortController) {
           abortControllerRef.current = null;
         }
+        if (inFlightMessageIdRef.current === messageId) {
+          inFlightMessageIdRef.current = null;
+        }
+        console.error('[useChartSearchAi] Request failed:', errMessage);
         setMessages((prev) => {
           const idx = prev.findIndex((m) => m.id === messageId);
           if (idx === -1) return prev;
@@ -122,6 +150,7 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
             question,
             {
               onToken: (token) => {
+                if (!isMountedRef.current) return;
                 setMessages((prev) => {
                   const idx = prev.findIndex((m) => m.id === messageId);
                   if (idx === -1) return prev;
@@ -140,12 +169,14 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
             .then(done)
             .catch((err) => {
               if (err.name !== 'AbortError') {
+                console.error('[useChartSearchAi] Fetch failed:', err);
                 fail(err?.responseBody?.error ?? err?.message ?? 'An unknown error occurred');
               }
             });
         }
       } catch (err) {
         abortControllerRef.current = null;
+        inFlightMessageIdRef.current = null;
         fail(err instanceof Error ? err.message : 'An unknown error occurred');
       }
     },
@@ -156,6 +187,7 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
+        abortControllerRef.current = null;
       }
     };
   }, []);

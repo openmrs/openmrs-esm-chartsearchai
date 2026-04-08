@@ -321,6 +321,18 @@ describe('AiSearchPanel', () => {
       expect(mockSubmitQuestion).toHaveBeenCalledWith('test-patient-uuid', 'What are the allergies?');
     });
 
+    it('does not auto-submit speech result when a request is in flight', () => {
+      mockIsAnyLoading = true;
+      mockMessages = [makeMessage({ isLoading: true })];
+      render(<AiSearchPanel onClose={onClose} />);
+
+      act(() => {
+        capturedOnResult?.('What are the allergies?');
+      });
+
+      expect(mockSubmitQuestion).not.toHaveBeenCalled();
+    });
+
     it('hides mic button while loading', () => {
       mockIsAnyLoading = true;
       mockMessages = [makeMessage({ isLoading: true })];
