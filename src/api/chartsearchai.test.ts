@@ -80,7 +80,7 @@ describe('searchPatientChart', () => {
   });
 
   it('passes the abort signal through', async () => {
-    mockOpenmrsFetch.mockResolvedValueOnce({ data: {} });
+    mockOpenmrsFetch.mockResolvedValueOnce({ data: { answer: 'ok', disclaimer: '', references: [] } });
     const ac = new AbortController();
 
     await searchPatientChart('uuid-1', 'q', ac);

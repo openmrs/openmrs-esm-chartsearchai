@@ -187,8 +187,10 @@ export function searchPatientChartStream(
             dataLines.push(raw.startsWith(' ') ? raw.slice(1) : raw);
           }
         }
-        dispatchEvent();
       }
+
+      // Flush any event accumulated in the loop but not yet dispatched
+      dispatchEvent();
 
       if (!streamFinalized) {
         callbacks.onError('Stream ended unexpectedly without a response');
