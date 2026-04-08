@@ -28,9 +28,7 @@ interface UseChartSearchAiReturn {
 }
 
 function generateId(): string {
-  return typeof crypto !== 'undefined' && crypto.randomUUID
-    ? crypto.randomUUID()
-    : Math.random().toString(36).slice(2);
+  return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
 }
 
 export function useChartSearchAi(): UseChartSearchAiReturn {

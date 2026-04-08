@@ -124,10 +124,7 @@ describe('AiSearchPanel', () => {
     await user.type(input, 'What medications is this patient on?');
     await user.click(screen.getByRole('button', { name: /send/i }));
 
-    expect(mockSubmitQuestion).toHaveBeenCalledWith(
-      'test-patient-uuid',
-      'What medications is this patient on?',
-    );
+    expect(mockSubmitQuestion).toHaveBeenCalledWith('test-patient-uuid', 'What medications is this patient on?');
   });
 
   it('clears the input after submitting', async () => {

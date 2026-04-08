@@ -39,11 +39,7 @@ describe('useChartSearchAi', () => {
     expect(result.current.messages[0].isLoading).toBe(true);
     expect(result.current.messages[0].answer).toBe('');
     expect(result.current.isAnyLoading).toBe(true);
-    expect(mockSearchPatientChart).toHaveBeenCalledWith(
-      'patient-uuid',
-      'What meds?',
-      expect.any(AbortController),
-    );
+    expect(mockSearchPatientChart).toHaveBeenCalledWith('patient-uuid', 'What meds?', expect.any(AbortController));
   });
 
   it('populates answer on successful sync response', async () => {

@@ -185,9 +185,7 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
                   patientUuid={patient?.id ?? ''}
                   onFeedbackComplete={handleFeedbackComplete}
                 />
-                {msg.isLoading && !msg.answer && (
-                  <InlineLoading description={t('thinkingEllipsis', 'Thinking...')} />
-                )}
+                {msg.isLoading && !msg.answer && <InlineLoading description={t('thinkingEllipsis', 'Thinking...')} />}
               </div>
             </div>
           ))}
