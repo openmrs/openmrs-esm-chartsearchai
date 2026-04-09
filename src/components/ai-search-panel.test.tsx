@@ -57,7 +57,6 @@ function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
     id: 'msg-1',
     question: 'What meds is this patient on?',
     answer: 'The patient is on metformin.',
-    disclaimer: '',
     references: [],
     questionId: 'q-1',
     isLoading: false,

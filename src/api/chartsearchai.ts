@@ -11,7 +11,6 @@ export interface AiReference {
 
 export interface AiSearchResponse {
   answer: string;
-  disclaimer: string;
   references: AiReference[];
   questionId?: string;
 }

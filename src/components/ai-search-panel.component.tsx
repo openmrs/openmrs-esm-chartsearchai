@@ -142,7 +142,7 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
     inputRef.current?.focus();
   }, []);
 
-  const panelDisclaimer = messages.find((m) => m.disclaimer)?.disclaimer;
+  const hasCompletedAnswer = messages.some((m) => !m.isLoading && m.answer);
 
   return (
     <div className={styles.panelContainer}>
@@ -192,7 +192,14 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
           ))}
         </div>
 
-        {panelDisclaimer && <p className={styles.disclaimer}>{panelDisclaimer}</p>}
+        {hasCompletedAnswer && (
+          <p className={styles.disclaimer}>
+            {t(
+              'aiDisclaimerText',
+              "This response is AI-generated and may not be accurate. It is not a substitute for clinical judgment. Always verify against the patient's medical records.",
+            )}
+          </p>
+        )}
 
         {speechError && (
           <p className={styles.speechError}>

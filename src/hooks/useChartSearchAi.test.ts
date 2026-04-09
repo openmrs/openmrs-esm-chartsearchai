@@ -45,7 +45,6 @@ describe('useChartSearchAi', () => {
   it('populates answer on successful sync response', async () => {
     const response = {
       answer: 'The patient is on metformin.',
-      disclaimer: 'AI-generated.',
       references: [{ index: 1, resourceType: 'DrugOrder', resourceId: 1, date: '2025-01-01' }],
       questionId: 'q-abc',
     };
@@ -59,7 +58,6 @@ describe('useChartSearchAi', () => {
 
     expect(result.current.messages).toHaveLength(1);
     expect(result.current.messages[0].answer).toBe('The patient is on metformin.');
-    expect(result.current.messages[0].disclaimer).toBe('AI-generated.');
     expect(result.current.messages[0].references).toEqual(response.references);
     expect(result.current.messages[0].questionId).toBe('q-abc');
     expect(result.current.messages[0].isLoading).toBe(false);
@@ -81,8 +79,8 @@ describe('useChartSearchAi', () => {
   });
 
   it('appends a second message without removing the first', async () => {
-    const response1 = { answer: 'Answer 1.', disclaimer: '', references: [], questionId: 'q-1' };
-    const response2 = { answer: 'Answer 2.', disclaimer: '', references: [], questionId: 'q-2' };
+    const response1 = { answer: 'Answer 1.', references: [], questionId: 'q-1' };
+    const response2 = { answer: 'Answer 2.', references: [], questionId: 'q-2' };
     mockSearchPatientChart.mockResolvedValueOnce(response1).mockResolvedValueOnce(response2);
 
     const { result } = renderHook(() => useChartSearchAi());
@@ -152,7 +150,6 @@ describe('useChartSearchAi', () => {
     const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
     const finalResponse = {
       answer: 'Final answer.',
-      disclaimer: 'Disclaimer text.',
       references: [{ index: 1, resourceType: 'Obs', resourceId: 10, date: '2025-06-01' }],
       questionId: 'q-stream-1',
     };
@@ -162,7 +159,6 @@ describe('useChartSearchAi', () => {
     });
 
     expect(result.current.messages[0].answer).toBe('Final answer.');
-    expect(result.current.messages[0].disclaimer).toBe('Disclaimer text.');
     expect(result.current.messages[0].references).toEqual(finalResponse.references);
     expect(result.current.messages[0].questionId).toBe('q-stream-1');
     expect(result.current.messages[0].isLoading).toBe(false);
@@ -199,7 +195,7 @@ describe('useChartSearchAi', () => {
     });
     const firstCallbacks = mockSearchPatientChartStream.mock.calls[0][2];
     act(() => {
-      firstCallbacks.onDone({ answer: 'Answer.', disclaimer: '', references: [], questionId: 'q-1' });
+      firstCallbacks.onDone({ answer: 'Answer.', references: [], questionId: 'q-1' });
     });
 
     // Second question — receives a partial token then hangs
@@ -226,7 +222,7 @@ describe('useChartSearchAi', () => {
   });
 
   it('stopCurrent aborts the in-flight request', async () => {
-    const response = { answer: 'Answer.', disclaimer: '', references: [], questionId: 'q-1' };
+    const response = { answer: 'Answer.', references: [], questionId: 'q-1' };
     mockSearchPatientChart.mockResolvedValue(response);
     const { result } = renderHook(() => useChartSearchAi());
 
@@ -250,7 +246,7 @@ describe('useChartSearchAi', () => {
   });
 
   it('stopCurrent removes the message bubble when no answer was received', async () => {
-    const response = { answer: 'Answer.', disclaimer: '', references: [], questionId: 'q-1' };
+    const response = { answer: 'Answer.', references: [], questionId: 'q-1' };
     mockSearchPatientChart.mockResolvedValue(response);
     const { result } = renderHook(() => useChartSearchAi());
 

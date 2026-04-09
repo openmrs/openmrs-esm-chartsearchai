@@ -62,7 +62,6 @@ describe('searchPatientChart', () => {
   it('sends a POST and returns data', async () => {
     const expected: AiSearchResponse = {
       answer: 'Test answer',
-      disclaimer: 'Disclaimer',
       references: [],
     };
     mockOpenmrsFetch.mockResolvedValueOnce({ data: expected });
@@ -80,7 +79,7 @@ describe('searchPatientChart', () => {
   });
 
   it('passes the abort signal through', async () => {
-    mockOpenmrsFetch.mockResolvedValueOnce({ data: { answer: 'ok', disclaimer: '', references: [] } });
+    mockOpenmrsFetch.mockResolvedValueOnce({ data: { answer: 'ok', references: [] } });
     const ac = new AbortController();
 
     await searchPatientChart('uuid-1', 'q', ac);
@@ -117,7 +116,7 @@ describe('searchPatientChartStream', () => {
       .mockResolvedValueOnce(
         mockStreamResponse([
           'event:token\ndata: Hello\n\nevent:token\ndata:  world\n\n',
-          'event:done\ndata: {"answer":"Hello world","disclaimer":"d","references":[]}\n\n',
+          'event:done\ndata: {"answer":"Hello world","references":[]}\n\n',
         ]),
       );
 
@@ -128,7 +127,6 @@ describe('searchPatientChartStream', () => {
     expect(cb.onToken).toHaveBeenCalledWith(' world');
     expect(cb.onDone).toHaveBeenCalledWith({
       answer: 'Hello world',
-      disclaimer: 'd',
       references: [],
     });
     expect(cb.onError).not.toHaveBeenCalled();
@@ -141,7 +139,7 @@ describe('searchPatientChartStream', () => {
       .mockResolvedValueOnce(
         mockStreamResponse([
           'event:token\ndata: line1\ndata: line2\ndata: line3\n\n',
-          'event:done\ndata: {"answer":"a","disclaimer":"","references":[]}\n\n',
+          'event:done\ndata: {"answer":"a","references":[]}\n\n',
         ]),
       );
 
@@ -160,7 +158,7 @@ describe('searchPatientChartStream', () => {
         mockStreamResponse([
           'event:tok',
           'en\ndata: partial\n\n',
-          'event:done\ndata: {"answer":"p","disclaimer":"","references":[]}\n\n',
+          'event:done\ndata: {"answer":"p","references":[]}\n\n',
         ]),
       );
 
@@ -178,7 +176,7 @@ describe('searchPatientChartStream', () => {
       .mockResolvedValueOnce(
         mockStreamResponse([
           'event:token\ndata:  two spaces\n\n',
-          'event:done\ndata: {"answer":"","disclaimer":"","references":[]}\n\n',
+          'event:done\ndata: {"answer":"","references":[]}\n\n',
         ]),
       );
 
@@ -196,7 +194,7 @@ describe('searchPatientChartStream', () => {
       .mockResolvedValueOnce(
         mockStreamResponse([
           'event:token\ndata:noSpace\n\n',
-          'event:done\ndata:{"answer":"","disclaimer":"","references":[]}\n\n',
+          'event:done\ndata:{"answer":"","references":[]}\n\n',
         ]),
       );
 
@@ -314,7 +312,7 @@ describe('searchPatientChartStream', () => {
       .mockResolvedValueOnce(
         mockStreamResponse([
           '\n\n\nevent:token\ndata: hi\n\n',
-          'event:done\ndata: {"answer":"","disclaimer":"","references":[]}\n\n',
+          'event:done\ndata: {"answer":"","references":[]}\n\n',
         ]),
       );
 
@@ -353,7 +351,7 @@ describe('searchPatientChartStream', () => {
     fetchSpy = jest
       .spyOn(window, 'fetch')
       .mockResolvedValueOnce(
-        mockStreamResponse(['event:done\ndata: {"answer":"a","disclaimer":"","references":[]}\n']),
+        mockStreamResponse(['event:done\ndata: {"answer":"a","references":[]}\n']),
       );
 
     callStream(cb);
@@ -361,7 +359,6 @@ describe('searchPatientChartStream', () => {
 
     expect(cb.onDone).toHaveBeenCalledWith({
       answer: 'a',
-      disclaimer: '',
       references: [],
     });
     expect(cb.onError).not.toHaveBeenCalled();

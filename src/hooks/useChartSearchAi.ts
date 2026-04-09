@@ -12,7 +12,6 @@ export interface ChatMessage {
   id: string;
   question: string;
   answer: string;
-  disclaimer: string;
   references: AiReference[];
   questionId: string;
   isLoading: boolean;
@@ -88,7 +87,6 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
         id: generateId(),
         question,
         answer: '',
-        disclaimer: '',
         references: [],
         questionId: '',
         isLoading: true,
@@ -114,7 +112,6 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
           updated[idx] = {
             ...updated[idx],
             answer: response.answer,
-            disclaimer: response.disclaimer,
             references: response.references,
             questionId: response.questionId ?? '',
             isLoading: false,
