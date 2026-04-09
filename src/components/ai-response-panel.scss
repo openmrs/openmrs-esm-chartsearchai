@@ -26,20 +26,6 @@
   min-height: auto;
 }
 
-.disclaimerSection {
-  padding: layout.$spacing-03;
-  background-color: colors.$blue-10;
-  border-radius: 0.25rem;
-  border-left: 3px solid colors.$blue-30;
-}
-
-.disclaimerText {
-  @include type.type-style('label-01');
-  color: colors.$gray-70;
-  margin: 0;
-  font-style: italic;
-}
-
 .errorContainer {
   padding: layout.$spacing-04;
   background-color: colors.$red-10;

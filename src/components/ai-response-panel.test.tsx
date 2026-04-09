@@ -29,7 +29,6 @@ describe('AiResponsePanel reference links', () => {
     render(
       <AiResponsePanel
         answer={answer}
-        disclaimer=""
         references={references}
         questionId="test-question-id"
         error={null}
@@ -68,7 +67,6 @@ describe('AiResponsePanel reference links', () => {
     render(
       <AiResponsePanel
         answer={answer}
-        disclaimer=""
         references={references}
         questionId="test-question-id"
         error={null}
@@ -101,7 +99,6 @@ describe('AiResponsePanel reference links', () => {
     render(
       <AiResponsePanel
         answer="Some answer [1]."
-        disclaimer=""
         references={unknownRef}
         questionId="test-question-id"
         error={null}
@@ -119,7 +116,6 @@ describe('AiResponsePanel reference links', () => {
     render(
       <AiResponsePanel
         answer=""
-        disclaimer=""
         references={[]}
         questionId="test-question-id"
         error="Server error: 500"
@@ -136,7 +132,6 @@ describe('AiResponsePanel reference links', () => {
     render(
       <AiResponsePanel
         answer="The patient has been taking"
-        disclaimer=""
         references={[]}
         questionId="test-question-id"
         error="Connection lost"

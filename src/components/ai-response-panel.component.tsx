@@ -9,7 +9,6 @@ import styles from './ai-response-panel.scss';
 
 interface AiResponsePanelProps {
   answer: string;
-  disclaimer: string;
   references: AiReference[];
   questionId: string;
   error: string | null;
@@ -78,7 +77,6 @@ function renderAnswerWithCitations(answer: string, references: AiReference[], pa
 
 const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   answer,
-  disclaimer,
   references,
   questionId,
   error,
@@ -145,12 +143,6 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
               );
             })}
           </div>
-        </div>
-      )}
-
-      {disclaimer && (
-        <div className={styles.disclaimerSection}>
-          <p className={styles.disclaimerText}>{disclaimer}</p>
         </div>
       )}
 

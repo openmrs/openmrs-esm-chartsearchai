@@ -142,6 +142,8 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
     inputRef.current?.focus();
   }, []);
 
+  const panelDisclaimer = messages.find((m) => m.disclaimer)?.disclaimer;
+
   return (
     <div className={styles.panelContainer}>
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- dialog needs onKeyDown for focus trap and Escape handling */}
@@ -177,7 +179,6 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
               <div className={styles.answerBubble}>
                 <AiResponsePanel
                   answer={msg.answer}
-                  disclaimer={msg.disclaimer}
                   references={msg.references}
                   questionId={msg.questionId}
                   error={msg.error}
@@ -190,6 +191,8 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
             </div>
           ))}
         </div>
+
+        {panelDisclaimer && <p className={styles.disclaimer}>{panelDisclaimer}</p>}
 
         {speechError && (
           <p className={styles.speechError}>
