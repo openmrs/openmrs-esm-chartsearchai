@@ -192,10 +192,7 @@ describe('searchPatientChartStream', () => {
     fetchSpy = jest
       .spyOn(window, 'fetch')
       .mockResolvedValueOnce(
-        mockStreamResponse([
-          'event:token\ndata:noSpace\n\n',
-          'event:done\ndata:{"answer":"","references":[]}\n\n',
-        ]),
+        mockStreamResponse(['event:token\ndata:noSpace\n\n', 'event:done\ndata:{"answer":"","references":[]}\n\n']),
       );
 
     callStream(cb);
@@ -310,10 +307,7 @@ describe('searchPatientChartStream', () => {
     fetchSpy = jest
       .spyOn(window, 'fetch')
       .mockResolvedValueOnce(
-        mockStreamResponse([
-          '\n\n\nevent:token\ndata: hi\n\n',
-          'event:done\ndata: {"answer":"","references":[]}\n\n',
-        ]),
+        mockStreamResponse(['\n\n\nevent:token\ndata: hi\n\n', 'event:done\ndata: {"answer":"","references":[]}\n\n']),
       );
 
     callStream(cb);
@@ -350,9 +344,7 @@ describe('searchPatientChartStream', () => {
     // Stream ends with data but no trailing \n\n
     fetchSpy = jest
       .spyOn(window, 'fetch')
-      .mockResolvedValueOnce(
-        mockStreamResponse(['event:done\ndata: {"answer":"a","references":[]}\n']),
-      );
+      .mockResolvedValueOnce(mockStreamResponse(['event:done\ndata: {"answer":"a","references":[]}\n']));
 
     callStream(cb);
     await flushPromises();
