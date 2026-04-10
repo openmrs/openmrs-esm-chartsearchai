@@ -56,19 +56,23 @@
   gap: layout.$spacing-02;
 }
 
-.referenceTag {
+%referenceTagBase {
   @include type.type-style('label-01');
   display: inline-block;
   padding: layout.$spacing-01 layout.$spacing-03;
-  background-color: colors.$gray-20;
+  background-color: colors.$white-0;
   border-radius: 1rem;
+}
+
+.referenceTag {
+  @extend %referenceTagBase;
   color: colors.$blue-60;
   text-decoration: none;
   cursor: pointer;
 
   &:hover {
     text-decoration: underline;
-    background-color: colors.$gray-30;
+    background-color: colors.$gray-10;
   }
 }
 
@@ -84,10 +88,6 @@
 }
 
 .referenceTagInert {
-  @include type.type-style('label-01');
-  display: inline-block;
-  padding: layout.$spacing-01 layout.$spacing-03;
-  background-color: colors.$gray-20;
-  border-radius: 1rem;
+  @extend %referenceTagBase;
   color: colors.$gray-70;
 }
