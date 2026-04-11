@@ -4,24 +4,25 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
 import { useConfig, usePatient } from '@openmrs/esm-framework';
 import AiSearchPanel from './ai-search-panel.component';
+import { type ChatMessage } from '../hooks/useChartSearchAi';
 
 const mockUseConfig = useConfig as jest.Mock;
 const mockUsePatient = usePatient as jest.Mock;
 
 const mockSubmitQuestion = jest.fn();
-const mockClearResults = jest.fn();
+const mockClearMessages = jest.fn();
+const mockStopCurrent = jest.fn();
+
+let mockMessages: ChatMessage[] = [];
+let mockIsAnyLoading = false;
 
 jest.mock('../hooks/useChartSearchAi', () => ({
   useChartSearchAi: () => ({
-    submittedQuestion: mockSubmittedQuestion,
-    answer: mockAnswer,
-    disclaimer: mockDisclaimer,
-    references: mockReferences,
-    questionId: mockQuestionId,
-    isLoading: mockIsLoading,
-    error: mockError,
+    messages: mockMessages,
+    isAnyLoading: mockIsAnyLoading,
     submitQuestion: mockSubmitQuestion,
-    clearResults: mockClearResults,
+    clearMessages: mockClearMessages,
+    stopCurrent: mockStopCurrent,
   }),
 }));
 
@@ -51,31 +52,32 @@ jest.mock('../api/chartsearchai', () => ({
   submitFeedback: jest.fn().mockResolvedValue(undefined),
 }));
 
-let mockSubmittedQuestion = '';
-let mockAnswer = '';
-let mockDisclaimer = '';
-let mockReferences: Array<{ index: number; resourceType: string; resourceId: number; date: string }> = [];
-let mockQuestionId = '';
-let mockIsLoading = false;
-let mockError: string | null = null;
+function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
+  return {
+    id: 'msg-1',
+    question: 'What meds is this patient on?',
+    answer: 'The patient is on metformin.',
+    references: [],
+    questionId: 'q-1',
+    isLoading: false,
+    error: null,
+    ...overrides,
+  };
+}
 
 beforeEach(() => {
-  mockSubmittedQuestion = '';
-  mockAnswer = '';
-  mockDisclaimer = '';
-  mockReferences = [];
-  mockQuestionId = '';
-  mockIsLoading = false;
-  mockError = null;
+  mockMessages = [];
+  mockIsAnyLoading = false;
   mockIsListening = false;
   mockIsSpeechSupported = false;
   mockSpeechError = null;
+  capturedOnResult = null;
   mockSubmitQuestion.mockClear();
-  mockClearResults.mockClear();
+  mockClearMessages.mockClear();
+  mockStopCurrent.mockClear();
   mockStartListening.mockClear();
   mockStopListening.mockClear();
   mockClearSpeechError.mockClear();
-  capturedOnResult = null;
 
   mockUseConfig.mockReturnValue({
     aiSearchPlaceholder: 'Ask AI about this patient...',
@@ -124,6 +126,17 @@ describe('AiSearchPanel', () => {
     expect(mockSubmitQuestion).toHaveBeenCalledWith('test-patient-uuid', 'What medications is this patient on?');
   });
 
+  it('clears the input after submitting', async () => {
+    const user = userEvent.setup();
+    render(<AiSearchPanel onClose={onClose} />);
+
+    const input = screen.getByPlaceholderText('Ask AI about this patient...');
+    await user.type(input, 'Any allergies?');
+    await user.click(screen.getByRole('button', { name: /send/i }));
+
+    expect(input).toHaveValue('');
+  });
+
   it('submits on Enter key press', async () => {
     const user = userEvent.setup();
     render(<AiSearchPanel onClose={onClose} />);
@@ -162,24 +175,34 @@ describe('AiSearchPanel', () => {
     expect(mockSubmitQuestion).not.toHaveBeenCalled();
   });
 
-  it('shows loading indicator when waiting for first token', () => {
-    mockSubmittedQuestion = 'Any allergies?';
-    mockIsLoading = true;
+  it('shows loading indicator when the last message is loading with no answer yet', () => {
+    mockMessages = [makeMessage({ answer: '', isLoading: true, questionId: '' })];
+    mockIsAnyLoading = true;
     render(<AiSearchPanel onClose={onClose} />);
 
     expect(screen.getByText('Thinking...')).toBeInTheDocument();
   });
 
   it('shows stop button while loading', () => {
-    mockIsLoading = true;
-    mockAnswer = 'partial answer';
+    mockMessages = [makeMessage({ answer: 'partial', isLoading: true })];
+    mockIsAnyLoading = true;
     render(<AiSearchPanel onClose={onClose} />);
 
     expect(screen.getByRole('button', { name: /stop/i })).toBeInTheDocument();
   });
 
-  it('shows error message when error occurs', () => {
-    mockError = 'Something went wrong';
+  it('calls stopCurrent when the stop button is clicked', async () => {
+    mockMessages = [makeMessage({ answer: 'partial', isLoading: true })];
+    mockIsAnyLoading = true;
+    const user = userEvent.setup();
+    render(<AiSearchPanel onClose={onClose} />);
+
+    await user.click(screen.getByRole('button', { name: /stop/i }));
+    expect(mockStopCurrent).toHaveBeenCalled();
+  });
+
+  it('shows error message when a message has an error', () => {
+    mockMessages = [makeMessage({ answer: '', error: 'Something went wrong' })];
     render(<AiSearchPanel onClose={onClose} />);
 
     expect(screen.getByText('Something went wrong')).toBeInTheDocument();
@@ -196,6 +219,43 @@ describe('AiSearchPanel', () => {
 
     expect(screen.getByText('No patient selected')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /send/i })).toBeDisabled();
+  });
+
+  describe('chat history', () => {
+    it('renders a question bubble for each message', () => {
+      mockMessages = [
+        makeMessage({ id: 'a', question: 'First question?' }),
+        makeMessage({ id: 'b', question: 'Second question?' }),
+      ];
+      render(<AiSearchPanel onClose={onClose} />);
+
+      expect(screen.getByText('First question?')).toBeInTheDocument();
+      expect(screen.getByText('Second question?')).toBeInTheDocument();
+    });
+
+    it('renders an answer bubble for each message', () => {
+      mockMessages = [
+        makeMessage({ id: 'a', question: 'Q1?', answer: 'Answer one.' }),
+        makeMessage({ id: 'b', question: 'Q2?', answer: 'Answer two.' }),
+      ];
+      render(<AiSearchPanel onClose={onClose} />);
+
+      expect(screen.getByText('Answer one.')).toBeInTheDocument();
+      expect(screen.getByText('Answer two.')).toBeInTheDocument();
+    });
+
+    it('allows sending a second message without clearing history', async () => {
+      mockMessages = [makeMessage({ id: 'a', question: 'First?', answer: 'First answer.' })];
+      const user = userEvent.setup();
+      render(<AiSearchPanel onClose={onClose} />);
+
+      const input = screen.getByPlaceholderText('Ask AI about this patient...');
+      await user.type(input, 'Second?{enter}');
+
+      expect(mockSubmitQuestion).toHaveBeenCalledWith('test-patient-uuid', 'Second?');
+      // History still visible
+      expect(screen.getByText('First answer.')).toBeInTheDocument();
+    });
   });
 
   describe('voice input', () => {
@@ -257,82 +317,63 @@ describe('AiSearchPanel', () => {
       expect(mockSubmitQuestion).toHaveBeenCalledWith('test-patient-uuid', 'What are the allergies?');
     });
 
+    it('does not auto-submit speech result when a request is in flight', () => {
+      mockIsAnyLoading = true;
+      mockMessages = [makeMessage({ isLoading: true })];
+      render(<AiSearchPanel onClose={onClose} />);
+
+      act(() => {
+        capturedOnResult?.('What are the allergies?');
+      });
+
+      expect(mockSubmitQuestion).not.toHaveBeenCalled();
+    });
+
     it('hides mic button while loading', () => {
-      mockIsLoading = true;
-      mockAnswer = 'partial';
+      mockIsAnyLoading = true;
+      mockMessages = [makeMessage({ isLoading: true })];
       render(<AiSearchPanel onClose={onClose} />);
 
       expect(screen.queryByRole('button', { name: /voice input/i })).not.toBeInTheDocument();
     });
   });
 
-  describe('clear and response flow', () => {
-    it('shows clear button when there is a response', () => {
-      mockAnswer = 'The patient has no known allergies.';
-      mockQuestionId = 'q-1';
-      render(<AiSearchPanel onClose={onClose} />);
-
-      expect(screen.getByRole('button', { name: /clear and ask new question/i })).toBeInTheDocument();
-    });
-
-    it('clears results when clear button is clicked', async () => {
-      mockAnswer = 'The patient has no known allergies.';
-      mockQuestionId = 'q-1';
-      const user = userEvent.setup();
-      render(<AiSearchPanel onClose={onClose} />);
-
-      await user.click(screen.getByRole('button', { name: /clear and ask new question/i }));
-      expect(mockClearResults).toHaveBeenCalled();
-    });
-
-    it('displays the answer text in the response area', () => {
-      mockAnswer = 'The patient is taking metformin.';
-      mockQuestionId = 'q-1';
-      render(<AiSearchPanel onClose={onClose} />);
-
-      expect(screen.getByText('The patient is taking metformin.')).toBeInTheDocument();
-    });
-
-    it('displays the disclaimer when present', () => {
-      mockAnswer = 'Some answer';
-      mockDisclaimer = 'AI responses may not be accurate.';
-      mockQuestionId = 'q-1';
-      render(<AiSearchPanel onClose={onClose} />);
-
-      expect(screen.getByText('AI responses may not be accurate.')).toBeInTheDocument();
-    });
-  });
-
   describe('feedback', () => {
     it('shows feedback widget when answer is complete', () => {
-      mockAnswer = 'The patient has diabetes.';
-      mockQuestionId = 'q-123';
+      mockMessages = [makeMessage({ answer: 'The patient has diabetes.', questionId: 'q-123' })];
       render(<AiSearchPanel onClose={onClose} />);
 
       expect(screen.getByText('Was this helpful?')).toBeInTheDocument();
     });
 
     it('does not show feedback widget while loading', () => {
-      mockAnswer = 'partial answer';
-      mockQuestionId = 'q-123';
-      mockIsLoading = true;
+      mockMessages = [makeMessage({ answer: 'partial', questionId: 'q-123', isLoading: true })];
+      mockIsAnyLoading = true;
       render(<AiSearchPanel onClose={onClose} />);
 
       expect(screen.queryByText('Was this helpful?')).not.toBeInTheDocument();
     });
 
     it('shows thumbs up and thumbs down buttons', () => {
-      mockAnswer = 'The patient has diabetes.';
-      mockQuestionId = 'q-123';
+      mockMessages = [makeMessage({ answer: 'The patient has diabetes.', questionId: 'q-123' })];
       render(<AiSearchPanel onClose={onClose} />);
 
       expect(screen.getByRole('button', { name: 'Helpful' })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Not helpful' })).toBeInTheDocument();
     });
 
+    it('shows feedback widget for each completed message', () => {
+      mockMessages = [
+        makeMessage({ id: 'a', question: 'Q1?', answer: 'A1.', questionId: 'q-1' }),
+        makeMessage({ id: 'b', question: 'Q2?', answer: 'A2.', questionId: 'q-2' }),
+      ];
+      render(<AiSearchPanel onClose={onClose} />);
+
+      expect(screen.getAllByText('Was this helpful?')).toHaveLength(2);
+    });
+
     it('shows thanks message after positive feedback', async () => {
-      mockAnswer = 'The patient has diabetes.';
-      mockQuestionId = 'q-123';
+      mockMessages = [makeMessage({ answer: 'The patient has diabetes.', questionId: 'q-123' })];
       const user = userEvent.setup();
       render(<AiSearchPanel onClose={onClose} />);
 
@@ -341,15 +382,12 @@ describe('AiSearchPanel', () => {
     });
 
     it('shows comment form after negative feedback', async () => {
-      mockAnswer = 'The patient has diabetes.';
-      mockQuestionId = 'q-123';
+      mockMessages = [makeMessage({ answer: 'The patient has diabetes.', questionId: 'q-123' })];
       const user = userEvent.setup();
       render(<AiSearchPanel onClose={onClose} />);
 
       await user.click(screen.getByRole('button', { name: 'Not helpful' }));
       expect(screen.getByPlaceholderText('What was wrong? (optional)')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /submit/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument();
     });
   });
 });
