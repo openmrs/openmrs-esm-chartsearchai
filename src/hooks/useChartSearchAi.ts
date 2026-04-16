@@ -8,61 +8,135 @@ import {
 } from '../api/chartsearchai';
 import { type ChartSearchAiConfig } from '../config-schema';
 
-interface UseChartSearchAiReturn {
-  submittedQuestion: string;
+export interface ChatMessage {
+  id: string;
+  question: string;
   answer: string;
-  disclaimer: string;
   references: AiReference[];
   questionId: string;
   isLoading: boolean;
   error: string | null;
+}
+
+interface UseChartSearchAiReturn {
+  messages: ChatMessage[];
+  isAnyLoading: boolean;
   submitQuestion: (patientUuid: string, question: string) => void;
-  clearResults: () => void;
+  clearMessages: () => void;
+  stopCurrent: () => void;
+}
+
+function generateId(): string {
+  return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
 }
 
 export function useChartSearchAi(): UseChartSearchAiReturn {
   const config = useConfig<ChartSearchAiConfig>();
-  const [submittedQuestion, setSubmittedQuestion] = useState('');
-  const [answer, setAnswer] = useState('');
-  const [disclaimer, setDisclaimer] = useState('');
-  const [references, setReferences] = useState<AiReference[]>([]);
-  const [questionId, setQuestionId] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const inFlightMessageIdRef = useRef<string | null>(null);
+  const isMountedRef = useRef(true);
 
-  const clearResults = useCallback(() => {
-    setSubmittedQuestion('');
-    setAnswer('');
-    setDisclaimer('');
-    setReferences([]);
-    setQuestionId('');
-    setError(null);
-    setIsLoading(false);
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const clearMessages = useCallback(() => {
+    setMessages([]);
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
+    }
+    inFlightMessageIdRef.current = null;
+  }, []);
+
+  const stopCurrent = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    const stoppedId = inFlightMessageIdRef.current;
+    inFlightMessageIdRef.current = null;
+    if (stoppedId) {
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.id === stoppedId);
+        if (idx === -1) return prev;
+        const msg = prev[idx];
+        if (!msg.isLoading) return prev;
+        // Remove the message bubble entirely if no content was received yet
+        if (!msg.answer) {
+          return prev.filter((_, i) => i !== idx);
+        }
+        const updated = [...prev];
+        updated[idx] = { ...msg, isLoading: false };
+        return updated;
+      });
     }
   }, []);
 
   const submitQuestion = useCallback(
     (patientUuid: string, question: string) => {
-      // Guard against rapid duplicate submissions (ref is synchronous,
-      // unlike the isLoading state which only updates on next render)
-      if (abortControllerRef.current) {
-        return;
-      }
+      if (abortControllerRef.current) return;
 
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
 
-      setSubmittedQuestion(question);
-      setAnswer('');
-      setDisclaimer('');
-      setReferences([]);
-      setQuestionId('');
-      setError(null);
-      setIsLoading(true);
+      const newMessage: ChatMessage = {
+        id: generateId(),
+        question,
+        answer: '',
+        references: [],
+        questionId: '',
+        isLoading: true,
+        error: null,
+      };
+
+      setMessages((prev) => [...prev, newMessage]);
+      const messageId = newMessage.id;
+      inFlightMessageIdRef.current = messageId;
+
+      const done = (response: AiSearchResponse) => {
+        if (!isMountedRef.current) return;
+        if (abortControllerRef.current === abortController) {
+          abortControllerRef.current = null;
+        }
+        if (inFlightMessageIdRef.current === messageId) {
+          inFlightMessageIdRef.current = null;
+        }
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === messageId);
+          if (idx === -1) return prev;
+          const updated = [...prev];
+          updated[idx] = {
+            ...updated[idx],
+            answer: response.answer,
+            references: response.references,
+            questionId: response.questionId ?? '',
+            isLoading: false,
+          };
+          return updated;
+        });
+      };
+
+      const fail = (errMessage: string) => {
+        if (!isMountedRef.current) return;
+        if (abortControllerRef.current === abortController) {
+          abortControllerRef.current = null;
+        }
+        if (inFlightMessageIdRef.current === messageId) {
+          inFlightMessageIdRef.current = null;
+        }
+        console.error('[useChartSearchAi] Request failed:', errMessage);
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === messageId);
+          if (idx === -1) return prev;
+          const updated = [...prev];
+          updated[idx] = { ...updated[idx], error: errMessage, isLoading: false };
+          return updated;
+        });
+      };
 
       try {
         if (config.useStreaming) {
@@ -71,77 +145,57 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
             question,
             {
               onToken: (token) => {
-                setAnswer((prev) => prev + token);
+                if (!isMountedRef.current) return;
+                setMessages((prev) => {
+                  const idx = prev.findIndex((m) => m.id === messageId);
+                  if (idx === -1) return prev;
+                  const updated = [...prev];
+                  updated[idx] = { ...updated[idx], answer: updated[idx].answer + token };
+                  return updated;
+                });
               },
-              onDone: (response: AiSearchResponse) => {
-                if (abortControllerRef.current === abortController) {
-                  abortControllerRef.current = null;
-                }
-                setAnswer(response.answer);
-                setDisclaimer(response.disclaimer);
-                setReferences(response.references);
-                setQuestionId(response.questionId ?? '');
-                setIsLoading(false);
-              },
-              onError: (errMessage) => {
-                if (abortControllerRef.current === abortController) {
-                  abortControllerRef.current = null;
-                }
-                setError(errMessage);
-                setIsLoading(false);
-              },
+              onDone: done,
+              onError: fail,
             },
             abortController,
           );
         } else {
           searchPatientChart(patientUuid, question, abortController)
-            .then((response) => {
-              if (abortControllerRef.current === abortController) {
-                abortControllerRef.current = null;
-              }
-              setAnswer(response.answer);
-              setDisclaimer(response.disclaimer);
-              setReferences(response.references);
-              setQuestionId(response.questionId ?? '');
-              setIsLoading(false);
-            })
+            .then(done)
             .catch((err) => {
               if (err.name !== 'AbortError') {
-                if (abortControllerRef.current === abortController) {
-                  abortControllerRef.current = null;
-                }
-                setError(err?.responseBody?.error ?? err?.message ?? 'An unknown error occurred');
-                setIsLoading(false);
+                console.error('[useChartSearchAi] Fetch failed:', err);
+                fail(err?.responseBody?.error ?? err?.message ?? 'An unknown error occurred');
               }
             });
         }
       } catch (err) {
         abortControllerRef.current = null;
-        setError(err instanceof Error ? err.message : 'An unknown error occurred');
-        setIsLoading(false);
+        inFlightMessageIdRef.current = null;
+        fail(err instanceof Error ? err.message : 'An unknown error occurred');
       }
     },
     [config.useStreaming],
   );
 
-  // Abort any in-flight request when the component unmounts
   useEffect(() => {
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
+        abortControllerRef.current = null;
       }
     };
   }, []);
 
+  // Only the last message can ever be loading because submitQuestion guards against
+  // concurrent requests via abortControllerRef.
+  const isAnyLoading = messages.length > 0 && messages[messages.length - 1].isLoading;
+
   return {
-    submittedQuestion,
-    answer,
-    disclaimer,
-    references,
-    questionId,
-    isLoading,
-    error,
+    messages,
+    isAnyLoading,
     submitQuestion,
-    clearResults,
+    clearMessages,
+    stopCurrent,
   };
 }

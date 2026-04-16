@@ -11,7 +11,6 @@ export interface AiReference {
 
 export interface AiSearchResponse {
   answer: string;
-  disclaimer: string;
   references: AiReference[];
   questionId?: string;
 }
@@ -32,11 +31,16 @@ export interface AiSearchError {
  * Submits user feedback (thumbs up/down + optional comment) for an AI response.
  */
 export async function submitFeedback(feedback: AiFeedback): Promise<void> {
-  await openmrsFetch(`${BASE_PATH}/feedback`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(feedback),
-  });
+  try {
+    await openmrsFetch(`${BASE_PATH}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(feedback),
+    });
+  } catch (err) {
+    console.error('[submitFeedback] Failed to submit feedback:', err);
+    throw err;
+  }
 }
 
 /**
@@ -53,7 +57,10 @@ export async function searchPatientChart(
     body: JSON.stringify({ patient: patientUuid, question }),
     signal: abortController?.signal,
   });
-  return response.data;
+  if (!response.data?.answer) {
+    throw new Error('Unexpected response from server');
+  }
+  return response.data as AiSearchResponse;
 }
 
 /**
@@ -167,19 +174,21 @@ export function searchPatientChartStream(
         }
       }
 
-      // Process any remaining data in the buffer (stream ended without trailing newline)
+      // Process any remaining lines in the buffer (stream ended without trailing newline)
       if (buffer) {
-        const line = buffer;
-        buffer = '';
-        if (line.startsWith('event:')) {
-          eventType = line.slice(6).trim();
-        } else if (line.startsWith('data:')) {
-          const raw = line.slice(5);
-          dataLines.push(raw.startsWith(' ') ? raw.slice(1) : raw);
+        for (const line of buffer.split('\n')) {
+          if (line === '') {
+            dispatchEvent();
+          } else if (line.startsWith('event:')) {
+            eventType = line.slice(6).trim();
+          } else if (line.startsWith('data:')) {
+            const raw = line.slice(5);
+            dataLines.push(raw.startsWith(' ') ? raw.slice(1) : raw);
+          }
         }
       }
 
-      // Dispatch any pending event at end of stream
+      // Flush any event accumulated in the loop but not yet dispatched
       dispatchEvent();
 
       if (!streamFinalized) {

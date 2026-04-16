@@ -29,7 +29,6 @@ describe('AiResponsePanel reference links', () => {
     render(
       <AiResponsePanel
         answer={answer}
-        disclaimer=""
         references={references}
         questionId="test-question-id"
         error={null}
@@ -68,7 +67,6 @@ describe('AiResponsePanel reference links', () => {
     render(
       <AiResponsePanel
         answer={answer}
-        disclaimer=""
         references={references}
         questionId="test-question-id"
         error={null}
@@ -77,9 +75,9 @@ describe('AiResponsePanel reference links', () => {
       />,
     );
 
-    // Inline citations [1] through [5] should be links
+    // Inline citations render as plain numbers inside brackets: [ <a>1</a> ]
     const allLinks = screen.getAllByRole('link');
-    const inlineCitations = allLinks.filter((link) => /^\[\d+\]$/.test(link.textContent ?? ''));
+    const inlineCitations = allLinks.filter((link) => /^\d+$/.test(link.textContent ?? ''));
     expect(inlineCitations.length).toBe(5);
 
     // Each inline citation should have a valid href
@@ -95,13 +93,37 @@ describe('AiResponsePanel reference links', () => {
     });
   });
 
+  it('renders comma-separated inline citations as individual clickable links', () => {
+    const refs = [
+      { index: 1, resourceType: 'obs', resourceId: 101, date: '2025-01-15' },
+      { index: 2, resourceType: 'order', resourceId: 202, date: '2025-02-20' },
+    ];
+
+    render(
+      <AiResponsePanel
+        answer="The patient has findings [1, 2]."
+        references={refs}
+        questionId="test-question-id"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    // Numbers are individually linked; brackets and comma are plain text
+    const link1 = screen.getByRole('link', { name: '1' });
+    expect(link1).toHaveAttribute('href', `/openmrs/spa/patient/${patientUuid}/chart/Results`);
+
+    const link2 = screen.getByRole('link', { name: '2' });
+    expect(link2).toHaveAttribute('href', `/openmrs/spa/patient/${patientUuid}/chart/Orders`);
+  });
+
   it('renders unknown resource types as links to Patient Summary', () => {
     const unknownRef = [{ index: 1, resourceType: 'UnknownType', resourceId: 999, date: '2025-06-01' }];
 
     render(
       <AiResponsePanel
         answer="Some answer [1]."
-        disclaimer=""
         references={unknownRef}
         questionId="test-question-id"
         error={null}
@@ -119,7 +141,6 @@ describe('AiResponsePanel reference links', () => {
     render(
       <AiResponsePanel
         answer=""
-        disclaimer=""
         references={[]}
         questionId="test-question-id"
         error="Server error: 500"
@@ -136,7 +157,6 @@ describe('AiResponsePanel reference links', () => {
     render(
       <AiResponsePanel
         answer="The patient has been taking"
-        disclaimer=""
         references={[]}
         questionId="test-question-id"
         error="Connection lost"

@@ -9,7 +9,6 @@ import styles from './ai-response-panel.scss';
 
 interface AiResponsePanelProps {
   answer: string;
-  disclaimer: string;
   references: AiReference[];
   questionId: string;
   error: string | null;
@@ -36,10 +35,16 @@ function buildReferenceUrl(ref: AiReference, patientUuid: string): string | null
   return `${window.spaBase}/patient/${patientUuid}/chart/${encodeURIComponent(chartPage ?? 'Patient Summary')}`;
 }
 
+function handleReferenceNavigate(e: React.MouseEvent, url: string, ref: AiReference) {
+  e.preventDefault();
+  navigate({ to: url });
+  highlightReference(ref.resourceId, ref.date);
+}
+
 function renderAnswerWithCitations(answer: string, references: AiReference[], patientUuid: string): React.ReactNode[] {
   const refByIndex = new Map(references.map((r) => [r.index, r]));
   const parts: React.ReactNode[] = [];
-  const pattern = /\[(\d+)\]/g;
+  const pattern = /\[(\d+(?:\s*,\s*\d+)*)\]/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
@@ -47,27 +52,31 @@ function renderAnswerWithCitations(answer: string, references: AiReference[], pa
     if (match.index > lastIndex) {
       parts.push(answer.slice(lastIndex, match.index));
     }
-    const citIndex = parseInt(match[1], 10);
-    const ref = refByIndex.get(citIndex);
-    const url = ref ? buildReferenceUrl(ref, patientUuid) : null;
-    if (url && ref) {
+    const matchIndex = match.index;
+    const citIndices = match[1].split(/\s*,\s*/).map(Number);
+    parts.push('[');
+    citIndices.forEach((citIndex, i) => {
+      const ref = refByIndex.get(citIndex);
+      const url = ref ? buildReferenceUrl(ref, patientUuid) : null;
       parts.push(
-        <a
-          key={`cit-${match.index}`}
-          className={styles.inlineCitation}
-          href={url}
-          onClick={(e) => {
-            e.preventDefault();
-            navigate({ to: url });
-            highlightReference(ref.resourceId, ref.date);
-          }}
-        >
-          {match[0]}
-        </a>,
+        url && ref ? (
+          <a
+            key={`cit-${matchIndex}-${citIndex}`}
+            className={styles.inlineCitation}
+            href={url}
+            onClick={(e) => handleReferenceNavigate(e, url, ref)}
+          >
+            {citIndex}
+          </a>
+        ) : (
+          `${citIndex}`
+        ),
       );
-    } else {
-      parts.push(match[0]);
-    }
+      if (i < citIndices.length - 1) {
+        parts.push(', ');
+      }
+    });
+    parts.push(']');
     lastIndex = pattern.lastIndex;
   }
   if (lastIndex < answer.length) {
@@ -78,7 +87,6 @@ function renderAnswerWithCitations(answer: string, references: AiReference[], pa
 
 const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   answer,
-  disclaimer,
   references,
   questionId,
   error,
@@ -130,11 +138,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                   key={ref.index}
                   className={styles.referenceTag}
                   href={url}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    navigate({ to: url });
-                    highlightReference(ref.resourceId, ref.date);
-                  }}
+                  onClick={(e) => handleReferenceNavigate(e, url, ref)}
                 >
                   {label}
                 </a>
@@ -145,12 +149,6 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
               );
             })}
           </div>
-        </div>
-      )}
-
-      {disclaimer && (
-        <div className={styles.disclaimerSection}>
-          <p className={styles.disclaimerText}>{disclaimer}</p>
         </div>
       )}
 
