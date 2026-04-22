@@ -114,6 +114,14 @@ const AiSearchPanel: React.FC<AiSearchPanelProps> = ({ onClose }) => {
     prevMessagesLengthRef.current = messages.length;
   }, [messages.length]);
 
+  // Scroll to bottom while tokens are streaming in
+  const lastAnswer = messages.length > 0 ? messages[messages.length - 1].answer : '';
+  useEffect(() => {
+    if (isAnyLoading && historyAreaRef.current) {
+      historyAreaRef.current.scrollTop = historyAreaRef.current.scrollHeight;
+    }
+  }, [lastAnswer, isAnyLoading]);
+
   // Scroll to bottom when the response completes (to reveal full answer)
   useEffect(() => {
     if (!isAnyLoading && historyAreaRef.current) {
