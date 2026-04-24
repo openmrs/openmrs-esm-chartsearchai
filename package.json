@@ -44,6 +44,7 @@
   "devDependencies": {
     "@openmrs/esm-framework": "next",
     "@openmrs/esm-styleguide": "next",
+    "@swc/jest": "^0.2.36",
     "@testing-library/dom": "^10.0.0",
     "@testing-library/jest-dom": "^6.4.5",
     "@testing-library/react": "^15.0.6",
