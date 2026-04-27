@@ -6,6 +6,10 @@
   "browser": "dist/openmrs-esm-chartsearchai-app.js",
   "main": "src/index.ts",
   "source": true,
+  "files": [
+    "dist",
+    "translations"
+  ],
   "scripts": {
     "start": "openmrs develop",
     "build": "rspack --mode production",
