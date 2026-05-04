@@ -3,7 +3,7 @@ module.exports = {
     '^.+\\.(t|j)sx?$': ['@swc/jest'],
     '^.+\\.mjs$': ['@swc/jest'],
   },
-  transformIgnorePatterns: ['/node_modules/(?!@openmrs|dexie)'],
+  transformIgnorePatterns: ['/node_modules/(?!@openmrs|dexie|uuid)'],
   moduleNameMapper: {
     '\\.(s?css)$': 'identity-obj-proxy',
     '@openmrs/esm-framework': '@openmrs/esm-framework/mock',

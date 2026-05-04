@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useConfig } from '@openmrs/esm-framework';
+import { useCallback, useEffect, useRef } from 'react';
+import { useConfig, useStore } from '@openmrs/esm-framework';
 import {
   type AiReference,
   type AiSearchResponse,
@@ -7,6 +7,7 @@ import {
   searchPatientChartStream,
 } from '../api/chartsearchai';
 import { type ChartSearchAiConfig } from '../config-schema';
+import { chatSessionStore } from '../store/chat-session.store';
 
 export interface ChatMessage {
   id: string;
@@ -30,9 +31,20 @@ function generateId(): string {
   return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
 }
 
-export function useChartSearchAi(): UseChartSearchAiReturn {
+const EMPTY_MESSAGES: ChatMessage[] = [];
+
+function updateMessages(patientUuid: string, updater: (prev: ChatMessage[]) => ChatMessage[]): void {
+  const current = chatSessionStore.getState().messagesByPatient;
+  const prev = current[patientUuid] ?? EMPTY_MESSAGES;
+  const next = updater(prev);
+  if (next === prev) return;
+  chatSessionStore.setState({ messagesByPatient: { ...current, [patientUuid]: next } });
+}
+
+export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
   const config = useConfig<ChartSearchAiConfig>();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const { messagesByPatient } = useStore(chatSessionStore);
+  const messages: ChatMessage[] = patientUuid ? (messagesByPatient[patientUuid] ?? EMPTY_MESSAGES) : EMPTY_MESSAGES;
   const abortControllerRef = useRef<AbortController | null>(null);
   const inFlightMessageIdRef = useRef<string | null>(null);
   const isMountedRef = useRef(true);
@@ -44,13 +56,15 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
   }, []);
 
   const clearMessages = useCallback(() => {
-    setMessages([]);
+    if (patientUuid) {
+      updateMessages(patientUuid, () => []);
+    }
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
     inFlightMessageIdRef.current = null;
-  }, []);
+  }, [patientUuid]);
 
   const stopCurrent = useCallback(() => {
     if (abortControllerRef.current) {
@@ -59,13 +73,12 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
     }
     const stoppedId = inFlightMessageIdRef.current;
     inFlightMessageIdRef.current = null;
-    if (stoppedId) {
-      setMessages((prev) => {
+    if (stoppedId && patientUuid) {
+      updateMessages(patientUuid, (prev) => {
         const idx = prev.findIndex((m) => m.id === stoppedId);
         if (idx === -1) return prev;
         const msg = prev[idx];
         if (!msg.isLoading) return prev;
-        // Remove the message bubble entirely if no content was received yet
         if (!msg.answer) {
           return prev.filter((_, i) => i !== idx);
         }
@@ -74,7 +87,7 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
         return updated;
       });
     }
-  }, []);
+  }, [patientUuid]);
 
   const submitQuestion = useCallback(
     (patientUuid: string, question: string) => {
@@ -93,7 +106,7 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
         error: null,
       };
 
-      setMessages((prev) => [...prev, newMessage]);
+      updateMessages(patientUuid, (prev) => [...prev, newMessage]);
       const messageId = newMessage.id;
       inFlightMessageIdRef.current = messageId;
 
@@ -105,7 +118,7 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
         if (inFlightMessageIdRef.current === messageId) {
           inFlightMessageIdRef.current = null;
         }
-        setMessages((prev) => {
+        updateMessages(patientUuid, (prev) => {
           const idx = prev.findIndex((m) => m.id === messageId);
           if (idx === -1) return prev;
           const updated = [...prev];
@@ -129,7 +142,7 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
           inFlightMessageIdRef.current = null;
         }
         console.error('[useChartSearchAi] Request failed:', errMessage);
-        setMessages((prev) => {
+        updateMessages(patientUuid, (prev) => {
           const idx = prev.findIndex((m) => m.id === messageId);
           if (idx === -1) return prev;
           const updated = [...prev];
@@ -146,7 +159,7 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
             {
               onToken: (token) => {
                 if (!isMountedRef.current) return;
-                setMessages((prev) => {
+                updateMessages(patientUuid, (prev) => {
                   const idx = prev.findIndex((m) => m.id === messageId);
                   if (idx === -1) return prev;
                   const updated = [...prev];
@@ -187,8 +200,8 @@ export function useChartSearchAi(): UseChartSearchAiReturn {
     };
   }, []);
 
-  // Only the last message can ever be loading because submitQuestion guards against
-  // concurrent requests via abortControllerRef.
+  // Only the last message can ever be loading; submitQuestion guards against
+  // concurrent submits via abortControllerRef, so checking just the tail is sound.
   const isAnyLoading = messages.length > 0 && messages[messages.length - 1].isLoading;
 
   return {

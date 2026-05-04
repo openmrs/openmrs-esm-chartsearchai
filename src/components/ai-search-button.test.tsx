@@ -2,10 +2,11 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
-import { usePatient } from '@openmrs/esm-framework';
+import { useConfig, usePatient } from '@openmrs/esm-framework';
 import AiSearchButton from './ai-search-button.component';
 
 const mockUsePatient = usePatient as jest.Mock;
+const mockUseConfig = useConfig as jest.Mock;
 
 jest.mock('./ai-search-panel.component', () => {
   const MockPanel = ({ onClose }: { onClose: () => void }) => (
@@ -19,6 +20,7 @@ jest.mock('./ai-search-panel.component', () => {
 describe('AiSearchButton', () => {
   beforeEach(() => {
     mockUsePatient.mockReturnValue({ patientUuid: 'test-patient-uuid' });
+    mockUseConfig.mockReturnValue({ chatLaunchMode: 'floating' });
   });
 
   it('renders the AI button', () => {
@@ -57,5 +59,25 @@ describe('AiSearchButton', () => {
 
     await user.click(screen.getByText('Close'));
     expect(screen.queryByTestId('ai-search-panel')).not.toBeInTheDocument();
+  });
+});
+
+describe('chatLaunchMode visibility', () => {
+  it('renders nothing when chatLaunchMode is "workspace"', () => {
+    mockUseConfig.mockReturnValue({ chatLaunchMode: 'workspace' });
+    const { container } = render(<AiSearchButton />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('renders the button when chatLaunchMode is "floating"', () => {
+    mockUseConfig.mockReturnValue({ chatLaunchMode: 'floating' });
+    render(<AiSearchButton />);
+    expect(screen.getByRole('button', { name: /ai search/i })).toBeInTheDocument();
+  });
+
+  it('renders the button when chatLaunchMode is "both"', () => {
+    mockUseConfig.mockReturnValue({ chatLaunchMode: 'both' });
+    render(<AiSearchButton />);
+    expect(screen.getByRole('button', { name: /ai search/i })).toBeInTheDocument();
   });
 });
