@@ -1,5 +1,6 @@
-import { getAsyncLifecycle, defineConfigSchema } from '@openmrs/esm-framework';
+import { defineConfigSchema, getAsyncLifecycle, getSyncLifecycle } from '@openmrs/esm-framework';
 import { configSchema } from './config-schema';
+import aiChatActionButtonComponent from './components/ai-chat-action-button.component';
 
 const moduleName = '@openmrs/esm-chartsearchai-app';
 const options = { featureName: 'chartsearchai', moduleName };
@@ -10,5 +11,8 @@ export function startupApp() {
   defineConfigSchema(moduleName, configSchema);
 }
 
-// Floating AI button — appears on the patient chart page (bottom-right corner)
 export const aiSearchButton = getAsyncLifecycle(() => import('./components/ai-search-button.component'), options);
+
+export const aiChatWorkspace = getAsyncLifecycle(() => import('./components/ai-chat-workspace.component'), options);
+
+export const aiChatActionButton = getSyncLifecycle(aiChatActionButtonComponent, options);

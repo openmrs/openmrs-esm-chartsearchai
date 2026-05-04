@@ -2,6 +2,7 @@ import { renderHook, act } from '@testing-library/react';
 import { useConfig } from '@openmrs/esm-framework';
 import { useChartSearchAi } from './useChartSearchAi';
 import { searchPatientChart, searchPatientChartStream } from '../api/chartsearchai';
+import { chatSessionStore } from '../store/chat-session.store';
 
 const mockUseConfig = useConfig as jest.Mock;
 
@@ -16,11 +17,12 @@ const mockSearchPatientChartStream = searchPatientChartStream as jest.Mock;
 beforeEach(() => {
   jest.clearAllMocks();
   mockUseConfig.mockReturnValue({ useStreaming: false });
+  chatSessionStore.setState({ messagesByPatient: {} });
 });
 
 describe('useChartSearchAi', () => {
   it('returns empty messages and not loading initially', () => {
-    const { result } = renderHook(() => useChartSearchAi());
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
 
     expect(result.current.messages).toEqual([]);
     expect(result.current.isAnyLoading).toBe(false);
@@ -28,7 +30,7 @@ describe('useChartSearchAi', () => {
 
   it('appends a loading message on submitQuestion', () => {
     mockSearchPatientChart.mockReturnValue(new Promise(() => {}));
-    const { result } = renderHook(() => useChartSearchAi());
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
 
     act(() => {
       result.current.submitQuestion('patient-uuid', 'What meds?');
@@ -50,7 +52,7 @@ describe('useChartSearchAi', () => {
     };
     mockSearchPatientChart.mockResolvedValue(response);
 
-    const { result } = renderHook(() => useChartSearchAi());
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
 
     await act(async () => {
       result.current.submitQuestion('patient-uuid', 'What meds?');
@@ -67,7 +69,7 @@ describe('useChartSearchAi', () => {
   it('sets error on failed sync response', async () => {
     mockSearchPatientChart.mockRejectedValue({ message: 'Server error' });
 
-    const { result } = renderHook(() => useChartSearchAi());
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
 
     await act(async () => {
       result.current.submitQuestion('patient-uuid', 'What meds?');
@@ -83,7 +85,7 @@ describe('useChartSearchAi', () => {
     const response2 = { answer: 'Answer 2.', references: [], questionId: 'q-2' };
     mockSearchPatientChart.mockResolvedValueOnce(response1).mockResolvedValueOnce(response2);
 
-    const { result } = renderHook(() => useChartSearchAi());
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
 
     await act(async () => {
       result.current.submitQuestion('patient-uuid', 'First question?');
@@ -102,7 +104,7 @@ describe('useChartSearchAi', () => {
 
   it('uses streaming endpoint when configured', () => {
     mockUseConfig.mockReturnValue({ useStreaming: true });
-    const { result } = renderHook(() => useChartSearchAi());
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
 
     act(() => {
       result.current.submitQuestion('patient-uuid', 'Any allergies?');
@@ -122,7 +124,7 @@ describe('useChartSearchAi', () => {
 
   it('accumulates tokens into the last message during streaming', () => {
     mockUseConfig.mockReturnValue({ useStreaming: true });
-    const { result } = renderHook(() => useChartSearchAi());
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
 
     act(() => {
       result.current.submitQuestion('patient-uuid', 'Summary?');
@@ -141,7 +143,7 @@ describe('useChartSearchAi', () => {
 
   it('finalizes last message on streaming done', () => {
     mockUseConfig.mockReturnValue({ useStreaming: true });
-    const { result } = renderHook(() => useChartSearchAi());
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
 
     act(() => {
       result.current.submitQuestion('patient-uuid', 'Summary?');
@@ -166,7 +168,7 @@ describe('useChartSearchAi', () => {
 
   it('clearMessages resets to empty array and aborts in-flight request', () => {
     mockSearchPatientChart.mockReturnValue(new Promise(() => {}));
-    const { result } = renderHook(() => useChartSearchAi());
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
 
     act(() => {
       result.current.submitQuestion('patient-uuid', 'Question?');
@@ -187,7 +189,7 @@ describe('useChartSearchAi', () => {
 
   it('stopCurrent preserves history of completed messages when second message has partial answer', async () => {
     mockUseConfig.mockReturnValue({ useStreaming: true });
-    const { result } = renderHook(() => useChartSearchAi());
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
 
     // First question resolves via streaming
     act(() => {
@@ -224,7 +226,7 @@ describe('useChartSearchAi', () => {
   it('stopCurrent aborts the in-flight request', async () => {
     const response = { answer: 'Answer.', references: [], questionId: 'q-1' };
     mockSearchPatientChart.mockResolvedValue(response);
-    const { result } = renderHook(() => useChartSearchAi());
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
 
     await act(async () => {
       result.current.submitQuestion('patient-uuid', 'First?');
@@ -248,7 +250,7 @@ describe('useChartSearchAi', () => {
   it('stopCurrent removes the message bubble when no answer was received', async () => {
     const response = { answer: 'Answer.', references: [], questionId: 'q-1' };
     mockSearchPatientChart.mockResolvedValue(response);
-    const { result } = renderHook(() => useChartSearchAi());
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
 
     await act(async () => {
       result.current.submitQuestion('patient-uuid', 'First?');
@@ -273,7 +275,7 @@ describe('useChartSearchAi', () => {
 
   it('drops a second submitQuestion call while the first is in flight', () => {
     mockSearchPatientChart.mockReturnValue(new Promise(() => {}));
-    const { result } = renderHook(() => useChartSearchAi());
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
 
     act(() => {
       result.current.submitQuestion('patient-uuid', 'First?');
@@ -286,7 +288,7 @@ describe('useChartSearchAi', () => {
 
   it('sets error on streaming onError', () => {
     mockUseConfig.mockReturnValue({ useStreaming: true });
-    const { result } = renderHook(() => useChartSearchAi());
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
 
     act(() => {
       result.current.submitQuestion('patient-uuid', 'What meds?');
@@ -307,7 +309,7 @@ describe('useChartSearchAi', () => {
     const abortError = new DOMException('Aborted', 'AbortError');
     mockSearchPatientChart.mockRejectedValue(abortError);
 
-    const { result } = renderHook(() => useChartSearchAi());
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
 
     await act(async () => {
       result.current.submitQuestion('patient-uuid', 'Question?');
@@ -318,7 +320,7 @@ describe('useChartSearchAi', () => {
 
   it('aborts in-flight request on unmount', () => {
     mockSearchPatientChart.mockReturnValue(new Promise(() => {}));
-    const { result, unmount } = renderHook(() => useChartSearchAi());
+    const { result, unmount } = renderHook(() => useChartSearchAi('patient-uuid'));
 
     act(() => {
       result.current.submitQuestion('patient-uuid', 'Question?');

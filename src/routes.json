@@ -12,5 +12,21 @@
       "privilege": "AI Query Patient Data",
       "order": 100
     }
+  ],
+  "workspaces2": [
+    {
+      "name": "ai-chat-workspace",
+      "component": "aiChatWorkspace",
+      "window": "ai-chat"
+    }
+  ],
+  "workspaceWindows2": [
+    {
+      "name": "ai-chat",
+      "group": "patient-chart",
+      "icon": "aiChatActionButton",
+      "width": "wider",
+      "order": 5
+    }
   ]
 }
