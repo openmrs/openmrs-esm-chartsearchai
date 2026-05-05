@@ -115,12 +115,15 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
     prevMessagesLengthRef.current = messages.length;
   }, [messages.length]);
 
+  // Re-scrolls per chunk and again when streaming ends — references/feedback mount in that final commit and grow the message past the viewport.
   const lastAnswer = messages.length > 0 ? messages[messages.length - 1].answer : '';
   useEffect(() => {
-    if (isAnyLoading && historyAreaRef.current) {
+    if (historyAreaRef.current) {
       historyAreaRef.current.scrollTop = historyAreaRef.current.scrollHeight;
     }
   }, [lastAnswer, isAnyLoading]);
+
+  const hasCompletedAnswer = messages.some((m) => !m.isLoading && m.answer);
 
   const prevIsAnyLoadingRef = useRef(false);
   useEffect(() => {
@@ -141,8 +144,6 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
   const handleFeedbackComplete = useCallback(() => {
     inputRef.current?.focus();
   }, []);
-
-  const hasCompletedAnswer = messages.some((m) => !m.isLoading && m.answer);
 
   return (
     // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
