@@ -128,6 +128,54 @@ describe('AiChatContent', () => {
     });
   });
 
+  describe('auto-scroll', () => {
+    // Regression: when streaming ends, the AiResponsePanel mounts the references list
+    // and feedback widget in the same React commit that flips isAnyLoading to false,
+    // growing the message past the history-area viewport. The scroll effect must fire
+    // on this transition so those new elements stay visible.
+    it('scrolls history area to bottom when isAnyLoading transitions to false', () => {
+      const streaming = {
+        id: 'm1',
+        question: 'Any allergies?',
+        answer: 'partial',
+        references: [],
+        questionId: '',
+        isLoading: true,
+        error: null,
+      };
+      mockUseChartSearchAi.mockReturnValue({
+        messages: [streaming],
+        isAnyLoading: true,
+        submitQuestion: mockSubmitQuestion,
+        stopCurrent: mockStopCurrent,
+        clearMessages: jest.fn(),
+      });
+      const { rerender } = render(<AiChatContent mode="workspace" patientUuid="p1" />);
+
+      const log = screen.getByRole('log');
+      Object.defineProperty(log, 'scrollHeight', { configurable: true, value: 1000 });
+      log.scrollTop = 0;
+
+      mockUseChartSearchAi.mockReturnValue({
+        messages: [
+          {
+            ...streaming,
+            answer: 'No known allergies.',
+            references: [{ index: 1, resourceType: 'obs', resourceId: 1, date: '2026-01-01' }],
+            isLoading: false,
+          },
+        ],
+        isAnyLoading: false,
+        submitQuestion: mockSubmitQuestion,
+        stopCurrent: mockStopCurrent,
+        clearMessages: jest.fn(),
+      });
+      rerender(<AiChatContent mode="workspace" patientUuid="p1" />);
+
+      expect(log.scrollTop).toBe(1000);
+    });
+  });
+
   describe('floating mode keyboard handling', () => {
     it('calls onClose when Escape is pressed', async () => {
       const onClose = jest.fn();
