@@ -28,6 +28,23 @@ export interface AiSearchError {
 }
 
 /**
+ * Pre-warms the server-side LLM prompt cache for the given patient. Fire-and-forget;
+ * fired when the chart is opened so the first AI query skips full prefill cost. Pass
+ * an AbortSignal to cancel an in-flight warmup when the user navigates to a different
+ * patient before the previous warmup finished.
+ */
+export function warmupPatient(patientUuid: string, signal?: AbortSignal): void {
+  openmrsFetch(`${BASE_PATH}/warmup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ patient: patientUuid }),
+    signal,
+  }).catch(() => {
+    // ignore — the user does not depend on this completing, and aborts are expected on patient switch
+  });
+}
+
+/**
  * Submits user feedback (thumbs up/down + optional comment) for an AI response.
  */
 export async function submitFeedback(feedback: AiFeedback): Promise<void> {
