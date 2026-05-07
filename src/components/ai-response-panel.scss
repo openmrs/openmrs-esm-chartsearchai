@@ -20,6 +20,14 @@
   margin: 0;
 }
 
+.actionsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: layout.$spacing-03;
+  margin-top: layout.$spacing-02;
+}
+
 .streamingIndicator {
   display: inline-flex;
   margin-left: layout.$spacing-02;
