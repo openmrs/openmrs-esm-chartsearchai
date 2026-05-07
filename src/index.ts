@@ -1,6 +1,7 @@
 import { defineConfigSchema, getAsyncLifecycle, getSyncLifecycle } from '@openmrs/esm-framework';
 import { configSchema } from './config-schema';
 import aiChatActionButtonComponent from './components/ai-chat-action-button.component';
+import { setupChatSessionLogoutCleanup } from './store/chat-session.store';
 
 const moduleName = '@openmrs/esm-chartsearchai-app';
 const options = { featureName: 'chartsearchai', moduleName };
@@ -9,6 +10,7 @@ export const importTranslation = require.context('../translations', false, /.jso
 
 export function startupApp() {
   defineConfigSchema(moduleName, configSchema);
+  setupChatSessionLogoutCleanup();
 }
 
 export const aiSearchButton = getAsyncLifecycle(() => import('./components/ai-search-button.component'), options);
