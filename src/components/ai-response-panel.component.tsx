@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { InlineLoading } from '@carbon/react';
+import { IconButton, InlineLoading } from '@carbon/react';
+import { Copy } from '@carbon/react/icons';
 import { navigate } from '@openmrs/esm-framework';
 import { type AiReference } from '../api/chartsearchai';
 import { highlightReference } from '../utils/highlight-reference';
@@ -39,6 +40,10 @@ function handleReferenceNavigate(e: React.MouseEvent, url: string, ref: AiRefere
   e.preventDefault();
   navigate({ to: url });
   highlightReference(ref.resourceId, ref.date);
+}
+
+function stripCitations(answer: string): string {
+  return answer.replace(/\s?\[\d+(?:\s*,\s*\d+)*\]/g, '').trim();
 }
 
 function renderAnswerWithCitations(answer: string, references: AiReference[], patientUuid: string): React.ReactNode[] {
@@ -101,6 +106,10 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     return renderAnswerWithCitations(answer, references, patientUuid);
   }, [answer, references, patientUuid, isLoading]);
 
+  const handleCopy = useCallback(() => {
+    navigator.clipboard?.writeText(stripCitations(answer));
+  }, [answer]);
+
   if (error && !answer) {
     return (
       <div className={styles.errorContainer} role="alert">
@@ -152,8 +161,17 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
         </div>
       )}
 
-      {answer && !isLoading && questionId && (
-        <AiFeedback key={questionId} questionId={questionId} onComplete={onFeedbackComplete} />
+      {answer && !isLoading && (
+        <div className={styles.actionsRow}>
+          {questionId ? (
+            <AiFeedback key={questionId} questionId={questionId} onComplete={onFeedbackComplete} />
+          ) : (
+            <span />
+          )}
+          <IconButton kind="ghost" size="sm" label={t('copy', 'Copy')} align="left-bottom" onClick={handleCopy}>
+            <Copy />
+          </IconButton>
+        </div>
       )}
     </div>
   );
