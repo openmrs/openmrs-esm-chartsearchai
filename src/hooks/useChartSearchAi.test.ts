@@ -1,21 +1,22 @@
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useConfig } from '@openmrs/esm-framework';
 import { useChartSearchAi } from './useChartSearchAi';
 import { searchPatientChart, searchPatientChartStream } from '../api/chartsearchai';
 import { chatSessionStore } from '../store/chat-session.store';
 
-const mockUseConfig = useConfig as jest.Mock;
+const mockUseConfig = useConfig as Mock;
 
-jest.mock('../api/chartsearchai', () => ({
-  searchPatientChart: jest.fn(),
-  searchPatientChartStream: jest.fn(),
+vi.mock('../api/chartsearchai', () => ({
+  searchPatientChart: vi.fn(),
+  searchPatientChartStream: vi.fn(),
 }));
 
-const mockSearchPatientChart = searchPatientChart as jest.Mock;
-const mockSearchPatientChartStream = searchPatientChartStream as jest.Mock;
+const mockSearchPatientChart = searchPatientChart as Mock;
+const mockSearchPatientChartStream = searchPatientChartStream as Mock;
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   mockUseConfig.mockReturnValue({ useStreaming: false });
   chatSessionStore.setState({ messagesByPatient: {} });
 });

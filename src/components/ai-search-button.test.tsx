@@ -1,20 +1,20 @@
 import React from 'react';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import '@testing-library/jest-dom';
 import { useConfig, usePatient } from '@openmrs/esm-framework';
 import AiSearchButton from './ai-search-button.component';
 
-const mockUsePatient = usePatient as jest.Mock;
-const mockUseConfig = useConfig as jest.Mock;
+const mockUsePatient = usePatient as Mock;
+const mockUseConfig = useConfig as Mock;
 
-jest.mock('./ai-search-panel.component', () => {
+vi.mock('./ai-search-panel.component', () => {
   const MockPanel = ({ onClose }: { onClose: () => void }) => (
     <div data-testid="ai-search-panel">
       <button onClick={onClose}>Close</button>
     </div>
   );
-  return MockPanel;
+  return { default: MockPanel };
 });
 
 describe('AiSearchButton', () => {

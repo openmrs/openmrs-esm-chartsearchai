@@ -1,15 +1,15 @@
 import React from 'react';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import '@testing-library/jest-dom';
 import AiFeedback from './ai-feedback.component';
 import { submitFeedback } from '../api/chartsearchai';
 
-jest.mock('../api/chartsearchai', () => ({
-  submitFeedback: jest.fn(() => Promise.resolve()),
+vi.mock('../api/chartsearchai', () => ({
+  submitFeedback: vi.fn(() => Promise.resolve()),
 }));
 
-const mockSubmitFeedback = submitFeedback as jest.Mock;
+const mockSubmitFeedback = submitFeedback as Mock;
 
 const defaultProps = {
   questionId: 'q-123',
