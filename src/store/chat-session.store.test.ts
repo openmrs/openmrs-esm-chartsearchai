@@ -1,3 +1,4 @@
+import { beforeEach, describe, expect, it } from 'vitest';
 import { getSessionStore } from '@openmrs/esm-framework';
 import { chatSessionStore, setupChatSessionLogoutCleanup } from './chat-session.store';
 
