@@ -1,22 +1,22 @@
 import React, { act } from 'react';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import '@testing-library/jest-dom';
 import { useConfig, usePatient } from '@openmrs/esm-framework';
 import AiSearchPanel from './ai-search-panel.component';
 import { type ChatMessage } from '../hooks/useChartSearchAi';
 
-const mockUseConfig = useConfig as jest.Mock;
-const mockUsePatient = usePatient as jest.Mock;
+const mockUseConfig = useConfig as Mock;
+const mockUsePatient = usePatient as Mock;
 
-const mockSubmitQuestion = jest.fn();
-const mockClearMessages = jest.fn();
-const mockStopCurrent = jest.fn();
+const mockSubmitQuestion = vi.fn();
+const mockClearMessages = vi.fn();
+const mockStopCurrent = vi.fn();
 
 let mockMessages: ChatMessage[] = [];
 let mockIsAnyLoading = false;
 
-jest.mock('../hooks/useChartSearchAi', () => ({
+vi.mock('../hooks/useChartSearchAi', () => ({
   useChartSearchAi: () => ({
     messages: mockMessages,
     isAnyLoading: mockIsAnyLoading,
@@ -26,15 +26,15 @@ jest.mock('../hooks/useChartSearchAi', () => ({
   }),
 }));
 
-const mockStartListening = jest.fn();
-const mockStopListening = jest.fn();
-const mockClearSpeechError = jest.fn();
+const mockStartListening = vi.fn();
+const mockStopListening = vi.fn();
+const mockClearSpeechError = vi.fn();
 let mockIsListening = false;
 let mockIsSpeechSupported = false;
 let mockSpeechError: string | null = null;
 let capturedOnResult: ((transcript: string) => void) | null = null;
 
-jest.mock('../hooks/useSpeechRecognition', () => ({
+vi.mock('../hooks/useSpeechRecognition', () => ({
   useSpeechRecognition: (onResult: (transcript: string) => void) => {
     capturedOnResult = onResult;
     return {
@@ -48,8 +48,8 @@ jest.mock('../hooks/useSpeechRecognition', () => ({
   },
 }));
 
-jest.mock('../api/chartsearchai', () => ({
-  submitFeedback: jest.fn().mockResolvedValue(undefined),
+vi.mock('../api/chartsearchai', () => ({
+  submitFeedback: vi.fn().mockResolvedValue(undefined),
 }));
 
 function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
@@ -94,7 +94,7 @@ beforeEach(() => {
 });
 
 describe('AiSearchPanel', () => {
-  const onClose = jest.fn();
+  const onClose = vi.fn();
 
   beforeEach(() => {
     onClose.mockClear();

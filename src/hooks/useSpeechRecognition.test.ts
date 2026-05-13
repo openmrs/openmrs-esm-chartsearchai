@@ -1,3 +1,4 @@
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
 interface MockEvent {
@@ -27,9 +28,8 @@ class MockSpeechRecognition {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (window as any).SpeechRecognition = MockSpeechRecognition;
 
-// Use require after setting the global so the module-level constant is initialized.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { useSpeechRecognition } = require('./useSpeechRecognition');
+// Import after setting the global so the module-level constant is initialized.
+const { useSpeechRecognition } = await import('./useSpeechRecognition');
 
 afterAll(() => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -37,12 +37,12 @@ afterAll(() => {
 });
 
 beforeEach(() => {
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
 });
 
 function createInstanceCapture() {
   const instances: MockSpeechRecognition[] = [];
-  jest.spyOn(MockSpeechRecognition.prototype, 'start').mockImplementation(function (this: MockSpeechRecognition) {
+  vi.spyOn(MockSpeechRecognition.prototype, 'start').mockImplementation(function (this: MockSpeechRecognition) {
     instances.push(this);
     this.onstart?.();
   });
@@ -51,7 +51,7 @@ function createInstanceCapture() {
 
 describe('useSpeechRecognition', () => {
   it('returns initial state', () => {
-    const onResult = jest.fn();
+    const onResult = vi.fn();
     const { result } = renderHook(() => useSpeechRecognition(onResult));
 
     expect(result.current.isListening).toBe(false);
@@ -60,7 +60,7 @@ describe('useSpeechRecognition', () => {
   });
 
   it('sets isListening to true when started', () => {
-    const onResult = jest.fn();
+    const onResult = vi.fn();
     const { result } = renderHook(() => useSpeechRecognition(onResult));
 
     act(() => {
@@ -71,7 +71,7 @@ describe('useSpeechRecognition', () => {
   });
 
   it('sets isListening to false when stopped', () => {
-    const onResult = jest.fn();
+    const onResult = vi.fn();
     const { result } = renderHook(() => useSpeechRecognition(onResult));
 
     act(() => {
@@ -89,7 +89,7 @@ describe('useSpeechRecognition', () => {
 
   it('calls onResult with transcript', () => {
     const getInstance = createInstanceCapture();
-    const onResult = jest.fn();
+    const onResult = vi.fn();
     const { result } = renderHook(() => useSpeechRecognition(onResult));
 
     act(() => {
@@ -111,7 +111,7 @@ describe('useSpeechRecognition', () => {
 
   it('sets error on recognition error', () => {
     const getInstance = createInstanceCapture();
-    const onResult = jest.fn();
+    const onResult = vi.fn();
     const { result } = renderHook(() => useSpeechRecognition(onResult));
 
     act(() => {
@@ -130,7 +130,7 @@ describe('useSpeechRecognition', () => {
 
   it('ignores aborted errors', () => {
     const getInstance = createInstanceCapture();
-    const onResult = jest.fn();
+    const onResult = vi.fn();
     const { result } = renderHook(() => useSpeechRecognition(onResult));
 
     act(() => {
@@ -146,7 +146,7 @@ describe('useSpeechRecognition', () => {
 
   it('clears error on startListening', () => {
     const getInstance = createInstanceCapture();
-    const onResult = jest.fn();
+    const onResult = vi.fn();
     const { result } = renderHook(() => useSpeechRecognition(onResult));
 
     act(() => {
@@ -168,7 +168,7 @@ describe('useSpeechRecognition', () => {
 
   it('clears error via clearError', () => {
     const getInstance = createInstanceCapture();
-    const onResult = jest.fn();
+    const onResult = vi.fn();
     const { result } = renderHook(() => useSpeechRecognition(onResult));
 
     act(() => {
@@ -190,15 +190,15 @@ describe('useSpeechRecognition', () => {
 
   it('nulls old instance handlers when restarting to prevent race conditions', () => {
     const instances: MockSpeechRecognition[] = [];
-    jest.spyOn(MockSpeechRecognition.prototype, 'start').mockImplementation(function (this: MockSpeechRecognition) {
+    vi.spyOn(MockSpeechRecognition.prototype, 'start').mockImplementation(function (this: MockSpeechRecognition) {
       instances.push(this);
       this.onstart?.();
     });
-    jest.spyOn(MockSpeechRecognition.prototype, 'stop').mockImplementation(function () {
+    vi.spyOn(MockSpeechRecognition.prototype, 'stop').mockImplementation(function () {
       // Don't fire onend — simulates async stop where onend fires later
     });
 
-    const onResult = jest.fn();
+    const onResult = vi.fn();
     const { result } = renderHook(() => useSpeechRecognition(onResult));
 
     // Start first session
@@ -235,9 +235,9 @@ describe('useSpeechRecognition', () => {
 
   it('stops recognition on unmount', () => {
     const getInstance = createInstanceCapture();
-    const stopSpy = jest.spyOn(MockSpeechRecognition.prototype, 'stop');
+    const stopSpy = vi.spyOn(MockSpeechRecognition.prototype, 'stop');
 
-    const onResult = jest.fn();
+    const onResult = vi.fn();
     const { result, unmount } = renderHook(() => useSpeechRecognition(onResult));
 
     act(() => {
@@ -254,8 +254,8 @@ describe('useSpeechRecognition', () => {
 
   it('uses the latest onResult callback via ref', () => {
     const getInstance = createInstanceCapture();
-    const onResult1 = jest.fn();
-    const onResult2 = jest.fn();
+    const onResult1 = vi.fn();
+    const onResult2 = vi.fn();
 
     const { result, rerender } = renderHook(({ cb }) => useSpeechRecognition(cb), {
       initialProps: { cb: onResult1 },
@@ -281,7 +281,7 @@ describe('useSpeechRecognition', () => {
 
   it('does not call onResult for empty transcript', () => {
     const getInstance = createInstanceCapture();
-    const onResult = jest.fn();
+    const onResult = vi.fn();
     const { result } = renderHook(() => useSpeechRecognition(onResult));
 
     act(() => {

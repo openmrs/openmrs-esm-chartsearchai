@@ -1,6 +1,6 @@
 import React from 'react';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import '@testing-library/jest-dom';
 import AiResponsePanel from './ai-response-panel.component';
 
 const patientUuid = 'test-patient-uuid';
@@ -177,10 +177,10 @@ describe('AiResponsePanel copy-to-clipboard', () => {
     { index: 2, resourceType: 'order', resourceId: 202, date: '2025-02-20' },
   ];
 
-  let writeText: jest.Mock;
+  let writeText: Mock;
 
   beforeEach(() => {
-    writeText = jest.fn().mockResolvedValue(undefined);
+    writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText },
       configurable: true,
