@@ -514,3 +514,42 @@ export async function startNewChat(
   });
   return response.data as ChatHistoryResponse;
 }
+
+export interface ModelListResponse {
+  engine: 'remote' | 'local' | string;
+  current: string | null;
+  available: string[];
+  endpointUrl?: string | null;
+}
+
+/**
+ * List the models the active remote endpoint serves, plus the current GP
+ * selection. Returns {engine:'local', available:[]} when the backend is
+ * running the local engine — the picker hides itself in that case.
+ *
+ * 503 from the server (local engine, misconfig) propagates as a thrown
+ * error; the picker treats throw + empty list the same way (hidden).
+ */
+export async function fetchAvailableModels(abortController?: AbortController): Promise<ModelListResponse> {
+  const response = await openmrsFetch(`${BASE_PATH}/models`, {
+    signal: abortController?.signal,
+  });
+  return response.data as ModelListResponse;
+}
+
+/**
+ * Switch the active model. The backend validates membership in the live
+ * /v1/models list before writing the GP; an unknown id returns 400.
+ */
+export async function setCurrentModel(
+  modelName: string,
+  abortController?: AbortController,
+): Promise<{ current: string }> {
+  const response = await openmrsFetch(`${BASE_PATH}/model`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ modelName }),
+    signal: abortController?.signal,
+  });
+  return response.data as { current: string };
+}
