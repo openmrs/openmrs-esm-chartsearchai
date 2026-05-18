@@ -381,6 +381,68 @@ describe('useChartSearchAi', () => {
     expect(result.current.messages[0].isLoading).toBe(false);
   });
 
+  it('carries blocks from streaming done onto the message', async () => {
+    mockChatStream.mockImplementation(() => {});
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'List meds');
+    });
+    const callbacks = mockChatStream.mock.calls[0][3];
+
+    const finalResponse = {
+      answer: 'See table.',
+      references: [{ index: 1, resourceType: 'order', resourceId: 100, date: '2024-01-01' }],
+      blocks: [
+        {
+          kind: 'table' as const,
+          title: 'Medications',
+          columns: [{ key: 'name', label: 'Medication' }],
+          rows: [{ cells: { name: { text: 'Lisinopril', refs: [1] } } }],
+        },
+      ],
+      session: 'srv-session-1',
+      messageId: 'msg-blocks',
+    };
+
+    act(() => {
+      callbacks.onDone(finalResponse);
+    });
+
+    expect(result.current.messages[0].blocks).toEqual(finalResponse.blocks);
+  });
+
+  it('hydrates blocks from chat history rows so reloads restore tables', async () => {
+    mockFetchHistory.mockResolvedValueOnce({
+      session: 'srv-session-h',
+      messages: [
+        { messageId: 'u-1', role: 'user', content: 'List meds', createdAt: 1 },
+        {
+          messageId: 'a-1',
+          role: 'assistant',
+          content: 'See table.',
+          blocks: [
+            {
+              kind: 'table',
+              title: 'Medications',
+              columns: [{ key: 'name', label: 'Medication' }],
+              rows: [{ cells: { name: { text: 'Lisinopril', refs: [1] } } }],
+            },
+          ],
+          createdAt: 2,
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    await waitFor(() => expect(result.current.messages).toHaveLength(1));
+    expect(result.current.messages[0].answer).toBe('See table.');
+    expect(result.current.messages[0].blocks).toHaveLength(1);
+    expect(result.current.messages[0].blocks?.[0].title).toBe('Medications');
+  });
+
   it('sets error on streaming onError', async () => {
     mockChatStream.mockImplementation(() => {});
     const { result } = renderHook(() => useChartSearchAi('patient-uuid'));

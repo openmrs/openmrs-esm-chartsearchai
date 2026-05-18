@@ -34,11 +34,31 @@ export interface AiSafetyWarning {
   detail: string;
 }
 
+export interface AiCell {
+  text: string;
+  refs?: number[];
+}
+
+export interface AiTableColumn {
+  key: string;
+  label: string;
+}
+
+export interface AiTableBlock {
+  kind: 'table';
+  title?: string;
+  columns: AiTableColumn[];
+  rows: Array<{ cells: Record<string, AiCell> }>;
+}
+
+export type AiBlock = AiTableBlock;
+
 export interface AiSearchResponse {
   answer: string;
   references: AiReference[];
   /** Empty/absent unless the optional drug-reference feature is enabled on the server. */
   safetyWarnings?: AiSafetyWarning[];
+  blocks?: AiBlock[];
   questionId?: string;
   /** Server-side conversation handle. Present on chat responses only. */
   session?: string;
@@ -50,6 +70,7 @@ export interface ChatHistoryMessage {
   messageId: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
+  blocks?: AiBlock[];
   createdAt: number;
 }
 

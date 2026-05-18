@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useConfig, useStore } from '@openmrs/esm-framework';
 import {
+  type AiBlock,
   type AiReference,
   type AiSafetyWarning,
   type AiSearchResponse,
@@ -18,6 +19,7 @@ export interface ChatMessage {
   answer: string;
   references: AiReference[];
   safetyWarnings: AiSafetyWarning[];
+  blocks?: AiBlock[];
   questionId: string;
   isLoading: boolean;
   error: string | null;
@@ -89,6 +91,7 @@ function hydrateMessages(history: ChatHistoryMessage[]): ChatMessage[] {
     } else if (m.role === 'assistant') {
       if (pending) {
         pending.answer = m.content;
+        pending.blocks = m.blocks;
         pending.questionId = m.messageId;
         out.push(pending);
         pending = null;
@@ -242,6 +245,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
             references: response.references,
             safetyWarnings: response.safetyWarnings ?? [],
             questionId: response.questionId ?? '',
+            blocks: response.blocks,
             questionId: response.messageId ?? response.questionId ?? '',
             isLoading: false,
             // the scratchpad served its purpose as a live indicator; don't persist it

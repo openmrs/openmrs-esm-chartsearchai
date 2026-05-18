@@ -5,13 +5,17 @@ import { Copy } from '@carbon/react/icons';
 import { navigate } from '@openmrs/esm-framework';
 import { type AiReference, type AiSafetyWarning } from '../api/chartsearchai';
 import { highlightReference } from '../utils/highlight-reference';
+import { type AiBlock, type AiReference } from '../api/chartsearchai';
 import AiFeedback from './ai-feedback.component';
+import AiTableBlockView from './ai-table-block.component';
+import { buildReferenceUrl, handleReferenceNavigate, renderTextWithCitations } from './citation-chip.component';
 import styles from './ai-response-panel.scss';
 
 interface AiResponsePanelProps {
   answer: string;
   references: AiReference[];
   safetyWarnings?: AiSafetyWarning[];
+  blocks?: AiBlock[];
   questionId: string;
   error: string | null;
   isLoading: boolean;
@@ -122,7 +126,6 @@ function safetyWarningTag(type: string, t: Translate): { tagType: 'red' | 'magen
       return { tagType: 'red', label: t('safetyWarning', 'Safety') };
   }
 }
-
 function stripCitations(answer: string): string {
   return answer.replace(/\s?\[\d+(?:\s*,\s*\d+)*\]/g, '').trim();
 }
@@ -193,11 +196,11 @@ function renderAnswerWithCitations(
   }
   return parts;
 }
-
 const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   answer,
   references,
   safetyWarnings,
+  blocks,
   questionId,
   error,
   isLoading,
@@ -210,6 +213,8 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     if (isLoading) return answer;
     return renderAnswerWithCitations(answer, references, patientUuid, t);
   }, [answer, references, patientUuid, isLoading, t]);
+    return renderTextWithCitations(answer, references, patientUuid);
+  }, [answer, references, patientUuid, isLoading]);
 
   const handleCopy = useCallback(() => {
     navigator.clipboard?.writeText(stripCitations(answer));
@@ -231,6 +236,13 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
           {isLoading && <InlineLoading className={styles.streamingIndicator} />}
         </div>
       )}
+
+      {!isLoading &&
+        blocks?.map((block, idx) =>
+          block.kind === 'table' ? (
+            <AiTableBlockView key={`block-${idx}`} block={block} references={references} patientUuid={patientUuid} />
+          ) : null,
+        )}
 
       {error && answer && (
         <div className={styles.errorContainer} role="alert">

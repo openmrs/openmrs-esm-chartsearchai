@@ -217,6 +217,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
                 answer={msg.answer}
                 references={msg.references}
                 safetyWarnings={msg.safetyWarnings}
+                blocks={msg.blocks}
                 questionId={msg.questionId}
                 error={msg.error}
                 isLoading={msg.isLoading}
