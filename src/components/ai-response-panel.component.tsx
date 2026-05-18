@@ -1,16 +1,18 @@
 import React, { useCallback, useMemo } from 'react';
+import { navigate } from '@openmrs/esm-framework';
 import { useTranslation } from 'react-i18next';
 import { IconButton, InlineLoading, Tag } from '@carbon/react';
 import { Copy } from '@carbon/react/icons';
-import { navigate } from '@openmrs/esm-framework';
-import { type AiReference } from '../api/chartsearchai';
-import { highlightReference } from '../utils/highlight-reference';
+import { type AiBlock, type AiReference } from '../api/chartsearchai';
 import AiFeedback from './ai-feedback.component';
+import AiTableBlockView from './ai-table-block.component';
+import { highlightReference } from '../utils/highlight-reference';
 import styles from './ai-response-panel.scss';
 
 interface AiResponsePanelProps {
   answer: string;
   references: AiReference[];
+  blocks?: AiBlock[];
   questionId: string;
   error: string | null;
   isLoading: boolean;
@@ -141,6 +143,7 @@ function renderAnswerWithCitations(
 const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   answer,
   references,
+  blocks,
   questionId,
   error,
   isLoading,
@@ -174,6 +177,13 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
           {isLoading && <InlineLoading className={styles.streamingIndicator} />}
         </div>
       )}
+
+      {!isLoading &&
+        blocks?.map((block, idx) =>
+          block.kind === 'table' ? (
+            <AiTableBlockView key={`block-${idx}`} block={block} references={references} patientUuid={patientUuid} />
+          ) : null,
+        )}
 
       {error && answer && (
         <div className={styles.errorContainer} role="alert">
