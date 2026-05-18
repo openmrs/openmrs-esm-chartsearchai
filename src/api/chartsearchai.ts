@@ -24,6 +24,22 @@ export interface AiSearchResponse {
   answer: string;
   references: AiReference[];
   questionId?: string;
+  /** Server-side conversation handle. Present on chat responses only. */
+  session?: string;
+  /** Server-assigned uuid for the assistant message row. Present on chat responses only. */
+  messageId?: string;
+}
+
+export interface ChatHistoryMessage {
+  messageId: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  createdAt: number;
+}
+
+export interface ChatHistoryResponse {
+  session: string;
+  messages: ChatHistoryMessage[];
 }
 
 export type FeedbackRating = 'positive' | 'negative';
@@ -273,4 +289,210 @@ export function searchPatientChartStream(
         callbacks.onError(err?.message ?? 'An unknown error occurred');
       }
     });
+}
+
+/**
+ * Streaming variant for multi-turn chat. Same SSE shape as
+ * {@link searchPatientChartStream} plus:
+ *   - sends an optional {@code session} uuid so the server can reuse the
+ *     prior conversation thread
+ *   - captures the server's {@code X-ChartSearchAi-Session} response header
+ *     and surfaces it via {@code onSession} before the first token arrives
+ *
+ * The server is the source of truth for conversation history — the client
+ * sends only the new user message, not the rendered transcript.
+ */
+export function chatPatientChartStream(
+  patientUuid: string,
+  sessionUuid: string | null,
+  question: string,
+  callbacks: {
+    onSession: (uuid: string) => void;
+    onToken: (token: string) => void;
+    onDone: (response: AiSearchResponse) => void;
+    onError: (error: string) => void;
+    onReferences?: (references: AiReference[]) => void;
+    onGrounded?: (references: AiReference[]) => void;
+    onThinking?: (chunk: string) => void;
+  },
+  abortController?: AbortController,
+): void {
+  const url = `${window.openmrsBase}${BASE_PATH}/chat/stream`;
+  const body: Record<string, string> = { patient: patientUuid, question };
+  if (sessionUuid) {
+    body.session = sessionUuid;
+  }
+
+  window
+    .fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        'Disable-WWW-Authenticate': 'true',
+      },
+      body: JSON.stringify(body),
+      credentials: 'include',
+      redirect: 'manual',
+      signal: abortController?.signal,
+    })
+    .then(async (response) => {
+      if (response.type === 'opaqueredirect' || response.status === 0) {
+        callbacks.onError('Your session has expired. Please log in again.');
+        return;
+      }
+
+      if (!response.ok) {
+        let message = `Server error: ${response.status}`;
+        try {
+          const errBody = await response.json();
+          if (errBody?.error) {
+            message = errBody.error;
+          }
+        } catch {
+          // no JSON body
+        }
+        callbacks.onError(message);
+        return;
+      }
+
+      // Capture the session uuid the server pinned for this conversation
+      // before we start consuming the stream — the client uses it to thread
+      // subsequent posts onto the same conversation row.
+      const sessionHeader = response.headers.get('X-ChartSearchAi-Session');
+      if (sessionHeader) {
+        callbacks.onSession(sessionHeader);
+      }
+
+      const reader = response.body;
+
+      if (!reader || typeof reader.getReader !== 'function') {
+        callbacks.onError('Streaming not supported by this browser.');
+        return;
+      }
+
+      const textDecoder = new TextDecoder();
+      const streamReader = reader.getReader();
+      let buffer = '';
+      let eventType = '';
+      let dataLines: string[] = [];
+      let streamFinalized = false;
+
+      function dispatchEvent() {
+        if (dataLines.length === 0) {
+          eventType = '';
+          return;
+        }
+        const data = dataLines.join('\n');
+        if (eventType === 'token') {
+          callbacks.onToken(data);
+        } else if (eventType === 'thinking') {
+          callbacks.onThinking?.(data);
+        } else if (eventType === 'references') {
+          try {
+            const parsed = JSON.parse(data);
+            callbacks.onReferences?.(parsed.references ?? []);
+          } catch {
+            // ignore; `done` is authoritative
+          }
+        } else if (eventType === 'grounded') {
+          try {
+            const parsed = JSON.parse(data);
+            callbacks.onGrounded?.(parsed.references ?? []);
+          } catch {
+            // ignore; citations simply stay unverified
+          }
+        } else if (eventType === 'done') {
+          streamFinalized = true;
+          try {
+            const parsed: AiSearchResponse = JSON.parse(data);
+            callbacks.onDone(parsed);
+          } catch {
+            callbacks.onError('Failed to parse final response');
+          }
+        } else if (eventType === 'error') {
+          streamFinalized = true;
+          callbacks.onError(data);
+        }
+        eventType = '';
+        dataLines = [];
+      }
+
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { done, value } = await streamReader.read();
+        if (done) break;
+
+        buffer += textDecoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          if (line === '') {
+            dispatchEvent();
+          } else if (line.startsWith('event:')) {
+            eventType = line.slice(6).trim();
+          } else if (line.startsWith('data:')) {
+            const raw = line.slice(5);
+            dataLines.push(raw.startsWith(' ') ? raw.slice(1) : raw);
+          }
+        }
+      }
+
+      if (buffer) {
+        for (const line of buffer.split('\n')) {
+          if (line === '') {
+            dispatchEvent();
+          } else if (line.startsWith('event:')) {
+            eventType = line.slice(6).trim();
+          } else if (line.startsWith('data:')) {
+            const raw = line.slice(5);
+            dataLines.push(raw.startsWith(' ') ? raw.slice(1) : raw);
+          }
+        }
+      }
+
+      dispatchEvent();
+
+      if (!streamFinalized) {
+        callbacks.onError('Stream ended unexpectedly without a response');
+      }
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') {
+        callbacks.onError(err?.message ?? 'An unknown error occurred');
+      }
+    });
+}
+
+/**
+ * Hydrate the chat panel state on mount. Returns the active session
+ * (creating one if none exists) and its full message list in chronological
+ * order. Empty messages array on a freshly-created session.
+ */
+export async function fetchChatHistory(
+  patientUuid: string,
+  abortController?: AbortController,
+): Promise<ChatHistoryResponse> {
+  const response = await openmrsFetch(`${BASE_PATH}/chat?patient=${encodeURIComponent(patientUuid)}`, {
+    signal: abortController?.signal,
+  });
+  return response.data as ChatHistoryResponse;
+}
+
+/**
+ * Close the current active chat session for this (patient, user) pair
+ * and open a fresh one. Returns the new session uuid.
+ */
+export async function startNewChat(
+  patientUuid: string,
+  abortController?: AbortController,
+): Promise<ChatHistoryResponse> {
+  const response = await openmrsFetch(`${BASE_PATH}/chat/new`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ patient: patientUuid }),
+    signal: abortController?.signal,
+  });
+  return response.data as ChatHistoryResponse;
 }

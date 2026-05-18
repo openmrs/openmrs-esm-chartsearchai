@@ -32,6 +32,24 @@
   flex-shrink: 0;
 }
 
+.panelHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: layout.$spacing-02;
+}
+
+.workspaceActions {
+  display: flex;
+  justify-content: flex-end;
+  padding: layout.$spacing-02 layout.$spacing-05 0;
+  flex-shrink: 0;
+}
+
+.newChatLabel {
+  margin-left: layout.$spacing-02;
+  @include type.type-style('body-compact-01');
+}
+
 .panelTitle {
   @include type.type-style('heading-compact-01');
   display: flex;
