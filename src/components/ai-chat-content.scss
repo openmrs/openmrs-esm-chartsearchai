@@ -121,6 +121,16 @@
   max-width: 95%;
 }
 
+.modelPickerRow {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0 layout.$spacing-05;
+  // Picker hides itself when not applicable (engine=local, <2 models, etc.),
+  // so this row collapses to zero height in those cases.
+  min-height: 0;
+}
+
 .inputArea {
   display: flex;
   align-items: center;
