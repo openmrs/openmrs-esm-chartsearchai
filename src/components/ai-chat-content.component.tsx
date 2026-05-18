@@ -7,6 +7,7 @@ import { useChartSearchAi } from '../hooks/useChartSearchAi';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { type ChartSearchAiConfig } from '../config-schema';
 import AiResponsePanel from './ai-response-panel.component';
+import ModelPicker from './model-picker.component';
 import styles from './ai-chat-content.scss';
 
 interface AiChatContentProps {
@@ -250,6 +251,10 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
             : t('speechRecognitionError', 'Speech recognition failed. Please try again.')}
         </p>
       )}
+
+      <div className={styles.modelPickerRow}>
+        <ModelPicker />
+      </div>
 
       <form className={styles.inputArea} onSubmit={handleSubmit}>
         <input

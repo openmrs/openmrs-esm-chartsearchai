@@ -50,6 +50,11 @@ vi.mock('../hooks/useSpeechRecognition', () => ({
 
 vi.mock('../api/chartsearchai', () => ({
   submitFeedback: vi.fn().mockResolvedValue(undefined),
+  // ModelPicker (mounted inside AiChatContent) imports these. Stub them so
+  // the picker hides itself silently — keeps these tests focused on the
+  // panel flow, not the picker.
+  fetchAvailableModels: vi.fn().mockRejectedValue(new Error('not mocked')),
+  setCurrentModel: vi.fn(),
 }));
 
 function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
