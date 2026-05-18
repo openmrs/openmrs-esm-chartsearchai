@@ -125,7 +125,11 @@
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  padding: 0 layout.$spacing-05;
+  // Vertical: spacing-02 keeps the trigger from crowding the disclaimer above.
+  // Horizontal: spacing-06 on the right adds breathing room from the panel
+  // border — spacing-05 (matching .inputArea) put the chevron hard against
+  // the edge in floating mode at narrow widths.
+  padding: layout.$spacing-02 layout.$spacing-06 layout.$spacing-02 layout.$spacing-05;
   // Picker hides itself when not applicable (engine=local, <2 models, etc.),
   // so this row collapses to zero height in those cases.
   min-height: 0;
