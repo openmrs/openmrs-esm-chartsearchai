@@ -177,6 +177,75 @@ describe('AiResponsePanel reference links', () => {
     expect(screen.queryByText(/Response interrupted/)).not.toBeInTheDocument();
   });
 
+  it('renders a Carbon DataTable below the prose when blocks are present', () => {
+    const refs = [
+      { index: 1, resourceType: 'order', resourceId: 100, date: '2024-01-01' },
+      { index: 2, resourceType: 'order', resourceId: 200, date: '2024-02-01' },
+    ];
+    const blocks = [
+      {
+        kind: 'table' as const,
+        title: 'Medications',
+        columns: [
+          { key: 'name', label: 'Medication' },
+          { key: 'dose', label: 'Dose' },
+        ],
+        rows: [
+          { cells: { name: { text: 'Lisinopril', refs: [1] }, dose: { text: '10 mg' } } },
+          { cells: { name: { text: 'Metformin', refs: [2] }, dose: { text: '500 mg' } } },
+        ],
+      },
+    ];
+
+    render(
+      <AiResponsePanel
+        answer="See table for medications."
+        references={refs}
+        blocks={blocks}
+        questionId="q-blocks"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    // Prose answer still renders
+    expect(screen.getByText(/See table for medications/)).toBeInTheDocument();
+    // Table title + headers + rows render
+    expect(screen.getByText('Medications')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Medication' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Dose' })).toBeInTheDocument();
+    expect(screen.getByText('Lisinopril')).toBeInTheDocument();
+    expect(screen.getByText('Metformin')).toBeInTheDocument();
+    expect(screen.getByText('10 mg')).toBeInTheDocument();
+    expect(screen.getByText('500 mg')).toBeInTheDocument();
+  });
+
+  it('does NOT render table blocks while answer is still streaming', () => {
+    const blocks = [
+      {
+        kind: 'table' as const,
+        title: 'Stale',
+        columns: [{ key: 'a', label: 'A' }],
+        rows: [{ cells: { a: { text: 'should-not-show' } } }],
+      },
+    ];
+    render(
+      <AiResponsePanel
+        answer="Still typing"
+        references={[]}
+        blocks={blocks}
+        questionId=""
+        error={null}
+        isLoading={true}
+        patientUuid={patientUuid}
+      />,
+    );
+    // The streaming-time render only shows prose; blocks land atomically once done.
+    expect(screen.queryByText('Stale')).not.toBeInTheDocument();
+    expect(screen.queryByText('should-not-show')).not.toBeInTheDocument();
+  });
+
   it('shows partial answer with error banner when stream fails mid-response', () => {
     render(
       <AiResponsePanel
