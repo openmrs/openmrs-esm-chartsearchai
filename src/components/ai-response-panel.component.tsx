@@ -2,15 +2,16 @@ import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IconButton, InlineLoading } from '@carbon/react';
 import { Copy } from '@carbon/react/icons';
-import { navigate } from '@openmrs/esm-framework';
-import { type AiReference } from '../api/chartsearchai';
-import { highlightReference } from '../utils/highlight-reference';
+import { type AiBlock, type AiReference } from '../api/chartsearchai';
 import AiFeedback from './ai-feedback.component';
+import AiTableBlockView from './ai-table-block.component';
+import { buildReferenceUrl, handleReferenceNavigate, renderTextWithCitations } from './citation-chip.component';
 import styles from './ai-response-panel.scss';
 
 interface AiResponsePanelProps {
   answer: string;
   references: AiReference[];
+  blocks?: AiBlock[];
   questionId: string;
   error: string | null;
   isLoading: boolean;
@@ -18,81 +19,14 @@ interface AiResponsePanelProps {
   onFeedbackComplete?: () => void;
 }
 
-const RESOURCE_TYPE_TO_CHART_PAGE: Record<string, string> = {
-  obs: 'Results',
-  order: 'Orders',
-  allergy: 'Allergies',
-  condition: 'Conditions',
-  diagnosis: 'Visits',
-  program: 'Programs',
-  medication_dispense: 'Medications',
-};
-
-function buildReferenceUrl(ref: AiReference, patientUuid: string): string | null {
-  if (!patientUuid) {
-    return null;
-  }
-  const chartPage = RESOURCE_TYPE_TO_CHART_PAGE[ref.resourceType.toLowerCase()];
-  return `${window.spaBase}/patient/${patientUuid}/chart/${encodeURIComponent(chartPage ?? 'Patient Summary')}`;
-}
-
-function handleReferenceNavigate(e: React.MouseEvent, url: string, ref: AiReference) {
-  e.preventDefault();
-  navigate({ to: url });
-  highlightReference(ref.resourceId, ref.date);
-}
-
 function stripCitations(answer: string): string {
   return answer.replace(/\s?\[\d+(?:\s*,\s*\d+)*\]/g, '').trim();
-}
-
-function renderAnswerWithCitations(answer: string, references: AiReference[], patientUuid: string): React.ReactNode[] {
-  const refByIndex = new Map(references.map((r) => [r.index, r]));
-  const parts: React.ReactNode[] = [];
-  const pattern = /\[(\d+(?:\s*,\s*\d+)*)\]/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = pattern.exec(answer)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(answer.slice(lastIndex, match.index));
-    }
-    const matchIndex = match.index;
-    const citIndices = match[1].split(/\s*,\s*/).map(Number);
-    parts.push('[');
-    citIndices.forEach((citIndex, i) => {
-      const ref = refByIndex.get(citIndex);
-      const url = ref ? buildReferenceUrl(ref, patientUuid) : null;
-      parts.push(
-        url && ref ? (
-          <a
-            key={`cit-${matchIndex}-${citIndex}`}
-            className={styles.inlineCitation}
-            href={url}
-            onClick={(e) => handleReferenceNavigate(e, url, ref)}
-          >
-            {citIndex}
-          </a>
-        ) : (
-          `${citIndex}`
-        ),
-      );
-      if (i < citIndices.length - 1) {
-        parts.push(', ');
-      }
-    });
-    parts.push(']');
-    lastIndex = pattern.lastIndex;
-  }
-  if (lastIndex < answer.length) {
-    parts.push(answer.slice(lastIndex));
-  }
-  return parts;
 }
 
 const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   answer,
   references,
+  blocks,
   questionId,
   error,
   isLoading,
@@ -103,7 +37,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   const renderedAnswer = useMemo(() => {
     if (!answer) return null;
     if (isLoading) return answer;
-    return renderAnswerWithCitations(answer, references, patientUuid);
+    return renderTextWithCitations(answer, references, patientUuid);
   }, [answer, references, patientUuid, isLoading]);
 
   const handleCopy = useCallback(() => {
@@ -126,6 +60,13 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
           {isLoading && <InlineLoading className={styles.streamingIndicator} />}
         </div>
       )}
+
+      {!isLoading &&
+        blocks?.map((block, idx) =>
+          block.kind === 'table' ? (
+            <AiTableBlockView key={`block-${idx}`} block={block} references={references} patientUuid={patientUuid} />
+          ) : null,
+        )}
 
       {error && answer && (
         <div className={styles.errorContainer} role="alert">
