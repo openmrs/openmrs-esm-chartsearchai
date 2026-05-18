@@ -22,6 +22,13 @@ export const configSchema = {
     _description: 'Controls how the AI chat panel is launched. One of: "floating", "workspace", "both"',
     _validators: [validators.oneOf(['floating', 'workspace', 'both'])],
   },
+  showModelPicker: {
+    _type: Type.Boolean,
+    _default: true,
+    _description:
+      'Show the inline model picker in the chat panel footer. Useful for dev / iteration; ' +
+      'override to false for clinician-facing deployments where the model is centrally configured.',
+  },
 };
 
 export interface ChartSearchAiConfig {
@@ -29,4 +36,5 @@ export interface ChartSearchAiConfig {
   maxQuestionLength: number;
   useStreaming: boolean;
   chatLaunchMode: 'floating' | 'workspace' | 'both';
+  showModelPicker: boolean;
 }

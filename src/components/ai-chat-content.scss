@@ -32,6 +32,24 @@
   flex-shrink: 0;
 }
 
+.panelHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: layout.$spacing-02;
+}
+
+.workspaceActions {
+  display: flex;
+  justify-content: flex-end;
+  padding: layout.$spacing-02 layout.$spacing-05 0;
+  flex-shrink: 0;
+}
+
+.newChatLabel {
+  margin-left: layout.$spacing-02;
+  @include type.type-style('body-compact-01');
+}
+
 .panelTitle {
   @include type.type-style('heading-compact-01');
   display: flex;
@@ -101,6 +119,16 @@
   border-radius: 0.25rem 1rem 1rem 1rem;
   padding: layout.$spacing-04 layout.$spacing-05;
   max-width: 95%;
+}
+
+.modelPickerRow {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0 layout.$spacing-05;
+  // Picker hides itself when not applicable (engine=local, <2 models, etc.),
+  // so this row collapses to zero height in those cases.
+  min-height: 0;
 }
 
 .inputArea {

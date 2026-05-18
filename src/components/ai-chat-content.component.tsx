@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConfig, usePatient } from '@openmrs/esm-framework';
-import { Close, Microphone, MicrophoneFilled, Send, StopFilled } from '@carbon/react/icons';
+import { Close, Microphone, MicrophoneFilled, Renew, Send, StopFilled } from '@carbon/react/icons';
 import { InlineLoading } from '@carbon/react';
 import { useChartSearchAi } from '../hooks/useChartSearchAi';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { type ChartSearchAiConfig } from '../config-schema';
 import AiResponsePanel from './ai-response-panel.component';
+import ModelPicker from './model-picker.component';
 import styles from './ai-chat-content.scss';
 
 interface AiChatContentProps {
@@ -26,7 +27,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
   const rootRef = useRef<HTMLDivElement>(null);
   const historyAreaRef = useRef<HTMLDivElement>(null);
 
-  const { messages, isAnyLoading, submitQuestion, stopCurrent } = useChartSearchAi(patientUuid);
+  const { messages, isAnyLoading, submitQuestion, stopCurrent, startNewChatSession } = useChartSearchAi(patientUuid);
 
   const questionRef = useRef(question);
   questionRef.current = question;
@@ -145,6 +146,13 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
     inputRef.current?.focus();
   }, []);
 
+  const handleNewChat = useCallback(() => {
+    if (!patientUuid) return;
+    startNewChatSession(patientUuid);
+    setQuestion('');
+    inputRef.current?.focus();
+  }, [patientUuid, startNewChatSession]);
+
   return (
     // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <div
@@ -160,8 +168,35 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
             <span className={styles.sparkle}>&#10024;</span>
             {t('aiChartSearch', 'AI Chart Search')}
           </span>
-          <button className={styles.closeButton} onClick={onClose} aria-label={t('close', 'Close')} type="button">
-            <Close size={16} />
+          <span className={styles.panelHeaderActions}>
+            {messages.length > 0 && (
+              <button
+                className={styles.closeButton}
+                onClick={handleNewChat}
+                aria-label={t('newChat', 'New chat')}
+                title={t('newChat', 'New chat')}
+                type="button"
+              >
+                <Renew size={16} />
+              </button>
+            )}
+            <button className={styles.closeButton} onClick={onClose} aria-label={t('close', 'Close')} type="button">
+              <Close size={16} />
+            </button>
+          </span>
+        </div>
+      )}
+      {mode === 'workspace' && messages.length > 0 && (
+        <div className={styles.workspaceActions}>
+          <button
+            className={styles.closeButton}
+            onClick={handleNewChat}
+            aria-label={t('newChat', 'New chat')}
+            title={t('newChat', 'New chat')}
+            type="button"
+          >
+            <Renew size={16} />
+            <span className={styles.newChatLabel}>{t('newChat', 'New chat')}</span>
           </button>
         </div>
       )}
@@ -182,6 +217,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
               <AiResponsePanel
                 answer={msg.answer}
                 references={msg.references}
+                blocks={msg.blocks}
                 questionId={msg.questionId}
                 error={msg.error}
                 isLoading={msg.isLoading}
@@ -210,6 +246,10 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
             : t('speechRecognitionError', 'Speech recognition failed. Please try again.')}
         </p>
       )}
+
+      <div className={styles.modelPickerRow}>
+        <ModelPicker />
+      </div>
 
       <form className={styles.inputArea} onSubmit={handleSubmit}>
         <input
