@@ -8,6 +8,7 @@ import {
   type ChatHistoryMessage,
   chatPatientChartStream,
   fetchChatHistory,
+  refreshChartSnapshot,
   startNewChat,
 } from '../api/chartsearchai';
 import { chatSessionStore } from '../store/chat-session.store';
@@ -38,6 +39,12 @@ interface UseChartSearchAiReturn {
    * fresh one. Use for the "New chat" button.
    */
   startNewChatSession: (patientUuid: string) => void;
+  /**
+   * Rebuild the patient's chart snapshot server-side, keeping the current
+   * conversation. Use for the "Refresh clinical context" button. Resolves on
+   * success, rejects on failure so the caller can surface feedback.
+   */
+  refreshClinicalContext: (patientUuid: string) => Promise<void>;
 }
 
 function generateId(): string {
@@ -197,6 +204,15 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       .catch((err) => {
         console.warn('[useChartSearchAi] startNewChat failed', err);
       });
+  }, []);
+
+  const refreshClinicalContext = useCallback(async (patientUuid: string) => {
+    // Keeps the transcript; the server rebuilds the chart snapshot for the
+    // existing session. Update the (unchanged) session uuid defensively.
+    const response = await refreshChartSnapshot(patientUuid);
+    if (isMountedRef.current && response?.session) {
+      setSessionUuid(patientUuid, response.session);
+    }
   }, []);
 
   const submitQuestion = useCallback(
@@ -385,5 +401,6 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
     clearMessages,
     stopCurrent,
     startNewChatSession,
+    refreshClinicalContext,
   };
 }
