@@ -363,4 +363,20 @@ describe('useChartSearchAi', () => {
     expect(mockStartNewChat).toHaveBeenCalledWith('patient-uuid');
     await waitFor(() => expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('new-session'));
   });
+
+  it('aborts in-flight request on unmount', async () => {
+    mockChatStream.mockImplementation(() => {});
+    const { result, unmount } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Question?');
+    });
+
+    const abortController = mockChatStream.mock.calls[0][4] as AbortController;
+    expect(abortController.signal.aborted).toBe(false);
+
+    unmount();
+    expect(abortController.signal.aborted).toBe(true);
+  });
 });
