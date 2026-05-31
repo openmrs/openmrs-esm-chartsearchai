@@ -1,21 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  InlineLoading,
-  InlineNotification,
-  MenuButton,
-  MenuItem,
-  MenuItemDivider,
-  MenuItemRadioGroup,
-} from '@carbon/react';
-import { useConfig } from '@openmrs/esm-framework';
+import { MenuButton, MenuItem, MenuItemDivider, MenuItemRadioGroup } from '@carbon/react';
+import { useConfig, useStore } from '@openmrs/esm-framework';
 import { type ChartSearchAiConfig } from '../config-schema';
-import { fetchEndpoints, setEndpointModel, type EndpointListResponse } from '../api/chartsearchai';
-import { extractApiError } from '../utils/api-error';
+import { fetchEndpoints, type EndpointListResponse } from '../api/chartsearchai';
+import { chatSessionStore } from '../store/chat-session.store';
 import styles from './model-picker.scss';
 
 interface ModelPickerProps {
-  /** Called after a successful switch — lets the parent show a toast or refresh state. */
+  /** Called when the selection changes — lets the parent react if needed. */
   onSwitched?: (modelName: string) => void;
 }
 
@@ -31,16 +24,15 @@ interface ModelPickerProps {
  * viewport, so it is never clipped by the chat panel's overflow regardless of
  * panel height.
  * Inline endpoint+model picker for the chat panel footer. A Carbon MenuButton
- * whose menu has one MenuItemRadioGroup per configured endpoint (LM Studio,
- * Med Agent Hub, ...). Carbon portals the menu to document.body and clamps it to
- * the viewport, so it is never clipped by the chat panel's overflow regardless
- * of panel height. Selecting a model under a section switches chartsearchai to
- * that endpoint AND model in one step.
+ * whose menu has one MenuItemRadioGroup per configured endpoint (LM Studio, Med
+ * Agent Hub, ...). Selecting a model picks the backend for THIS browser session
+ * only: it is sent as a per-request override on each chat post and does NOT mutate
+ * chartsearchai's config-controlled global default (which is shown with a faded
+ * "(default)" tag). Carbon portals the menu to document.body so it is never clipped
+ * by the panel's overflow.
  *
- * Hides itself when:
- *   - config.showModelPicker is false
- *   - the /endpoints fetch fails (503 from a local-engine backend is the common case)
- *   - there are fewer than 2 selectable models across all reachable endpoints
+ * Hides itself when: config.showModelPicker is false; the /endpoints fetch fails;
+ * or there are fewer than 2 selectable models across all reachable endpoints.
  */
 const ModelPicker: React.FC<ModelPickerProps> = ({ onSwitched }) => {
   const { t } = useTranslation();
@@ -52,12 +44,18 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onSwitched }) => {
   const [pendingModel, setPendingModel] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [switchError, setSwitchError] = useState<string | null>(null);
+  // The per-session selection (sent as the per-request override). null = use the
+  // config-controlled global default. Consume the whole store state (matching the
+  // chat hook) rather than a selector — the selection re-renders this in place.
+  const { selectedBackend } = useStore(chatSessionStore);
 
   // Load on mount + whenever the popover opens — picks up out-of-band changes
   // (operator ran chartsearch-configure, another endpoint came up, etc.).
   const load = useCallback((signal?: AbortSignal) => {
   // Load once on mount. The chat panel unmounts/remounts this component each
   // time it opens, so an out-of-band change (operator ran chartsearch-configure,
+  // Load once on mount. The chat panel unmounts/remounts this component each time
+  // it opens, so an out-of-band change (operator ran chartsearch-configure,
   // another endpoint came up) is picked up the next time the panel is opened.
   useEffect(() => {
     const ctrl = new AbortController();
@@ -87,6 +85,14 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onSwitched }) => {
     const ctrl = load();
     return () => ctrl.abort();
   }, [load]);
+  // The config-controlled global default (immutable here — gets the "(default)" tag).
+  const defaultBackend = data?.current;
+  // What the chat will actually use: the per-session selection, else the default.
+  const effective =
+    selectedBackend ??
+    (defaultBackend && defaultBackend.endpointUrl && defaultBackend.modelName
+      ? { endpointUrl: defaultBackend.endpointUrl, modelName: defaultBackend.modelName }
+      : null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -108,6 +114,8 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onSwitched }) => {
 
   const current = data?.current;
   const current = data?.current;
+  // Selecting a model writes the per-session selection — it does NOT call the
+  // global-switch endpoint, so the config default is never mutated.
   const handleSelect = useCallback(
     async (url: string, modelId: string) => {
       if (pending) return;
@@ -162,8 +170,11 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onSwitched }) => {
       } finally {
         setPending(null);
       }
+    (url: string, modelId: string) => {
+      chatSessionStore.setState({ selectedBackend: { endpointUrl: url, modelName: modelId } });
+      onSwitched?.(modelId);
     },
-    [pending, current, onSwitched, t],
+    [onSwitched],
   );
 
   // Hide conditions — cheapest first.
@@ -200,37 +211,38 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onSwitched }) => {
     return endpoints
       .filter((ep) => ep.reachable && ep.models.length > 0)
       .map((ep) => {
-        // "(not loaded)" is only meaningful where the backend probes load state
-        // (LM Studio); generic endpoints (the agent team) don't have it.
+        // "(not loaded)" is only meaningful where the backend probes load state.
         const showLoaded = ep.provider === 'lm-studio';
         const byId = new Map(ep.models.map((m) => [m.id, m]));
         return {
           url: ep.url,
           label: ep.label,
           itemIds: ep.models.map((m) => m.id),
-          // Only the active endpoint's group carries a selected radio.
-          selectedItem: current && current.endpointUrl === ep.url ? current.modelName ?? '' : '',
-          // MenuItem renders its label as plain text, so the affix is folded into
-          // the string. Carbon types the radio item as `unknown`, so widen+narrow.
+          // Only the effective selection's group carries a checked radio.
+          selectedItem: effective && effective.endpointUrl === ep.url ? effective.modelName : '',
           itemToString: (item: unknown) => {
             const id = item as string;
             const m = byId.get(id);
             if (!m) return id;
-            return showLoaded && m.loaded === false
-              ? `${m.displayName} ${t('notLoaded', '(not loaded)')}`
-              : m.displayName;
+            let label = m.displayName;
+            if (showLoaded && m.loaded === false) {
+              label = `${label} ${t('notLoaded', '(not loaded)')}`;
+            }
+            // Faded tag on the config-controlled global default.
+            if (defaultBackend && defaultBackend.endpointUrl === ep.url && defaultBackend.modelName === id) {
+              label = `${label} ${t('defaultTag', '(default)')}`;
+            }
+            return label;
           },
         };
       });
-  }, [data, current, t]);
+  }, [data, effective, defaultBackend, t]);
 
   // Hide conditions — cheapest first.
   if (showModelPicker === false) {
     return null;
   }
   if (loadError) {
-    // Treat fetch failure (incl. 503 local-engine) as hidden; the chat panel
-    // still works without a picker.
     return null;
   }
   if (!data) {
@@ -246,7 +258,7 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onSwitched }) => {
     return null;
   }
 
-  // Trigger label: "<endpoint> · <model>" for the current selection.
+  // Trigger label: "<endpoint> · <model>" for the effective selection.
   let triggerLabel = t('noModel', 'No model');
   if (current) {
     const sec = endpoints.find((e) => e.url === current.endpointUrl);
@@ -268,6 +280,10 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onSwitched }) => {
     } else if (current.modelName) {
       triggerLabel = current.modelName;
     }
+  if (effective) {
+    const ep = (data.endpoints ?? []).find((e) => e.url === effective.endpointUrl);
+    const m = ep?.models.find((x) => x.id === effective.modelName);
+    triggerLabel = ep && m ? `${ep.label} · ${m.displayName}` : effective.modelName;
   }
   return (
     <div className={styles.root} ref={rootRef}>
@@ -327,7 +343,7 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onSwitched }) => {
       )}
     <div className={styles.root}>
       <div className={styles.triggerRow}>
-        <MenuButton label={triggerLabel} kind="ghost" size="sm" menuAlignment="top-end" disabled={!!pending}>
+        <MenuButton label={triggerLabel} kind="ghost" size="sm" menuAlignment="top-end">
           {sections.map((s, i) => (
             <React.Fragment key={s.url}>
               {i > 0 ? <MenuItemDivider /> : null}
@@ -344,18 +360,7 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onSwitched }) => {
             </React.Fragment>
           ))}
         </MenuButton>
-        {pending ? <InlineLoading className={styles.loading} description="" /> : null}
       </div>
-      {switchError ? (
-        <InlineNotification
-          kind="error"
-          lowContrast
-          className={styles.switchError}
-          title={t('modelSwitchFailed', 'Failed to switch model')}
-          subtitle={switchError}
-          onCloseButtonClick={() => setSwitchError(null)}
-        />
-      ) : null}
     </div>
   );
 };
