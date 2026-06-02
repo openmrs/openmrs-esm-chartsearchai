@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { navigate } from '@openmrs/esm-framework';
 import { type AiReference } from '../api/chartsearchai';
 import { highlightReference } from '../utils/highlight-reference';
@@ -35,13 +36,26 @@ interface CitationChipProps {
 }
 
 export const CitationChip: React.FC<CitationChipProps> = ({ index, reference, patientUuid }) => {
+  const { t } = useTranslation();
   const url = reference ? buildReferenceUrl(reference, patientUuid) : null;
   if (!url || !reference) {
     return <>{index}</>;
   }
+  // Preserve the upstream grounding verdict inline: an ungrounded citation gets a
+  // warning affix + muted styling so it reads as "may not support this statement".
+  const ungrounded = reference.grounded === false;
   return (
-    <a className={styles.inlineCitation} href={url} onClick={(e) => handleReferenceNavigate(e, url, reference)}>
-      {index}
+    <a
+      className={ungrounded ? `${styles.inlineCitation} ${styles.inlineCitationUngrounded}` : styles.inlineCitation}
+      href={url}
+      title={
+        ungrounded
+          ? t('notGroundedTitle', 'The cited record may not support this statement — verify against the chart.')
+          : undefined
+      }
+      onClick={(e) => handleReferenceNavigate(e, url, reference)}
+    >
+      {ungrounded ? `${index} ⚠` : index}
     </a>
   );
 };
