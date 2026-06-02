@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IconButton, InlineLoading, Tag } from '@carbon/react';
 import { Copy } from '@carbon/react/icons';
@@ -8,7 +8,8 @@ import { highlightReference } from '../utils/highlight-reference';
 import { type AiBlock, type AiReference } from '../api/chartsearchai';
 import AiFeedback from './ai-feedback.component';
 import AiTableBlockView from './ai-table-block.component';
-import { buildReferenceUrl, handleReferenceNavigate, renderTextWithCitations } from './citation-chip.component';
+import MarkdownAnswer from './ai-markdown-answer.component';
+import { buildReferenceUrl, handleReferenceNavigate } from './citation-chip.component';
 import styles from './ai-response-panel.scss';
 
 interface AiResponsePanelProps {
@@ -235,7 +236,11 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     <div className={styles.responseContainer}>
       {answer && (
         <div className={styles.answerSection}>
-          <p className={styles.answerText}>{renderedAnswer}</p>
+          {isLoading ? (
+            <p className={styles.answerText}>{answer}</p>
+          ) : (
+            <MarkdownAnswer answer={answer} references={references} patientUuid={patientUuid} />
+          )}
           {isLoading && <InlineLoading className={styles.streamingIndicator} />}
         </div>
       )}
