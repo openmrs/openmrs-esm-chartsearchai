@@ -39,6 +39,21 @@ export interface AiTableBlock {
 
 export type AiBlock = AiTableBlock;
 
+/** One section's validator confidence: a traffic-light level + an optional caveat note. */
+export interface AiConfidenceSection {
+  level: 'green' | 'yellow' | 'red';
+  note?: string;
+}
+
+/**
+ * Per-section validator confidence the med-agent-hub emits ({@code answer} / {@code in_depth}),
+ * mirroring the tag the validation dashboard shows. Absent for single models and the parity lane.
+ */
+export interface AiConfidence {
+  answer?: AiConfidenceSection;
+  in_depth?: AiConfidenceSection;
+}
+
 export interface AiSearchResponse {
   answer: string;
   references: AiReference[];
@@ -51,6 +66,8 @@ export interface AiSearchResponse {
   /** The backend model that produced this answer (the per-request override or the
    * config default), for the subtle per-response model tag. */
   resolvedModel?: string;
+  /** Per-section validator confidence (green/yellow/red + note) from the validated hub tiers. */
+  confidence?: AiConfidence;
 }
 
 export interface ChatHistoryMessage {
@@ -58,6 +75,7 @@ export interface ChatHistoryMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   blocks?: AiBlock[];
+  confidence?: AiConfidence;
   createdAt: number;
 }
 
