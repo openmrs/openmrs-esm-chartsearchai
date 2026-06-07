@@ -6,6 +6,7 @@ import { navigate } from '@openmrs/esm-framework';
 import { type AiReference, type AiSafetyWarning } from '../api/chartsearchai';
 import { highlightReference } from '../utils/highlight-reference';
 import { type AiBlock, type AiReference } from '../api/chartsearchai';
+import { type AiBlock, type AiConfidence, type AiReference } from '../api/chartsearchai';
 import AiFeedback from './ai-feedback.component';
 import AiTableBlockView from './ai-table-block.component';
 import MarkdownAnswer from './ai-markdown-answer.component';
@@ -23,6 +24,8 @@ interface AiResponsePanelProps {
   patientUuid: string;
   /** The backend model that produced this answer; shown as a subtle faded tag. */
   resolvedModel?: string;
+  /** Per-section validator confidence (validated hub tiers); rendered as green/yellow/red chips. */
+  confidence?: AiConfidence;
   onFeedbackComplete?: () => void;
 }
 
@@ -199,6 +202,12 @@ function renderAnswerWithCitations(
   }
   return parts;
 }
+/** Confidence level → label, mirroring the validation dashboard's tag wording. */
+const CONFIDENCE_LABEL: Record<string, string> = {
+  green: 'High confidence',
+  yellow: 'Medium confidence',
+  red: 'Low confidence',
+};
 const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   answer,
   references,
@@ -209,6 +218,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   isLoading,
   patientUuid,
   resolvedModel,
+  confidence,
   onFeedbackComplete,
 }) => {
   const { t } = useTranslation();
@@ -234,6 +244,27 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
 
   return (
     <div className={styles.responseContainer}>
+      {!isLoading && confidence && (
+        <div className={styles.confidenceRow} data-testid="confidence-row">
+          {(
+            [
+              ['Answer', confidence.answer],
+              ['In Depth', confidence.in_depth],
+            ] as const
+          )
+            .filter(([, section]) => section?.level)
+            .map(([label, section]) => (
+              <span
+                key={label}
+                className={styles.confidenceChip}
+                data-level={section!.level}
+                title={section!.note || undefined}
+              >
+                <strong>{label}:</strong> {CONFIDENCE_LABEL[section!.level] ?? section!.level}
+              </span>
+            ))}
+        </div>
+      )}
       {answer && (
         <div className={styles.answerSection}>
           {isLoading ? (
