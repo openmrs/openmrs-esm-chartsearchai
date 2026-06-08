@@ -13,6 +13,7 @@
   "scripts": {
     "start": "openmrs develop",
     "build": "rspack --mode production",
+    "deploy:standalone": "tools/deploy-to-standalone.sh",
     "lint": "eslint src --ext js,jsx,ts,tsx --max-warnings 0",
     "test": "cross-env TZ=UTC vitest run --passWithNoTests",
     "test:watch": "cross-env TZ=UTC vitest watch",
