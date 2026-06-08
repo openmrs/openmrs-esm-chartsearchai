@@ -99,3 +99,26 @@
   @extend %referenceTagBase;
   color: colors.$gray-70;
 }
+
+// An inline citation whose cited record does not support the claim. Coloured
+// to match the ⚠ glyph so an unsupported citation draws the clinician's eye.
+.inlineCitationUngrounded {
+  color: colors.$red-60;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+// Groups a reference link with its grounding badge as one wrapping unit, so the
+// badge sits beside its pill without being inside the clickable link.
+.referenceItem {
+  display: inline-flex;
+  align-items: center;
+  gap: layout.$spacing-02;
+}
+
+.groundedTag {
+  display: inline-flex;
+  align-items: center;
+}
