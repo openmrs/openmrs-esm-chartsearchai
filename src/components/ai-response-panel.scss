@@ -102,7 +102,15 @@
   }
 }
 
+// Groups a reference link with its grounding badge as one wrapping unit, so the
+// badge sits beside its pill without being inside the clickable link.
+.referenceItem {
+  display: inline-flex;
+  align-items: center;
+  gap: layout.$spacing-02;
+}
+
 .groundedTag {
-  margin-left: layout.$spacing-02;
-  vertical-align: middle;
+  display: inline-flex;
+  align-items: center;
 }

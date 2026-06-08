@@ -185,6 +185,8 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
               const label = `[${ref.index}] ${ref.resourceType} — ${ref.date}`;
               const g = groundedDescriptor(ref.grounded);
               // Tooltip via a native-title wrapper rather than Tag's deprecated `title` prop.
+              // Rendered as a sibling of the link (Carbon Tag is a <div>) so the metadata
+              // badge is not nested in, or part of, the navigation click target.
               const badge = g ? (
                 <span className={styles.groundedTag} title={t(g.titleKey, g.titleFallback)}>
                   <Tag type={g.type} size="sm">
@@ -192,19 +194,16 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                   </Tag>
                 </span>
               ) : null;
-              return url ? (
-                <a
-                  key={ref.index}
-                  className={styles.referenceTag}
-                  href={url}
-                  onClick={(e) => handleReferenceNavigate(e, url, ref)}
-                >
+              const link = url ? (
+                <a className={styles.referenceTag} href={url} onClick={(e) => handleReferenceNavigate(e, url, ref)}>
                   {label}
-                  {badge}
                 </a>
               ) : (
-                <span key={ref.index} className={styles.referenceTagInert}>
-                  {label}
+                <span className={styles.referenceTagInert}>{label}</span>
+              );
+              return (
+                <span key={ref.index} className={styles.referenceItem}>
+                  {link}
                   {badge}
                 </span>
               );
