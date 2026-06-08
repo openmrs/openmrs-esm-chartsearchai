@@ -107,8 +107,69 @@ describe('searchPatientChartStream', () => {
       onToken: vi.fn(),
       onDone: vi.fn(),
       onError: vi.fn(),
+      onReferences: vi.fn(),
     };
   }
+
+  it('parses a references event and delivers the citations to onReferences', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:references\ndata: {"references":[{"index":2,"resourceType":"condition","resourceId":7,"date":"2022-11-13"}]}\n\n',
+          'event:token\ndata: Has it [2]\n\n',
+          'event:done\ndata: {"answer":"Has it [2]","references":[{"index":2,"resourceType":"condition","resourceId":7,"date":"2022-11-13","grounded":true}]}\n\n',
+        ]),
+      );
+
+    callStream(cb);
+    await flushPromises();
+
+    // Early (pre-grounding) citations arrive without a grounding verdict.
+    expect(cb.onReferences).toHaveBeenCalledWith([
+      { index: 2, resourceType: 'condition', resourceId: 7, date: '2022-11-13' },
+    ]);
+    expect(cb.onDone).toHaveBeenCalled();
+    expect(cb.onError).not.toHaveBeenCalled();
+  });
+
+  it('delivers an empty references event as an empty array', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:references\ndata: {"references":[]}\n\n',
+          'event:done\ndata: {"answer":"No record.","references":[]}\n\n',
+        ]),
+      );
+
+    callStream(cb);
+    await flushPromises();
+
+    expect(cb.onReferences).toHaveBeenCalledWith([]);
+  });
+
+  it('ignores a malformed references event without erroring the stream', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:references\ndata: {bad json}\n\n',
+          'event:done\ndata: {"answer":"a","references":[]}\n\n',
+        ]),
+      );
+
+    callStream(cb);
+    await flushPromises();
+
+    // `done` is authoritative — a broken early event must not call onReferences or onError.
+    expect(cb.onReferences).not.toHaveBeenCalled();
+    expect(cb.onError).not.toHaveBeenCalled();
+    expect(cb.onDone).toHaveBeenCalled();
+  });
 
   it('parses token events and delivers them to onToken', async () => {
     const cb = makeCallbacks();

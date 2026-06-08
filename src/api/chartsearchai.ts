@@ -101,6 +101,14 @@ export function searchPatientChartStream(
     onToken: (token: string) => void;
     onDone: (response: AiSearchResponse) => void;
     onError: (error: string) => void;
+    /**
+     * Early citations, emitted by the server the moment the answer's references are
+     * known — before the (slower) grounding pass attaches verdicts. Lets the UI show
+     * the citations immediately as unverified; the {@code done} event then re-sends
+     * the same references with their grounding verdicts. Optional and best-effort: a
+     * missing or malformed event is ignored, since {@code done} is authoritative.
+     */
+    onReferences?: (references: AiReference[]) => void;
   },
   abortController?: AbortController,
 ): void {
@@ -161,6 +169,15 @@ export function searchPatientChartStream(
         const data = dataLines.join('\n');
         if (eventType === 'token') {
           callbacks.onToken(data);
+        } else if (eventType === 'references') {
+          // Pre-grounding citations: best-effort, so a malformed payload is ignored rather
+          // than failing the stream — the authoritative references arrive with `done`.
+          try {
+            const parsed = JSON.parse(data);
+            callbacks.onReferences?.(parsed.references ?? []);
+          } catch {
+            // ignore; `done` is authoritative
+          }
         } else if (eventType === 'done') {
           streamFinalized = true;
           try {
