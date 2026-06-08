@@ -1,38 +1,38 @@
 import React from 'react';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import '@testing-library/jest-dom';
 import { useConfig, usePatient } from '@openmrs/esm-framework';
 import { useChartSearchAi } from '../hooks/useChartSearchAi';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import AiChatContent from './ai-chat-content.component';
 
-jest.mock('../hooks/useChartSearchAi', () => ({
-  useChartSearchAi: jest.fn(),
+vi.mock('../hooks/useChartSearchAi', () => ({
+  useChartSearchAi: vi.fn(),
 }));
-jest.mock('../hooks/useSpeechRecognition', () => ({
-  useSpeechRecognition: jest.fn(),
+vi.mock('../hooks/useSpeechRecognition', () => ({
+  useSpeechRecognition: vi.fn(),
 }));
-jest.mock('./ai-response-panel.component', () => ({
+vi.mock('./ai-response-panel.component', () => ({
   __esModule: true,
   default: ({ answer, error }: { answer: string; error: string | null }) => (
     <div data-testid="ai-response">{error ?? answer}</div>
   ),
 }));
 
-const mockUseConfig = useConfig as jest.Mock;
-const mockUsePatient = usePatient as jest.Mock;
-const mockUseChartSearchAi = useChartSearchAi as jest.Mock;
-const mockUseSpeechRecognition = useSpeechRecognition as jest.Mock;
+const mockUseConfig = useConfig as Mock;
+const mockUsePatient = usePatient as Mock;
+const mockUseChartSearchAi = useChartSearchAi as Mock;
+const mockUseSpeechRecognition = useSpeechRecognition as Mock;
 
-let mockSubmitQuestion: jest.Mock;
-let mockStopCurrent: jest.Mock;
+let mockSubmitQuestion: Mock;
+let mockStopCurrent: Mock;
 let speechCallback: ((transcript: string) => void) | null;
 
 beforeEach(() => {
-  jest.clearAllMocks();
-  mockSubmitQuestion = jest.fn();
-  mockStopCurrent = jest.fn();
+  vi.clearAllMocks();
+  mockSubmitQuestion = vi.fn();
+  mockStopCurrent = vi.fn();
   speechCallback = null;
   mockUseConfig.mockReturnValue({ aiSearchPlaceholder: 'Ask AI...', maxQuestionLength: 1000 });
   mockUsePatient.mockReturnValue({ patient: { id: 'p1' }, isLoading: false });
@@ -41,7 +41,7 @@ beforeEach(() => {
     isAnyLoading: false,
     submitQuestion: mockSubmitQuestion,
     stopCurrent: mockStopCurrent,
-    clearMessages: jest.fn(),
+    clearMessages: vi.fn(),
   });
   mockUseSpeechRecognition.mockImplementation((onResult) => {
     speechCallback = onResult;
@@ -49,9 +49,9 @@ beforeEach(() => {
       isListening: false,
       isSupported: true,
       error: null,
-      startListening: jest.fn(),
-      stopListening: jest.fn(),
-      clearError: jest.fn(),
+      startListening: vi.fn(),
+      stopListening: vi.fn(),
+      clearError: vi.fn(),
     };
   });
 });
@@ -80,7 +80,7 @@ describe('AiChatContent', () => {
         isAnyLoading: true,
         submitQuestion: mockSubmitQuestion,
         stopCurrent: mockStopCurrent,
-        clearMessages: jest.fn(),
+        clearMessages: vi.fn(),
       });
       render(<AiChatContent mode="workspace" patientUuid="p1" />);
       const input = screen.getByRole('textbox');
@@ -120,7 +120,7 @@ describe('AiChatContent', () => {
         isAnyLoading: true,
         submitQuestion: mockSubmitQuestion,
         stopCurrent: mockStopCurrent,
-        clearMessages: jest.fn(),
+        clearMessages: vi.fn(),
       });
       render(<AiChatContent mode="workspace" patientUuid="p1" />);
       act(() => speechCallback!('hello'));
@@ -148,7 +148,7 @@ describe('AiChatContent', () => {
         isAnyLoading: true,
         submitQuestion: mockSubmitQuestion,
         stopCurrent: mockStopCurrent,
-        clearMessages: jest.fn(),
+        clearMessages: vi.fn(),
       });
       const { rerender } = render(<AiChatContent mode="workspace" patientUuid="p1" />);
 
@@ -168,7 +168,7 @@ describe('AiChatContent', () => {
         isAnyLoading: false,
         submitQuestion: mockSubmitQuestion,
         stopCurrent: mockStopCurrent,
-        clearMessages: jest.fn(),
+        clearMessages: vi.fn(),
       });
       rerender(<AiChatContent mode="workspace" patientUuid="p1" />);
 
@@ -178,7 +178,7 @@ describe('AiChatContent', () => {
 
   describe('floating mode keyboard handling', () => {
     it('calls onClose when Escape is pressed', async () => {
-      const onClose = jest.fn();
+      const onClose = vi.fn();
       const user = userEvent.setup();
       render(<AiChatContent mode="floating" patientUuid="p1" onClose={onClose} />);
       await user.keyboard('{Escape}');
@@ -186,7 +186,7 @@ describe('AiChatContent', () => {
     });
 
     it('does not call onClose on Escape in workspace mode', async () => {
-      const onClose = jest.fn();
+      const onClose = vi.fn();
       const user = userEvent.setup();
       render(<AiChatContent mode="workspace" patientUuid="p1" onClose={onClose} />);
       await user.keyboard('{Escape}');

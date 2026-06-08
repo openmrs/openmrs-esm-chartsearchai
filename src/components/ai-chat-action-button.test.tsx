@@ -1,25 +1,25 @@
 import React from 'react';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import '@testing-library/jest-dom';
 import { ActionMenuButton2, useConfig, userHasAccess } from '@openmrs/esm-framework';
 import AiChatActionButton from './ai-chat-action-button.component';
 
-jest.mock('@openmrs/esm-framework', () => {
-  const actual = jest.requireActual('@openmrs/esm-framework');
+vi.mock('@openmrs/esm-framework', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@openmrs/esm-framework')>();
   return {
     ...actual,
-    useSession: jest.fn(() => ({ user: { uuid: 'user-uuid', privileges: [{ name: 'AI Query Patient Data' }] } })),
-    userHasAccess: jest.fn(() => true),
+    useSession: vi.fn(() => ({ user: { uuid: 'user-uuid', privileges: [{ name: 'AI Query Patient Data' }] } })),
+    userHasAccess: vi.fn(() => true),
   };
 });
 
-const mockUseConfig = useConfig as jest.Mock;
-const mockActionMenuButton2 = ActionMenuButton2 as jest.Mock;
-const mockUserHasAccess = userHasAccess as jest.Mock;
+const mockUseConfig = useConfig as Mock;
+const mockActionMenuButton2 = ActionMenuButton2 as Mock;
+const mockUserHasAccess = userHasAccess as Mock;
 
 describe('AiChatActionButton', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockUseConfig.mockReturnValue({ chatLaunchMode: 'workspace' });
   });
 

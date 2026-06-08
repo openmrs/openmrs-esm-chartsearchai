@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { InlineLoading, Tag } from '@carbon/react';
+import { IconButton, InlineLoading, Tag } from '@carbon/react';
+import { Copy } from '@carbon/react/icons';
 import { navigate } from '@openmrs/esm-framework';
 import { type AiReference } from '../api/chartsearchai';
 import { highlightReference } from '../utils/highlight-reference';
@@ -78,6 +79,10 @@ function groundedDescriptor(grounded: boolean | null | undefined): GroundedDescr
   return null;
 }
 
+function stripCitations(answer: string): string {
+  return answer.replace(/\s?\[\d+(?:\s*,\s*\d+)*\]/g, '').trim();
+}
+
 function renderAnswerWithCitations(
   answer: string,
   references: AiReference[],
@@ -151,6 +156,10 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     return renderAnswerWithCitations(answer, references, patientUuid, t);
   }, [answer, references, patientUuid, isLoading, t]);
 
+  const handleCopy = useCallback(() => {
+    navigator.clipboard?.writeText(stripCitations(answer));
+  }, [answer]);
+
   if (error && !answer) {
     return (
       <div className={styles.errorContainer} role="alert">
@@ -212,8 +221,17 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
         </div>
       )}
 
-      {answer && !isLoading && questionId && (
-        <AiFeedback key={questionId} questionId={questionId} onComplete={onFeedbackComplete} />
+      {answer && !isLoading && (
+        <div className={styles.actionsRow}>
+          {questionId ? (
+            <AiFeedback key={questionId} questionId={questionId} onComplete={onFeedbackComplete} />
+          ) : (
+            <span />
+          )}
+          <IconButton kind="ghost" size="sm" label={t('copy', 'Copy')} align="left-bottom" onClick={handleCopy}>
+            <Copy />
+          </IconButton>
+        </div>
       )}
     </div>
   );

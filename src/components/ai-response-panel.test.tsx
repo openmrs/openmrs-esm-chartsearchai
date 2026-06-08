@@ -1,6 +1,6 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
-import '@testing-library/jest-dom';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
 import AiResponsePanel from './ai-response-panel.component';
 
 const patientUuid = 'test-patient-uuid';
@@ -208,5 +208,87 @@ describe('AiResponsePanel citation grounding', () => {
     expect(screen.queryByText('Unsupported')).not.toBeInTheDocument();
     // plain inline citation, no warning glyph
     expect(screen.getByRole('link', { name: '1' })).toBeInTheDocument();
+  });
+});
+
+describe('AiResponsePanel copy-to-clipboard', () => {
+  const references = [
+    { index: 1, resourceType: 'obs', resourceId: 101, date: '2025-01-15' },
+    { index: 2, resourceType: 'order', resourceId: 202, date: '2025-02-20' },
+  ];
+
+  let writeText: Mock;
+
+  beforeEach(() => {
+    writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+  });
+
+  it('does not render copy button while answer is streaming', () => {
+    render(
+      <AiResponsePanel
+        answer="The patient has lab results [1]"
+        references={references}
+        questionId="q1"
+        error={null}
+        isLoading={true}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: /copy/i })).not.toBeInTheDocument();
+  });
+
+  it('renders a copy button once the answer is fully received', () => {
+    render(
+      <AiResponsePanel
+        answer="The patient has lab results [1] and an active order [2]."
+        references={references}
+        questionId="q1"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: /copy/i })).toBeInTheDocument();
+  });
+
+  it('copies the answer text without citation markers when clicked', async () => {
+    render(
+      <AiResponsePanel
+        answer="The patient has lab results [1] and an active order [2]."
+        references={references}
+        questionId="q1"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /copy/i }));
+
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(writeText).toHaveBeenCalledWith('The patient has lab results and an active order.');
+  });
+
+  it('strips comma-separated citation groups when copying', async () => {
+    render(
+      <AiResponsePanel
+        answer="Findings [1, 2] are notable."
+        references={references}
+        questionId="q1"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /copy/i }));
+
+    expect(writeText).toHaveBeenCalledWith('Findings are notable.');
   });
 });

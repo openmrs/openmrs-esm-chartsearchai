@@ -1,4 +1,4 @@
-import { Type } from '@openmrs/esm-framework';
+import { Type, validators } from '@openmrs/esm-framework';
 
 export const configSchema = {
   aiSearchPlaceholder: {
@@ -18,8 +18,9 @@ export const configSchema = {
   },
   chatLaunchMode: {
     _type: Type.String,
-    _default: 'floating',
+    _default: 'both',
     _description: 'Controls how the AI chat panel is launched. One of: "floating", "workspace", "both"',
+    _validators: [validators.oneOf(['floating', 'workspace', 'both'])],
   },
 };
 

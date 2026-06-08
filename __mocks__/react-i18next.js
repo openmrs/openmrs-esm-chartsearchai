@@ -1,6 +1,9 @@
-const reactI18next = jest.createMockFromModule('react-i18next');
-const useTranslation = () => ({
-  t: (key, defaultValue) => defaultValue ?? key,
-});
-reactI18next.useTranslation = useTranslation;
-module.exports = reactI18next;
+const reactI18next = require('react-i18next');
+
+module.exports = {
+  ...reactI18next,
+  useTranslation: () => ({
+    t: (key, defaultValue) => defaultValue ?? key,
+    i18n: { language: 'en' },
+  }),
+};
