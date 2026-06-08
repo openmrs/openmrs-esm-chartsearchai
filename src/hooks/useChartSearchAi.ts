@@ -167,6 +167,19 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
                   return updated;
                 });
               },
+              // Show citations as soon as the server emits them (before grounding finishes).
+              // These carry no grounding verdict yet, so they render unverified; `done` then
+              // overwrites this message's references with the grounded set.
+              onReferences: (references) => {
+                if (!isMountedRef.current) return;
+                updateMessages(patientUuid, (prev) => {
+                  const idx = prev.findIndex((m) => m.id === messageId);
+                  if (idx === -1) return prev;
+                  const updated = [...prev];
+                  updated[idx] = { ...updated[idx], references };
+                  return updated;
+                });
+              },
               onDone: done,
               onError: fail,
             },

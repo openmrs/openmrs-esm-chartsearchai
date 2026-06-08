@@ -118,9 +118,42 @@ describe('useChartSearchAi', () => {
         onToken: expect.any(Function),
         onDone: expect.any(Function),
         onError: expect.any(Function),
+        onReferences: expect.any(Function),
       }),
       expect.any(AbortController),
     );
+  });
+
+  it('shows early (pre-grounding) references on the in-flight message, then done overwrites with grounded ones', () => {
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Any allergies?');
+    });
+
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+    const earlyRefs = [{ index: 1, resourceType: 'condition', resourceId: 7, date: '2022-11-13' }];
+
+    // Early references event arrives before grounding finishes: citations show immediately,
+    // message still loading, no grounding verdict yet.
+    act(() => {
+      callbacks.onReferences(earlyRefs);
+    });
+    expect(result.current.messages[0].references).toEqual(earlyRefs);
+    expect(result.current.messages[0].references[0].grounded).toBeUndefined();
+    expect(result.current.messages[0].isLoading).toBe(true);
+
+    // done re-sends the same citations with grounding verdicts; they replace the early ones.
+    act(() => {
+      callbacks.onDone({
+        answer: 'Has it [1]',
+        references: [{ ...earlyRefs[0], grounded: true }],
+        questionId: 'q-1',
+      });
+    });
+    expect(result.current.messages[0].references[0].grounded).toBe(true);
+    expect(result.current.messages[0].isLoading).toBe(false);
   });
 
   it('accumulates tokens into the last message during streaming', () => {
