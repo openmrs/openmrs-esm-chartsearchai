@@ -91,3 +91,18 @@
   @extend %referenceTagBase;
   color: colors.$gray-70;
 }
+
+// An inline citation whose cited record does not support the claim. Coloured
+// to match the ⚠ glyph so an unsupported citation draws the clinician's eye.
+.inlineCitationUngrounded {
+  color: colors.$red-60;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.groundedTag {
+  margin-left: layout.$spacing-02;
+  vertical-align: middle;
+}

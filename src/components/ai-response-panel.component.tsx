@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { InlineLoading } from '@carbon/react';
+import { InlineLoading, Tag } from '@carbon/react';
 import { navigate } from '@openmrs/esm-framework';
 import { type AiReference } from '../api/chartsearchai';
 import { highlightReference } from '../utils/highlight-reference';
@@ -41,7 +41,49 @@ function handleReferenceNavigate(e: React.MouseEvent, url: string, ref: AiRefere
   highlightReference(ref.resourceId, ref.date);
 }
 
-function renderAnswerWithCitations(answer: string, references: AiReference[], patientUuid: string): React.ReactNode[] {
+type Translate = (key: string, fallback: string) => string;
+
+interface GroundedDescriptor {
+  type: 'green' | 'red';
+  textKey: string;
+  textFallback: string;
+  titleKey: string;
+  titleFallback: string;
+}
+
+/**
+ * Maps a citation's grounding verdict to a badge descriptor, or null when no
+ * badge should show. null/undefined (unverified) returns null so an unverified
+ * citation is never rendered as "verified".
+ */
+function groundedDescriptor(grounded: boolean | null | undefined): GroundedDescriptor | null {
+  if (grounded === true) {
+    return {
+      type: 'green',
+      textKey: 'grounded',
+      textFallback: 'Verified',
+      titleKey: 'groundedTitle',
+      titleFallback: 'Supported by the cited record.',
+    };
+  }
+  if (grounded === false) {
+    return {
+      type: 'red',
+      textKey: 'notGrounded',
+      textFallback: 'Unsupported',
+      titleKey: 'notGroundedTitle',
+      titleFallback: 'The cited record may not support this statement — verify against the chart.',
+    };
+  }
+  return null;
+}
+
+function renderAnswerWithCitations(
+  answer: string,
+  references: AiReference[],
+  patientUuid: string,
+  t: Translate,
+): React.ReactNode[] {
   const refByIndex = new Map(references.map((r) => [r.index, r]));
   const parts: React.ReactNode[] = [];
   const pattern = /\[(\d+(?:\s*,\s*\d+)*)\]/g;
@@ -58,15 +100,23 @@ function renderAnswerWithCitations(answer: string, references: AiReference[], pa
     citIndices.forEach((citIndex, i) => {
       const ref = refByIndex.get(citIndex);
       const url = ref ? buildReferenceUrl(ref, patientUuid) : null;
+      const ungrounded = ref?.grounded === false;
       parts.push(
         url && ref ? (
           <a
             key={`cit-${matchIndex}-${citIndex}`}
-            className={styles.inlineCitation}
+            className={
+              ungrounded ? `${styles.inlineCitation} ${styles.inlineCitationUngrounded}` : styles.inlineCitation
+            }
             href={url}
+            title={
+              ungrounded
+                ? t('notGroundedTitle', 'The cited record may not support this statement — verify against the chart.')
+                : undefined
+            }
             onClick={(e) => handleReferenceNavigate(e, url, ref)}
           >
-            {citIndex}
+            {ungrounded ? `${citIndex} ⚠` : citIndex}
           </a>
         ) : (
           `${citIndex}`
@@ -98,8 +148,8 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   const renderedAnswer = useMemo(() => {
     if (!answer) return null;
     if (isLoading) return answer;
-    return renderAnswerWithCitations(answer, references, patientUuid);
-  }, [answer, references, patientUuid, isLoading]);
+    return renderAnswerWithCitations(answer, references, patientUuid, t);
+  }, [answer, references, patientUuid, isLoading, t]);
 
   if (error && !answer) {
     return (
@@ -133,6 +183,15 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
             {references.map((ref) => {
               const url = buildReferenceUrl(ref, patientUuid);
               const label = `[${ref.index}] ${ref.resourceType} — ${ref.date}`;
+              const g = groundedDescriptor(ref.grounded);
+              // Tooltip via a native-title wrapper rather than Tag's deprecated `title` prop.
+              const badge = g ? (
+                <span className={styles.groundedTag} title={t(g.titleKey, g.titleFallback)}>
+                  <Tag type={g.type} size="sm">
+                    {t(g.textKey, g.textFallback)}
+                  </Tag>
+                </span>
+              ) : null;
               return url ? (
                 <a
                   key={ref.index}
@@ -141,10 +200,12 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                   onClick={(e) => handleReferenceNavigate(e, url, ref)}
                 >
                   {label}
+                  {badge}
                 </a>
               ) : (
                 <span key={ref.index} className={styles.referenceTagInert}>
                   {label}
+                  {badge}
                 </span>
               );
             })}

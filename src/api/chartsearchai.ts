@@ -7,6 +7,13 @@ export interface AiReference {
   resourceType: string;
   resourceId: number;
   date: string;
+  /**
+   * Citation grounding verdict from the backend: true = the cited record
+   * supports the claim, false = it does not, null/absent = unverified
+   * (grounding disabled or could not run). Render null as "unverified",
+   * never as "verified".
+   */
+  grounded?: boolean | null;
 }
 
 export interface AiSearchResponse {

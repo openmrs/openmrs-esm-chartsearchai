@@ -170,3 +170,43 @@ describe('AiResponsePanel reference links', () => {
     expect(screen.getByText(/Connection lost/)).toBeInTheDocument();
   });
 });
+
+describe('AiResponsePanel citation grounding', () => {
+  const answer = 'The patient has a finding [1].';
+
+  function renderWithGrounded(grounded: boolean | null) {
+    render(
+      <AiResponsePanel
+        answer={answer}
+        references={[{ index: 1, resourceType: 'obs', resourceId: 101, date: '2025-01-15', grounded }]}
+        questionId="q"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+  }
+
+  it('flags an unsupported citation (grounded=false) in the list and inline', () => {
+    renderWithGrounded(false);
+    expect(screen.getByText('Unsupported')).toBeInTheDocument();
+    // inline citation carries the warning glyph
+    expect(screen.getByRole('link', { name: /1\s*⚠/ })).toBeInTheDocument();
+    expect(screen.queryByText('Verified')).not.toBeInTheDocument();
+  });
+
+  it('marks a supported citation (grounded=true) verified with no inline warning', () => {
+    renderWithGrounded(true);
+    expect(screen.getByText('Verified')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '1' })).toBeInTheDocument();
+    expect(screen.queryByText('Unsupported')).not.toBeInTheDocument();
+  });
+
+  it('shows no grounding badge when the verdict is null (unverified)', () => {
+    renderWithGrounded(null);
+    expect(screen.queryByText('Verified')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unsupported')).not.toBeInTheDocument();
+    // plain inline citation, no warning glyph
+    expect(screen.getByRole('link', { name: '1' })).toBeInTheDocument();
+  });
+});
