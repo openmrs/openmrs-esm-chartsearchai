@@ -44,36 +44,34 @@ function handleReferenceNavigate(e: React.MouseEvent, url: string, ref: AiRefere
 
 type Translate = (key: string, fallback: string) => string;
 
-interface GroundedDescriptor {
+interface GroundedTag {
   type: 'green' | 'red';
-  textKey: string;
-  textFallback: string;
-  titleKey: string;
-  titleFallback: string;
+  text: string;
+  title: string;
 }
 
 /**
- * Maps a citation's grounding verdict to a badge descriptor, or null when no
+ * Maps a citation's grounding verdict to a translated badge, or null when no
  * badge should show. null/undefined (unverified) returns null so an unverified
  * citation is never rendered as "verified".
+ *
+ * The {@code t(...)} calls use string-literal keys (not variables) so the
+ * i18next-parser can statically extract them; a dynamic {@code t(key)} would be
+ * dropped from translations/en.json by the `extract-translations` check.
  */
-function groundedDescriptor(grounded: boolean | null | undefined): GroundedDescriptor | null {
+function groundedTag(grounded: boolean | null | undefined, t: Translate): GroundedTag | null {
   if (grounded === true) {
     return {
       type: 'green',
-      textKey: 'grounded',
-      textFallback: 'Verified',
-      titleKey: 'groundedTitle',
-      titleFallback: 'Supported by the cited record.',
+      text: t('grounded', 'Verified'),
+      title: t('groundedTitle', 'Supported by the cited record.'),
     };
   }
   if (grounded === false) {
     return {
       type: 'red',
-      textKey: 'notGrounded',
-      textFallback: 'Unsupported',
-      titleKey: 'notGroundedTitle',
-      titleFallback: 'The cited record may not support this statement — verify against the chart.',
+      text: t('notGrounded', 'Unsupported'),
+      title: t('notGroundedTitle', 'The cited record may not support this statement — verify against the chart.'),
     };
   }
   return null;
@@ -192,14 +190,14 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
             {references.map((ref) => {
               const url = buildReferenceUrl(ref, patientUuid);
               const label = `[${ref.index}] ${ref.resourceType} — ${ref.date}`;
-              const g = groundedDescriptor(ref.grounded);
+              const g = groundedTag(ref.grounded, t);
               // Tooltip via a native-title wrapper rather than Tag's deprecated `title` prop.
               // Rendered as a sibling of the link (Carbon Tag is a <div>) so the metadata
               // badge is not nested in, or part of, the navigation click target.
               const badge = g ? (
-                <span className={styles.groundedTag} title={t(g.titleKey, g.titleFallback)}>
+                <span className={styles.groundedTag} title={g.title}>
                   <Tag type={g.type} size="sm">
-                    {t(g.textKey, g.textFallback)}
+                    {g.text}
                   </Tag>
                 </span>
               ) : null;
