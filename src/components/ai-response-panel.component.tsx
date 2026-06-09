@@ -55,7 +55,7 @@ function handleReferenceNavigate(e: React.MouseEvent, url: string, ref: AiRefere
 type Translate = (key: string, fallback: string) => string;
 
 interface GroundedTag {
-  type: 'green' | 'red';
+  type: 'green' | 'red' | 'purple';
   text: string;
   title: string;
 }
@@ -85,6 +85,19 @@ function groundedTag(grounded: boolean | null | undefined, t: Translate): Ground
     };
   }
   return null;
+}
+
+/**
+ * Badge for a drug-reference citation: reference data, not a grounded/ungrounded patient
+ * record, so it gets its own neutral purple "Reference" tag rather than a grounding verdict.
+ * Returns the shared {@link GroundedTag} shape so the badge renderer treats it uniformly.
+ */
+function referenceTag(t: Translate): GroundedTag {
+  return {
+    type: 'purple',
+    text: t('reference', 'Reference'),
+    title: t('drugReferenceCitation', 'Clinical reference data — not this patient’s record.'),
+  };
 }
 
 /**
@@ -136,7 +149,7 @@ function renderAnswerWithCitations(
       parts.push(
         url && ref ? (
           <a
-            key={`cit-${matchIndex}-${citIndex}`}
+            key={`cit-${matchIndex}-${i}-${citIndex}`}
             className={
               ungrounded ? `${styles.inlineCitation} ${styles.inlineCitationUngrounded}` : styles.inlineCitation
             }
@@ -152,7 +165,7 @@ function renderAnswerWithCitations(
           </a>
         ) : drugReference ? (
           <span
-            key={`cit-${matchIndex}-${citIndex}`}
+            key={`cit-${matchIndex}-${i}-${citIndex}`}
             className={`${styles.inlineCitation} ${styles.inlineCitationReference}`}
             title={t('drugReferenceCitation', 'Clinical reference data — not this patient’s record.')}
           >
@@ -231,13 +244,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
               const label = drugReference
                 ? `[${ref.index}] ${t('drugReferenceLabel', 'Drug reference')}`
                 : `[${ref.index}] ${ref.resourceType} — ${ref.date}`;
-              const g = drugReference
-                ? {
-                    type: 'purple' as const,
-                    text: t('reference', 'Reference'),
-                    title: t('drugReferenceCitation', 'Clinical reference data — not this patient’s record.'),
-                  }
-                : groundedTag(ref.grounded, t);
+              const g = drugReference ? referenceTag(t) : groundedTag(ref.grounded, t);
               // Tooltip via a native-title wrapper rather than Tag's deprecated `title` prop.
               // Rendered as a sibling of the link (Carbon Tag is a <div>) so the metadata
               // badge is not nested in, or part of, the navigation click target.
@@ -267,7 +274,10 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
       )}
 
       {safetyWarnings && safetyWarnings.length > 0 && (
-        <div className={styles.safetyWarningsSection} role="alert">
+        // No live-region role: the panel already sits inside the chat history's
+        // role="log" aria-live="polite", which announces this content in order. An
+        // assertive role="alert" here would preempt the answer it annotates.
+        <div className={styles.safetyWarningsSection}>
           <span className={styles.safetyWarningsLabel}>{t('safetyChecks', 'Safety checks')}:</span>
           <div className={styles.safetyWarningsList}>
             {safetyWarnings.map((warning, i) => {
