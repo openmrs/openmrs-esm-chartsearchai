@@ -48,7 +48,7 @@ describe('useChartSearchAi', () => {
   it('populates answer on successful sync response', async () => {
     const response = {
       answer: 'The patient is on metformin.',
-      references: [{ index: 1, resourceType: 'DrugOrder', resourceId: 1, date: '2025-01-01' }],
+      references: [{ index: 1, resourceType: 'DrugOrder', resourceUuid: 'uuid-1', date: '2025-01-01' }],
       questionId: 'q-abc',
     };
     mockSearchPatientChart.mockResolvedValue(response);
@@ -133,7 +133,7 @@ describe('useChartSearchAi', () => {
     });
 
     const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
-    const earlyRefs = [{ index: 1, resourceType: 'condition', resourceId: 7, date: '2022-11-13' }];
+    const earlyRefs = [{ index: 1, resourceType: 'condition', resourceUuid: 'uuid-7', date: '2022-11-13' }];
 
     // Early references event arrives before grounding finishes: citations show immediately,
     // message still loading, no grounding verdict yet.
@@ -186,7 +186,7 @@ describe('useChartSearchAi', () => {
     const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
     const finalResponse = {
       answer: 'Final answer.',
-      references: [{ index: 1, resourceType: 'Obs', resourceId: 10, date: '2025-06-01' }],
+      references: [{ index: 1, resourceType: 'Obs', resourceUuid: 'uuid-10', date: '2025-06-01' }],
       questionId: 'q-stream-1',
     };
 

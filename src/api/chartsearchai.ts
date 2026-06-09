@@ -5,7 +5,11 @@ const BASE_PATH = `${restBaseUrl}/chartsearchai`;
 export interface AiReference {
   index: number;
   resourceType: string;
-  resourceId: number;
+  /**
+   * OpenMRS UUID of the cited record (the backend serializes this field as `resourceUuid`).
+   * Used to locate and highlight the record's row after navigating to its chart page.
+   */
+  resourceUuid: string;
   date: string;
   /**
    * Citation grounding verdict from the backend: true = the cited record
