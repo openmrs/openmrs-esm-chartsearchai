@@ -161,7 +161,7 @@ describe('AiChatContent', () => {
           {
             ...streaming,
             answer: 'No known allergies.',
-            references: [{ index: 1, resourceType: 'obs', resourceId: 1, date: '2026-01-01' }],
+            references: [{ index: 1, resourceType: 'obs', resourceUuid: 'uuid-1', date: '2026-01-01' }],
             isLoading: false,
           },
         ],

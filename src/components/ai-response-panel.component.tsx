@@ -39,7 +39,7 @@ function buildReferenceUrl(ref: AiReference, patientUuid: string): string | null
 function handleReferenceNavigate(e: React.MouseEvent, url: string, ref: AiReference) {
   e.preventDefault();
   navigate({ to: url });
-  highlightReference(ref.resourceId, ref.date);
+  highlightReference(ref.resourceUuid, ref.date);
 }
 
 type Translate = (key: string, fallback: string) => string;

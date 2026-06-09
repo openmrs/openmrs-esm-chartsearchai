@@ -2,6 +2,10 @@ import React from 'react';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import AiResponsePanel from './ai-response-panel.component';
+import { highlightReference } from '../utils/highlight-reference';
+
+vi.mock('../utils/highlight-reference', () => ({ highlightReference: vi.fn() }));
+const mockHighlightReference = highlightReference as Mock;
 
 const patientUuid = 'test-patient-uuid';
 
@@ -15,11 +19,11 @@ afterAll(() => {
 
 describe('AiResponsePanel reference links', () => {
   const references = [
-    { index: 1, resourceType: 'obs', resourceId: 101, date: '2025-01-15' },
-    { index: 2, resourceType: 'order', resourceId: 202, date: '2025-02-20' },
-    { index: 3, resourceType: 'allergy', resourceId: 303, date: '2025-03-10' },
-    { index: 4, resourceType: 'condition', resourceId: 404, date: '2025-04-05' },
-    { index: 5, resourceType: 'diagnosis', resourceId: 505, date: '2025-05-12' },
+    { index: 1, resourceType: 'obs', resourceUuid: 'uuid-101', date: '2025-01-15' },
+    { index: 2, resourceType: 'order', resourceUuid: 'uuid-202', date: '2025-02-20' },
+    { index: 3, resourceType: 'allergy', resourceUuid: 'uuid-303', date: '2025-03-10' },
+    { index: 4, resourceType: 'condition', resourceUuid: 'uuid-404', date: '2025-04-05' },
+    { index: 5, resourceType: 'diagnosis', resourceUuid: 'uuid-505', date: '2025-05-12' },
   ];
 
   const answer =
@@ -63,6 +67,26 @@ describe('AiResponsePanel reference links', () => {
     expect(diagnosisLink).toHaveAttribute('href', `/openmrs/spa/patient/${patientUuid}/chart/Visits`);
   });
 
+  it('passes the resource UUID (not a numeric id) to highlightReference when a citation is clicked', () => {
+    render(
+      <AiResponsePanel
+        answer={answer}
+        references={references}
+        questionId="test-question-id"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    fireEvent.click(screen.getByText('[1] obs — 2025-01-15'));
+
+    // The cited record's UUID must reach highlightReference so it can locate the chart row.
+    // Before the fix the panel read `ref.resourceId` (undefined, since the backend sends
+    // `resourceUuid`), so id-based row matching silently never fired.
+    expect(mockHighlightReference).toHaveBeenCalledWith('uuid-101', '2025-01-15');
+  });
+
   it('renders inline citations as clickable <a> elements', () => {
     render(
       <AiResponsePanel
@@ -95,8 +119,8 @@ describe('AiResponsePanel reference links', () => {
 
   it('renders comma-separated inline citations as individual clickable links', () => {
     const refs = [
-      { index: 1, resourceType: 'obs', resourceId: 101, date: '2025-01-15' },
-      { index: 2, resourceType: 'order', resourceId: 202, date: '2025-02-20' },
+      { index: 1, resourceType: 'obs', resourceUuid: 'uuid-101', date: '2025-01-15' },
+      { index: 2, resourceType: 'order', resourceUuid: 'uuid-202', date: '2025-02-20' },
     ];
 
     render(
@@ -119,7 +143,7 @@ describe('AiResponsePanel reference links', () => {
   });
 
   it('renders unknown resource types as links to Patient Summary', () => {
-    const unknownRef = [{ index: 1, resourceType: 'UnknownType', resourceId: 999, date: '2025-06-01' }];
+    const unknownRef = [{ index: 1, resourceType: 'UnknownType', resourceUuid: 'uuid-999', date: '2025-06-01' }];
 
     render(
       <AiResponsePanel
@@ -178,7 +202,7 @@ describe('AiResponsePanel citation grounding', () => {
     render(
       <AiResponsePanel
         answer={answer}
-        references={[{ index: 1, resourceType: 'obs', resourceId: 101, date: '2025-01-15', grounded }]}
+        references={[{ index: 1, resourceType: 'obs', resourceUuid: 'uuid-101', date: '2025-01-15', grounded }]}
         questionId="q"
         error={null}
         isLoading={false}
@@ -213,8 +237,8 @@ describe('AiResponsePanel citation grounding', () => {
 
 describe('AiResponsePanel copy-to-clipboard', () => {
   const references = [
-    { index: 1, resourceType: 'obs', resourceId: 101, date: '2025-01-15' },
-    { index: 2, resourceType: 'order', resourceId: 202, date: '2025-02-20' },
+    { index: 1, resourceType: 'obs', resourceUuid: 'uuid-101', date: '2025-01-15' },
+    { index: 2, resourceType: 'order', resourceUuid: 'uuid-202', date: '2025-02-20' },
   ];
 
   let writeText: Mock;

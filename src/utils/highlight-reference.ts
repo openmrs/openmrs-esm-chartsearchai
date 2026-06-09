@@ -63,16 +63,16 @@ function highlightElement(element: HTMLElement): void {
  * Try to find a DOM element matching the reference, scoped to the main
  * chart content area to avoid matching elements in sidebars or headers.
  *
- * Strategy 1: Match by resource ID against Carbon DataTable row IDs.
- * Some widgets use the resource ID as the DataTable row `id`.
+ * Strategy 1: Match by resource UUID against Carbon DataTable row IDs.
+ * Some widgets use the resource UUID as the DataTable row `id`.
  *
  * Strategy 2: Fall back to searching for a table row containing the date string.
  */
-function findElement(resourceId: number | string, date: string): HTMLElement | null {
+function findElement(resourceUuid: string, date: string): HTMLElement | null {
   const contentArea = document.querySelector('.omrs-main-content') ?? document;
-  const idStr = String(resourceId);
+  const idStr = resourceUuid;
 
-  // Strategy 1: Find by resource ID in element attributes
+  // Strategy 1: Find by resource UUID in element attributes
   const byId = contentArea.querySelector<HTMLElement>(`tr[id*="${CSS.escape(idStr)}"]`);
   if (byId) return byId;
 
@@ -99,14 +99,14 @@ function findElement(resourceId: number | string, date: string): HTMLElement | n
  * Waits for the SPA navigation to settle before searching, then uses a
  * MutationObserver to handle lazy-loaded content.
  */
-export function highlightReference(resourceId: number | string, date: string): void {
+export function highlightReference(resourceUuid: string, date: string): void {
   injectHighlightStyles();
   cleanup();
 
   // Wait for the SPA navigation to render the new page before searching.
   // Searching immediately would match elements on the OLD page.
   const settleTimer = setTimeout(() => {
-    const element = findElement(resourceId, date);
+    const element = findElement(resourceUuid, date);
     if (element) {
       highlightElement(element);
       return;
@@ -114,7 +114,7 @@ export function highlightReference(resourceId: number | string, date: string): v
 
     // Content may still be loading — watch for DOM changes
     const observer = new MutationObserver(() => {
-      const el = findElement(resourceId, date);
+      const el = findElement(resourceUuid, date);
       if (el) {
         observer.disconnect();
         activeObserver = null;
