@@ -16,6 +16,8 @@ A floating AI button appears on the patient chart page. Clicking it opens a sear
 
 The module streams an answer token-by-token (via SSE) with numbered citations (e.g. `[1]`, `[2]`) that link back to the relevant section of the patient chart (Results, Orders, Allergies, etc.).
 
+When the backend's optional [drug-reference feature](https://github.com/openmrs/openmrs-module-chartsearchai#drug-reference-injection--safety-validation) is enabled, the panel also shows non-blocking **safety-check** chips below the answer (overdose / interaction / contraindication) and renders drug-reference citations as distinct, non-navigating reference chips.
+
 ## Backend
 
 This frontend requires the [Chart Search AI backend module](https://github.com/openmrs/openmrs-module-chartsearchai), which uses a RAG (Retrieval Augmented Generation) architecture:
@@ -68,11 +70,14 @@ Response:
   "answer": "The patient is currently on metformin [1] and lisinopril [2]...",
   "disclaimer": "AI-generated summary. Verify with the full chart.",
   "references": [
-    { "index": 1, "resourceType": "order", "resourceId": 456, "date": "2025-12-01" },
-    { "index": 2, "resourceType": "order", "resourceId": 789, "date": "2025-11-15" }
-  ]
+    { "index": 1, "resourceType": "order", "resourceUuid": "5946f880-b197-400b-9caa-a3c661d71165", "date": "2025-12-01" },
+    { "index": 2, "resourceType": "order", "resourceUuid": "a8f5f167-4ee2-4d2a-94f9-3f3f86d2e9b6", "date": "2025-11-15" }
+  ],
+  "safetyWarnings": []
 }
 ```
+
+`references[].resourceUuid` is the cited record's UUID (used to locate and highlight the chart row). `safetyWarnings` (each `{ type, drug, detail }`) is always present and empty unless the backend's optional drug-reference feature is enabled; the panel renders any entries as chips below the answer.
 
 The required privilege is **AI Query Patient Data**.
 
