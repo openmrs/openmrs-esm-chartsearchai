@@ -13,6 +13,7 @@ const seedMessages = () =>
           question: 'q',
           answer: 'a',
           references: [],
+          safetyWarnings: [],
           questionId: '',
           isLoading: false,
           error: null,

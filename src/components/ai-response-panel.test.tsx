@@ -235,6 +235,72 @@ describe('AiResponsePanel citation grounding', () => {
   });
 });
 
+describe('AiResponsePanel drug-reference citations', () => {
+  const references = [{ index: 6, resourceType: 'drug_reference', resourceUuid: 'ibuprofen', date: '' }];
+
+  it('renders a drug-reference citation as non-navigating, visually distinct', () => {
+    render(
+      <AiResponsePanel
+        answer="Reference dosing for ibuprofen [6]."
+        references={references}
+        questionId="q"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    // The reference chip reads "Drug reference" (not the raw resourceType + date).
+    const chip = screen.getByText('[6] Drug reference');
+    expect(chip.tagName).not.toBe('A');
+    // A distinct "Reference" badge is shown.
+    expect(screen.getByText('Reference')).toBeInTheDocument();
+    // The inline citation does not navigate (it is a span, not a link).
+    expect(screen.queryByRole('link', { name: '6' })).not.toBeInTheDocument();
+  });
+});
+
+describe('AiResponsePanel safety warnings', () => {
+  it('renders safety warnings as chips below the answer', () => {
+    render(
+      <AiResponsePanel
+        answer="Ibuprofen 600 mg every 6 hours [6]."
+        references={[]}
+        safetyWarnings={[
+          { type: 'overdose', drug: 'Ibuprofen', detail: 'stated dose ~2400 mg/day exceeds the 1200 mg/day maximum' },
+          { type: 'interaction', drug: 'Ibuprofen', detail: 'interacts with active order warfarin' },
+        ]}
+        questionId="q"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    expect(screen.getByText('Safety checks:')).toBeInTheDocument();
+    expect(screen.getByText('Dose')).toBeInTheDocument();
+    expect(screen.getByText('Interaction')).toBeInTheDocument();
+    expect(screen.getByText(/exceeds the 1200 mg\/day maximum/)).toBeInTheDocument();
+    expect(screen.getByText(/interacts with active order warfarin/)).toBeInTheDocument();
+  });
+
+  it('renders no safety section when there are no warnings', () => {
+    render(
+      <AiResponsePanel
+        answer="The blood pressure is 120/80 [1]."
+        references={[]}
+        safetyWarnings={[]}
+        questionId="q"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    expect(screen.queryByText('Safety checks:')).not.toBeInTheDocument();
+  });
+});
+
 describe('AiResponsePanel copy-to-clipboard', () => {
   const references = [
     { index: 1, resourceType: 'obs', resourceUuid: 'uuid-101', date: '2025-01-15' },

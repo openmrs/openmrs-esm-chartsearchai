@@ -122,3 +122,46 @@
   display: inline-flex;
   align-items: center;
 }
+
+// An inline citation pointing at injected drug-reference data (not a chart record).
+// Purple to match the reference chip and to read as "reference, not patient data";
+// non-navigating, so no pointer cursor.
+.inlineCitationReference {
+  color: colors.$purple-60;
+  cursor: help;
+  font-weight: 600;
+}
+
+// Post-answer drug-safety advisories, rendered as chips below the answer. Bordered
+// in red to read as "review this", without implying the answer itself is wrong.
+.safetyWarningsSection {
+  display: flex;
+  flex-direction: column;
+  gap: layout.$spacing-02;
+  padding: layout.$spacing-03;
+  background-color: colors.$red-10;
+  border-left: 3px solid colors.$red-60;
+  border-radius: 0.25rem;
+}
+
+.safetyWarningsLabel {
+  @include type.type-style('label-01');
+  color: colors.$red-70;
+}
+
+.safetyWarningsList {
+  display: flex;
+  flex-direction: column;
+  gap: layout.$spacing-02;
+}
+
+.safetyWarningItem {
+  display: inline-flex;
+  align-items: baseline;
+  gap: layout.$spacing-02;
+}
+
+.safetyWarningText {
+  @include type.type-style('body-compact-01');
+  color: colors.$gray-90;
+}

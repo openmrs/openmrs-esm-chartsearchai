@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { IconButton, InlineLoading, Tag } from '@carbon/react';
 import { Copy } from '@carbon/react/icons';
 import { navigate } from '@openmrs/esm-framework';
-import { type AiReference } from '../api/chartsearchai';
+import { type AiReference, type AiSafetyWarning } from '../api/chartsearchai';
 import { highlightReference } from '../utils/highlight-reference';
 import AiFeedback from './ai-feedback.component';
 import styles from './ai-response-panel.scss';
@@ -11,12 +11,16 @@ import styles from './ai-response-panel.scss';
 interface AiResponsePanelProps {
   answer: string;
   references: AiReference[];
+  safetyWarnings?: AiSafetyWarning[];
   questionId: string;
   error: string | null;
   isLoading: boolean;
   patientUuid: string;
   onFeedbackComplete?: () => void;
 }
+
+/** Reference data, not patient data — cited like a record but it has no chart tab to navigate to. */
+const RESOURCE_TYPE_DRUG_REFERENCE = 'drug_reference';
 
 const RESOURCE_TYPE_TO_CHART_PAGE: Record<string, string> = {
   obs: 'Results',
@@ -28,8 +32,14 @@ const RESOURCE_TYPE_TO_CHART_PAGE: Record<string, string> = {
   medication_dispense: 'Medications',
 };
 
+function isDrugReference(ref: AiReference): boolean {
+  return ref.resourceType.toLowerCase() === RESOURCE_TYPE_DRUG_REFERENCE;
+}
+
 function buildReferenceUrl(ref: AiReference, patientUuid: string): string | null {
-  if (!patientUuid) {
+  if (!patientUuid || isDrugReference(ref)) {
+    // Drug-reference citations are reference data with no patient chart tab —
+    // they do not navigate (a detail side panel is a follow-up).
     return null;
   }
   const chartPage = RESOURCE_TYPE_TO_CHART_PAGE[ref.resourceType.toLowerCase()];
@@ -77,6 +87,24 @@ function groundedTag(grounded: boolean | null | undefined, t: Translate): Ground
   return null;
 }
 
+/**
+ * Maps a safety-warning type to a Carbon Tag colour and a translated label.
+ * Overdose and contraindication are the higher-severity reds; an interaction is
+ * magenta. Unknown types fall back to a neutral red so a warning is never dropped.
+ */
+function safetyWarningTag(type: string, t: Translate): { tagType: 'red' | 'magenta'; label: string } {
+  switch (type) {
+    case 'overdose':
+      return { tagType: 'red', label: t('safetyOverdose', 'Dose') };
+    case 'contraindication':
+      return { tagType: 'red', label: t('safetyContraindication', 'Contraindication') };
+    case 'interaction':
+      return { tagType: 'magenta', label: t('safetyInteraction', 'Interaction') };
+    default:
+      return { tagType: 'red', label: t('safetyWarning', 'Safety') };
+  }
+}
+
 function stripCitations(answer: string): string {
   return answer.replace(/\s?\[\d+(?:\s*,\s*\d+)*\]/g, '').trim();
 }
@@ -104,6 +132,7 @@ function renderAnswerWithCitations(
       const ref = refByIndex.get(citIndex);
       const url = ref ? buildReferenceUrl(ref, patientUuid) : null;
       const ungrounded = ref?.grounded === false;
+      const drugReference = ref ? isDrugReference(ref) : false;
       parts.push(
         url && ref ? (
           <a
@@ -121,6 +150,14 @@ function renderAnswerWithCitations(
           >
             {ungrounded ? `${citIndex} ⚠` : citIndex}
           </a>
+        ) : drugReference ? (
+          <span
+            key={`cit-${matchIndex}-${citIndex}`}
+            className={`${styles.inlineCitation} ${styles.inlineCitationReference}`}
+            title={t('drugReferenceCitation', 'Clinical reference data — not this patient’s record.')}
+          >
+            {citIndex}
+          </span>
         ) : (
           `${citIndex}`
         ),
@@ -141,6 +178,7 @@ function renderAnswerWithCitations(
 const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   answer,
   references,
+  safetyWarnings,
   questionId,
   error,
   isLoading,
@@ -189,8 +227,17 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
           <div className={styles.referencesList}>
             {references.map((ref) => {
               const url = buildReferenceUrl(ref, patientUuid);
-              const label = `[${ref.index}] ${ref.resourceType} — ${ref.date}`;
-              const g = groundedTag(ref.grounded, t);
+              const drugReference = isDrugReference(ref);
+              const label = drugReference
+                ? `[${ref.index}] ${t('drugReferenceLabel', 'Drug reference')}`
+                : `[${ref.index}] ${ref.resourceType} — ${ref.date}`;
+              const g = drugReference
+                ? {
+                    type: 'purple' as const,
+                    text: t('reference', 'Reference'),
+                    title: t('drugReferenceCitation', 'Clinical reference data — not this patient’s record.'),
+                  }
+                : groundedTag(ref.grounded, t);
               // Tooltip via a native-title wrapper rather than Tag's deprecated `title` prop.
               // Rendered as a sibling of the link (Carbon Tag is a <div>) so the metadata
               // badge is not nested in, or part of, the navigation click target.
@@ -212,6 +259,27 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                 <span key={ref.index} className={styles.referenceItem}>
                   {link}
                   {badge}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {safetyWarnings && safetyWarnings.length > 0 && (
+        <div className={styles.safetyWarningsSection} role="alert">
+          <span className={styles.safetyWarningsLabel}>{t('safetyChecks', 'Safety checks')}:</span>
+          <div className={styles.safetyWarningsList}>
+            {safetyWarnings.map((warning, i) => {
+              const { tagType, label } = safetyWarningTag(warning.type, t);
+              return (
+                <span key={`${warning.type}-${warning.drug}-${i}`} className={styles.safetyWarningItem}>
+                  <Tag type={tagType} size="sm">
+                    {label}
+                  </Tag>
+                  <span className={styles.safetyWarningText}>
+                    {warning.drug}: {warning.detail}
+                  </span>
                 </span>
               );
             })}
