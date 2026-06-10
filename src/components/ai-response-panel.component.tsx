@@ -284,7 +284,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
               const { tagType, label } = safetyWarningTag(warning.type, t);
               return (
                 <span key={`${warning.type}-${warning.drug}-${i}`} className={styles.safetyWarningItem}>
-                  <Tag type={tagType} size="sm">
+                  <Tag type={tagType} size="sm" className={styles.safetyWarningBadge}>
                     {label}
                   </Tag>
                   <span className={styles.safetyWarningText}>
