@@ -87,6 +87,11 @@ function groundedTag(grounded: boolean | null | undefined, t: Translate): Ground
   return null;
 }
 
+/** The tooltip shared by the drug-reference chip and its inline citation: one wording, one i18n key. */
+function drugReferenceTitle(t: Translate): string {
+  return t('drugReferenceCitation', 'Clinical reference data — not this patient’s record.');
+}
+
 /**
  * Badge for a drug-reference citation: reference data, not a grounded/ungrounded patient
  * record, so it gets its own neutral purple "Reference" tag rather than a grounding verdict.
@@ -96,7 +101,7 @@ function referenceTag(t: Translate): GroundedTag {
   return {
     type: 'purple',
     text: t('reference', 'Reference'),
-    title: t('drugReferenceCitation', 'Clinical reference data — not this patient’s record.'),
+    title: drugReferenceTitle(t),
   };
 }
 
@@ -146,10 +151,11 @@ function renderAnswerWithCitations(
       const url = ref ? buildReferenceUrl(ref, patientUuid) : null;
       const ungrounded = ref?.grounded === false;
       const drugReference = ref ? isDrugReference(ref) : false;
+      const citKey = `cit-${matchIndex}-${i}-${citIndex}`;
       parts.push(
         url && ref ? (
           <a
-            key={`cit-${matchIndex}-${i}-${citIndex}`}
+            key={citKey}
             className={
               ungrounded ? `${styles.inlineCitation} ${styles.inlineCitationUngrounded}` : styles.inlineCitation
             }
@@ -165,9 +171,9 @@ function renderAnswerWithCitations(
           </a>
         ) : drugReference ? (
           <span
-            key={`cit-${matchIndex}-${i}-${citIndex}`}
+            key={citKey}
             className={`${styles.inlineCitation} ${styles.inlineCitationReference}`}
-            title={t('drugReferenceCitation', 'Clinical reference data — not this patient’s record.')}
+            title={drugReferenceTitle(t)}
           >
             {citIndex}
           </span>

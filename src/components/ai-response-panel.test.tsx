@@ -334,6 +334,29 @@ describe('AiResponsePanel safety warnings', () => {
     expect(screen.getByText(/interacts with active order warfarin/)).toBeInTheDocument();
   });
 
+  it('renders a contraindication warning with the Contraindication label', () => {
+    // Contraindication is the highest-stakes warning type (and the one the backend's
+    // question-driven validator most often produces); its switch case must render, not fall
+    // through to the generic fallback.
+    render(
+      <AiResponsePanel
+        answer="Ibuprofen is an option [1]."
+        references={[]}
+        safetyWarnings={[
+          { type: 'contraindication', drug: 'Ibuprofen', detail: 'the patient has a recorded allergy to Ibuprofen' },
+        ]}
+        questionId="q"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    expect(screen.getByText('Safety checks:')).toBeInTheDocument();
+    expect(screen.getByText('Contraindication')).toBeInTheDocument();
+    expect(screen.getByText(/recorded allergy to Ibuprofen/)).toBeInTheDocument();
+  });
+
   it('renders no safety section when there are no warnings', () => {
     render(
       <AiResponsePanel

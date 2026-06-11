@@ -67,6 +67,40 @@ describe('useChartSearchAi', () => {
     expect(result.current.isAnyLoading).toBe(false);
   });
 
+  it('captures safetyWarnings from the response onto the message', async () => {
+    // The data-flow link the safety chips depend on: if `done` stops copying response.safetyWarnings,
+    // the panel renders nothing and no other test would catch it.
+    const response = {
+      answer: 'Ibuprofen is an option [1].',
+      references: [],
+      safetyWarnings: [
+        { type: 'contraindication', drug: 'Ibuprofen', detail: 'the patient has a recorded allergy to Ibuprofen' },
+      ],
+      questionId: 'q-sw',
+    };
+    mockSearchPatientChart.mockResolvedValue(response);
+
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await act(async () => {
+      result.current.submitQuestion('patient-uuid', 'Is ibuprofen safe?');
+    });
+
+    expect(result.current.messages[0].safetyWarnings).toEqual(response.safetyWarnings);
+  });
+
+  it('defaults safetyWarnings to an empty array when the response omits them', async () => {
+    // The drug-reference feature is optional and off by default, so most responses carry no warnings;
+    // the message must still hold an array (the `?? []` fallback), never undefined.
+    mockSearchPatientChart.mockResolvedValue({ answer: 'BP is 120/80 [1].', references: [], questionId: 'q-none' });
+
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await act(async () => {
+      result.current.submitQuestion('patient-uuid', 'Latest BP?');
+    });
+
+    expect(result.current.messages[0].safetyWarnings).toEqual([]);
+  });
+
   it('sets error on failed sync response', async () => {
     mockSearchPatientChart.mockRejectedValue({ message: 'Server error' });
 
