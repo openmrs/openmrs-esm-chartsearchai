@@ -156,6 +156,31 @@ describe('useChartSearchAi', () => {
     expect(result.current.messages[0].isLoading).toBe(false);
   });
 
+  it('accumulates live reasoning on the in-flight message and clears it on done', () => {
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'What meds?');
+    });
+
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+
+    act(() => {
+      callbacks.onThinking('The query asks about medications. ');
+      callbacks.onThinking('Scanning drug orders.');
+    });
+    expect(result.current.messages[0].reasoning).toBe('The query asks about medications. Scanning drug orders.');
+    expect(result.current.messages[0].isLoading).toBe(true);
+
+    // The scratchpad is a live indicator, not part of the persisted result — done clears it.
+    act(() => {
+      callbacks.onDone({ answer: 'Aspirin [1]', references: [], questionId: 'q-1' });
+    });
+    expect(result.current.messages[0].reasoning).toBe('');
+    expect(result.current.messages[0].answer).toBe('Aspirin [1]');
+  });
+
   it('applies trailing grounded verdicts to the completed message (async grounding)', () => {
     mockUseConfig.mockReturnValue({ useStreaming: true });
     const { result } = renderHook(() => useChartSearchAi('patient-uuid'));

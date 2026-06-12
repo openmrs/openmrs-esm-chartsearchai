@@ -109,6 +109,7 @@ describe('searchPatientChartStream', () => {
       onError: vi.fn(),
       onReferences: vi.fn(),
       onGrounded: vi.fn(),
+      onThinking: vi.fn(),
     };
   }
 
@@ -170,6 +171,30 @@ describe('searchPatientChartStream', () => {
     expect(cb.onReferences).not.toHaveBeenCalled();
     expect(cb.onError).not.toHaveBeenCalled();
     expect(cb.onDone).toHaveBeenCalled();
+  });
+
+  it('parses thinking events and delivers the reasoning chunks to onThinking', async () => {
+    // The server streams the model's chain-of-thought before the answer so the UI can show
+    // live progress instead of a dead spinner during the (long, CPU-bound) reasoning phase.
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:thinking\ndata: The query asks about medications. \n\n',
+          'event:thinking\ndata: Records [1] and [3] are drug orders.\n\n',
+          'event:token\ndata: Aspirin [1]\n\n',
+          'event:done\ndata: {"answer":"Aspirin [1]","references":[]}\n\n',
+        ]),
+      );
+
+    callStream(cb);
+    await flushPromises();
+
+    expect(cb.onThinking).toHaveBeenNthCalledWith(1, 'The query asks about medications. ');
+    expect(cb.onThinking).toHaveBeenNthCalledWith(2, 'Records [1] and [3] are drug orders.');
+    expect(cb.onDone).toHaveBeenCalled();
+    expect(cb.onError).not.toHaveBeenCalled();
   });
 
   it('parses a trailing grounded event after done and delivers the verdicts to onGrounded', async () => {

@@ -17,6 +17,9 @@ export interface ChatMessage {
   questionId: string;
   isLoading: boolean;
   error: string | null;
+  /** Live model reasoning while the answer is still being generated — a transient
+   *  "thinking" indicator, cleared when the answer completes. Never the answer. */
+  reasoning: string;
 }
 
 interface UseChartSearchAiReturn {
@@ -104,6 +107,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         questionId: '',
         isLoading: true,
         error: null,
+        reasoning: '',
       };
 
       updateMessages(patientUuid, (prev) => [...prev, newMessage]);
@@ -128,6 +132,8 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
             references: response.references,
             questionId: response.questionId ?? '',
             isLoading: false,
+            // the scratchpad served its purpose as a live indicator; don't persist it
+            reasoning: '',
           };
           return updated;
         });
@@ -157,6 +163,17 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
             patientUuid,
             question,
             {
+              // Live reasoning: shown while the model thinks, before any answer text exists.
+              onThinking: (chunk) => {
+                if (!isMountedRef.current) return;
+                updateMessages(patientUuid, (prev) => {
+                  const idx = prev.findIndex((m) => m.id === messageId);
+                  if (idx === -1) return prev;
+                  const updated = [...prev];
+                  updated[idx] = { ...updated[idx], reasoning: updated[idx].reasoning + chunk };
+                  return updated;
+                });
+              },
               onToken: (token) => {
                 if (!isMountedRef.current) return;
                 updateMessages(patientUuid, (prev) => {

@@ -188,7 +188,12 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
                 patientUuid={patientUuid ?? ''}
                 onFeedbackComplete={handleFeedbackComplete}
               />
-              {msg.isLoading && !msg.answer && <InlineLoading description={t('thinkingEllipsis', 'Thinking...')} />}
+              {msg.isLoading && !msg.answer && (
+                <div>
+                  <InlineLoading description={t('thinkingEllipsis', 'Thinking...')} />
+                  {msg.reasoning && <p className={styles.liveReasoning}>{msg.reasoning}</p>}
+                </div>
+              )}
             </div>
           </div>
         ))}
