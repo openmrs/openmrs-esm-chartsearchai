@@ -61,6 +61,7 @@ function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
     questionId: 'q-1',
     isLoading: false,
     error: null,
+    reasoning: '',
     ...overrides,
   };
 }

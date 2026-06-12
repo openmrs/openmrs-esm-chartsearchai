@@ -56,7 +56,47 @@ beforeEach(() => {
   });
 });
 
+function message(overrides = {}) {
+  return {
+    id: 'm1',
+    question: 'What meds?',
+    answer: '',
+    references: [],
+    questionId: '',
+    isLoading: true,
+    error: null,
+    reasoning: '',
+    ...overrides,
+  };
+}
+
 describe('AiChatContent', () => {
+  it('shows the live reasoning text while the model is thinking (no answer yet)', () => {
+    mockUseChartSearchAi.mockReturnValue({
+      messages: [message({ reasoning: 'The query asks about medications. Scanning drug orders.' })],
+      isAnyLoading: true,
+      submitQuestion: mockSubmitQuestion,
+      stopCurrent: mockStopCurrent,
+      clearMessages: vi.fn(),
+    });
+    render(<AiChatContent mode="workspace" />);
+
+    expect(screen.getByText('The query asks about medications. Scanning drug orders.')).toBeInTheDocument();
+  });
+
+  it('hides the reasoning once answer text starts streaming', () => {
+    mockUseChartSearchAi.mockReturnValue({
+      messages: [message({ answer: 'Aspirin [1]', reasoning: 'Scanning drug orders.' })],
+      isAnyLoading: true,
+      submitQuestion: mockSubmitQuestion,
+      stopCurrent: mockStopCurrent,
+      clearMessages: vi.fn(),
+    });
+    render(<AiChatContent mode="workspace" />);
+
+    expect(screen.queryByText('Scanning drug orders.')).not.toBeInTheDocument();
+  });
+
   describe('submit guards', () => {
     it('does not submit when input is empty', async () => {
       const user = userEvent.setup();

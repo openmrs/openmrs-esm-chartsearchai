@@ -123,6 +123,13 @@ export function searchPatientChartStream(
      * a malformed payload just leaves citations rendered as unverified.
      */
     onGrounded?: (references: AiReference[]) => void;
+    /**
+     * Live reasoning ("thinking") chunks, streamed by the server before the answer so the
+     * UI can show progress and the model's rationale instead of a dead spinner during the
+     * reasoning phase. Scratchpad only — render distinctly (subdued, transient), never as
+     * the answer.
+     */
+    onThinking?: (chunk: string) => void;
   },
   abortController?: AbortController,
 ): void {
@@ -183,6 +190,8 @@ export function searchPatientChartStream(
         const data = dataLines.join('\n');
         if (eventType === 'token') {
           callbacks.onToken(data);
+        } else if (eventType === 'thinking') {
+          callbacks.onThinking?.(data);
         } else if (eventType === 'references') {
           // Pre-grounding citations: best-effort, so a malformed payload is ignored rather
           // than failing the stream — the authoritative references arrive with `done`.

@@ -16,6 +16,7 @@ const seedMessages = () =>
           questionId: '',
           isLoading: false,
           error: null,
+          reasoning: '',
         },
       ],
     },
