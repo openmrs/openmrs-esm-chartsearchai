@@ -113,6 +113,16 @@ export function searchPatientChartStream(
      * missing or malformed event is ignored, since {@code done} is authoritative.
      */
     onReferences?: (references: AiReference[]) => void;
+    /**
+     * Trailing grounding verdicts, emitted only when the server runs with
+     * {@code chartsearchai.grounding.async=true}: in that mode {@code done} arrives as soon
+     * as the answer is complete (its references carry no verdicts) and this event re-sends
+     * the same references with their {@code grounded} verdicts once the (slower) Tier-2
+     * verification finishes. Best-effort like {@code onReferences}: when the server runs in
+     * classic mode the event never arrives and {@code done}'s references are already final;
+     * a malformed payload just leaves citations rendered as unverified.
+     */
+    onGrounded?: (references: AiReference[]) => void;
   },
   abortController?: AbortController,
 ): void {
@@ -181,6 +191,15 @@ export function searchPatientChartStream(
             callbacks.onReferences?.(parsed.references ?? []);
           } catch {
             // ignore; `done` is authoritative
+          }
+        } else if (eventType === 'grounded') {
+          // Post-done verdicts (async grounding). Best-effort: a malformed payload leaves
+          // the citations unverified rather than erroring an already-complete answer.
+          try {
+            const parsed = JSON.parse(data);
+            callbacks.onGrounded?.(parsed.references ?? []);
+          } catch {
+            // ignore; citations simply stay unverified
           }
         } else if (eventType === 'done') {
           streamFinalized = true;

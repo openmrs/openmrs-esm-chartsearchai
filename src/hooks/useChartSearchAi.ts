@@ -181,6 +181,19 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
                 });
               },
               onDone: done,
+              // Trailing verdicts (server runs async grounding): update the SAME message's
+              // references after done completed it. Deliberately NOT gated on isMountedRef —
+              // the chat store outlives the panel, and verdicts that arrive after the user
+              // closed it must still land so badges are correct when the panel reopens.
+              onGrounded: (references) => {
+                updateMessages(patientUuid, (prev) => {
+                  const idx = prev.findIndex((m) => m.id === messageId);
+                  if (idx === -1) return prev;
+                  const updated = [...prev];
+                  updated[idx] = { ...updated[idx], references };
+                  return updated;
+                });
+              },
               onError: fail,
             },
             abortController,

@@ -108,6 +108,7 @@ describe('searchPatientChartStream', () => {
       onDone: vi.fn(),
       onError: vi.fn(),
       onReferences: vi.fn(),
+      onGrounded: vi.fn(),
     };
   }
 
@@ -167,6 +168,52 @@ describe('searchPatientChartStream', () => {
 
     // `done` is authoritative — a broken early event must not call onReferences or onError.
     expect(cb.onReferences).not.toHaveBeenCalled();
+    expect(cb.onError).not.toHaveBeenCalled();
+    expect(cb.onDone).toHaveBeenCalled();
+  });
+
+  it('parses a trailing grounded event after done and delivers the verdicts to onGrounded', async () => {
+    // chartsearchai.grounding.async=true: done arrives with verdict-less references, then a
+    // trailing grounded event re-sends them with verdicts once Tier-2 verification finishes.
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:token\ndata: Has it [2]\n\n',
+          'event:done\ndata: {"answer":"Has it [2]","references":[{"index":2,"resourceType":"condition","resourceUuid":"uuid-7","date":"2022-11-13"}],"questionId":"q-9"}\n\n',
+          'event:grounded\ndata: {"references":[{"index":2,"resourceType":"condition","resourceUuid":"uuid-7","date":"2022-11-13","grounded":true}],"questionId":"q-9"}\n\n',
+        ]),
+      );
+
+    callStream(cb);
+    await flushPromises();
+
+    expect(cb.onDone).toHaveBeenCalled();
+    expect(cb.onGrounded).toHaveBeenCalledWith([
+      { index: 2, resourceType: 'condition', resourceUuid: 'uuid-7', date: '2022-11-13', grounded: true },
+    ]);
+    // done must have been delivered before the verdicts.
+    expect(cb.onDone.mock.invocationCallOrder[0]).toBeLessThan(cb.onGrounded.mock.invocationCallOrder[0]);
+    expect(cb.onError).not.toHaveBeenCalled();
+  });
+
+  it('ignores a malformed grounded event without erroring the finished stream', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:done\ndata: {"answer":"a","references":[]}\n\n',
+          'event:grounded\ndata: {bad json}\n\n',
+        ]),
+      );
+
+    callStream(cb);
+    await flushPromises();
+
+    // The answer is already complete; broken verdicts just leave citations unverified.
+    expect(cb.onGrounded).not.toHaveBeenCalled();
     expect(cb.onError).not.toHaveBeenCalled();
     expect(cb.onDone).toHaveBeenCalled();
   });

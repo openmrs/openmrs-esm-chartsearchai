@@ -156,6 +156,67 @@ describe('useChartSearchAi', () => {
     expect(result.current.messages[0].isLoading).toBe(false);
   });
 
+  it('applies trailing grounded verdicts to the completed message (async grounding)', () => {
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Any allergies?');
+    });
+
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+    const refs = [{ index: 1, resourceType: 'condition', resourceUuid: 'uuid-7', date: '2022-11-13' }];
+
+    // Async grounding: done arrives with verdict-less references and completes the message...
+    act(() => {
+      callbacks.onDone({ answer: 'Has it [1]', references: refs, questionId: 'q-1' });
+    });
+    expect(result.current.messages[0].isLoading).toBe(false);
+    expect(result.current.messages[0].references[0].grounded).toBeUndefined();
+
+    // ...then the trailing grounded event re-sends them with verdicts, which must land on the
+    // SAME (already completed) message.
+    act(() => {
+      callbacks.onGrounded([{ ...refs[0], grounded: true }]);
+    });
+    expect(result.current.messages[0].references[0].grounded).toBe(true);
+    expect(result.current.messages[0].isLoading).toBe(false);
+    expect(result.current.messages[0].questionId).toBe('q-1');
+  });
+
+  it('applies grounded verdicts to the right message even after a newer question was submitted', () => {
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Any allergies?');
+    });
+    const firstCallbacks = mockSearchPatientChartStream.mock.calls[0][2];
+    act(() => {
+      firstCallbacks.onDone({
+        answer: 'Has it [1]',
+        references: [{ index: 1, resourceType: 'condition', resourceUuid: 'uuid-7', date: '2022-11-13' }],
+        questionId: 'q-1',
+      });
+    });
+
+    // done released the in-flight slot, so a second question can start while the first
+    // stream's grounded event is still pending.
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Any meds?');
+    });
+
+    act(() => {
+      firstCallbacks.onGrounded([
+        { index: 1, resourceType: 'condition', resourceUuid: 'uuid-7', date: '2022-11-13', grounded: false },
+      ]);
+    });
+
+    expect(result.current.messages).toHaveLength(2);
+    expect(result.current.messages[0].references[0].grounded).toBe(false);
+    expect(result.current.messages[1].references).toEqual([]);
+  });
+
   it('accumulates tokens into the last message during streaming', () => {
     mockUseConfig.mockReturnValue({ useStreaming: true });
     const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
