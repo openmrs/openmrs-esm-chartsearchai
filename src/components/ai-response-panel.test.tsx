@@ -177,6 +177,75 @@ describe('AiResponsePanel reference links', () => {
     expect(screen.queryByText(/Response interrupted/)).not.toBeInTheDocument();
   });
 
+  it('renders a Carbon DataTable below the prose when blocks are present', () => {
+    const refs = [
+      { index: 1, resourceType: 'order', resourceUuid: 'uuid-100', date: '2024-01-01' },
+      { index: 2, resourceType: 'order', resourceUuid: 'uuid-200', date: '2024-02-01' },
+    ];
+    const blocks = [
+      {
+        kind: 'table' as const,
+        title: 'Medications',
+        columns: [
+          { key: 'name', label: 'Medication' },
+          { key: 'dose', label: 'Dose' },
+        ],
+        rows: [
+          { cells: { name: { text: 'Lisinopril', refs: [1] }, dose: { text: '10 mg' } } },
+          { cells: { name: { text: 'Metformin', refs: [2] }, dose: { text: '500 mg' } } },
+        ],
+      },
+    ];
+
+    render(
+      <AiResponsePanel
+        answer="See table for medications."
+        references={refs}
+        blocks={blocks}
+        questionId="q-blocks"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    // Prose answer still renders
+    expect(screen.getByText(/See table for medications/)).toBeInTheDocument();
+    // Table title + headers + rows render
+    expect(screen.getByText('Medications')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Medication' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Dose' })).toBeInTheDocument();
+    expect(screen.getByText('Lisinopril')).toBeInTheDocument();
+    expect(screen.getByText('Metformin')).toBeInTheDocument();
+    expect(screen.getByText('10 mg')).toBeInTheDocument();
+    expect(screen.getByText('500 mg')).toBeInTheDocument();
+  });
+
+  it('does NOT render table blocks while answer is still streaming', () => {
+    const blocks = [
+      {
+        kind: 'table' as const,
+        title: 'Stale',
+        columns: [{ key: 'a', label: 'A' }],
+        rows: [{ cells: { a: { text: 'should-not-show' } } }],
+      },
+    ];
+    render(
+      <AiResponsePanel
+        answer="Still typing"
+        references={[]}
+        blocks={blocks}
+        questionId=""
+        error={null}
+        isLoading={true}
+        patientUuid={patientUuid}
+      />,
+    );
+    // The streaming-time render only shows prose; blocks land atomically once done.
+    expect(screen.queryByText('Stale')).not.toBeInTheDocument();
+    expect(screen.queryByText('should-not-show')).not.toBeInTheDocument();
+  });
+
   it('shows partial answer with error banner when stream fails mid-response', () => {
     render(
       <AiResponsePanel
@@ -314,5 +383,124 @@ describe('AiResponsePanel copy-to-clipboard', () => {
     fireEvent.click(screen.getByRole('button', { name: /copy/i }));
 
     expect(writeText).toHaveBeenCalledWith('Findings are notable.');
+  });
+});
+
+describe('AiResponsePanel model tag', () => {
+  it('renders a subtle tag with the resolved model once the answer is complete', () => {
+    render(
+      <AiResponsePanel
+        answer="Done."
+        references={[]}
+        questionId="q1"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+        resolvedModel="med-agent-team"
+      />,
+    );
+
+    expect(screen.getByText('med-agent-team')).toBeInTheDocument();
+  });
+
+  it('does not render the model tag while the answer is still streaming', () => {
+    render(
+      <AiResponsePanel
+        answer="Partial"
+        references={[]}
+        questionId="q1"
+        error={null}
+        isLoading={true}
+        patientUuid={patientUuid}
+        resolvedModel="med-agent-team"
+      />,
+    );
+
+    expect(screen.queryByText('med-agent-team')).not.toBeInTheDocument();
+  });
+
+  it('omits the model tag when no resolved model is provided', () => {
+    render(
+      <AiResponsePanel
+        answer="Done."
+        references={[]}
+        questionId="q1"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    expect(screen.queryByText('med-agent-team')).not.toBeInTheDocument();
+  });
+});
+
+describe('AiResponsePanel per-section confidence', () => {
+  const baseProps = {
+    answer: '**Answer**\nHgb is 14.0 [1].\n\n**In Depth**\n- within range [1]',
+    references: [{ index: 1, resourceType: 'obs', resourceUuid: 'uuid-101', date: '2025-11-24' }],
+    questionId: 'q1',
+    error: null,
+    isLoading: false,
+    patientUuid,
+  };
+
+  it('heads each section (Answer / In-Depth) with its confidence chip', () => {
+    render(
+      <AiResponsePanel
+        {...baseProps}
+        confidence={{
+          answer: { level: 'green', note: '' },
+          in_depth: { level: 'yellow', note: 'one claim regenerated' },
+        }}
+      />,
+    );
+    expect(screen.getByTestId('section-answer')).toHaveTextContent('High confidence');
+    expect(screen.getByTestId('section-in-depth')).toHaveTextContent('Medium confidence');
+  });
+
+  it('YELLOW (med): shows the message, collapses the review note behind a reveal', () => {
+    render(
+      <AiResponsePanel
+        {...baseProps}
+        confidence={{ answer: { level: 'green' }, in_depth: { level: 'yellow', note: 'one claim regenerated' } }}
+      />,
+    );
+    const inDepth = screen.getByTestId('section-in-depth');
+    expect(inDepth).toHaveTextContent('within range'); // the message is shown
+    const details = inDepth.querySelector('details');
+    expect(details).toBeTruthy();
+    expect(details).toHaveTextContent(/show review note/i);
+    expect(details).toHaveTextContent('one claim regenerated'); // note is inside the collapse
+    expect(details).not.toHaveAttribute('open'); // collapsed by default
+  });
+
+  it('RED (low): shows the caveat note, WITHHOLDS the message behind "show <section>"', () => {
+    render(
+      <AiResponsePanel
+        {...baseProps}
+        confidence={{ answer: { level: 'green' }, in_depth: { level: 'red', note: 'supporting context unresolved' } }}
+      />,
+    );
+    const inDepth = screen.getByTestId('section-in-depth');
+    expect(inDepth).toHaveTextContent('Low confidence');
+    expect(inDepth).toHaveTextContent('supporting context unresolved'); // the caveat note is shown
+    const details = inDepth.querySelector('details');
+    expect(details).toBeTruthy();
+    expect(details).toHaveTextContent(/show in depth/i); // message collapsed behind the reveal
+    expect(details).not.toHaveAttribute('open');
+    // the green Answer section is shown with no collapse
+    expect(screen.getByTestId('section-answer').querySelector('details')).toBeNull();
+  });
+
+  it('renders no sections / chips when the backend sends no confidence (single model / parity)', () => {
+    render(<AiResponsePanel {...baseProps} />);
+    expect(screen.queryByTestId('section-answer')).not.toBeInTheDocument();
+    expect(screen.queryByText(/confidence/i)).not.toBeInTheDocument();
+  });
+
+  it('does not split into sections while the answer is still streaming', () => {
+    render(<AiResponsePanel {...baseProps} isLoading={true} confidence={{ answer: { level: 'red', note: 'x' } }} />);
+    expect(screen.queryByTestId('section-answer')).not.toBeInTheDocument();
   });
 });

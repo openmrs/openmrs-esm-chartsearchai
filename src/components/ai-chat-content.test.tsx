@@ -27,12 +27,16 @@ const mockUseSpeechRecognition = useSpeechRecognition as Mock;
 
 let mockSubmitQuestion: Mock;
 let mockStopCurrent: Mock;
+let mockStartNewChatSession: Mock;
+let mockRefreshClinicalContext: Mock;
 let speechCallback: ((transcript: string) => void) | null;
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockSubmitQuestion = vi.fn();
   mockStopCurrent = vi.fn();
+  mockStartNewChatSession = vi.fn();
+  mockRefreshClinicalContext = vi.fn().mockResolvedValue(undefined);
   speechCallback = null;
   mockUseConfig.mockReturnValue({ aiSearchPlaceholder: 'Ask AI...', maxQuestionLength: 1000 });
   mockUsePatient.mockReturnValue({ patient: { id: 'p1' }, isLoading: false });
@@ -42,6 +46,8 @@ beforeEach(() => {
     submitQuestion: mockSubmitQuestion,
     stopCurrent: mockStopCurrent,
     clearMessages: vi.fn(),
+    startNewChatSession: mockStartNewChatSession,
+    refreshClinicalContext: mockRefreshClinicalContext,
   });
   mockUseSpeechRecognition.mockImplementation((onResult) => {
     speechCallback = onResult;
@@ -213,6 +219,77 @@ describe('AiChatContent', () => {
       rerender(<AiChatContent mode="workspace" patientUuid="p1" />);
 
       expect(log.scrollTop).toBe(1000);
+    });
+  });
+
+  describe('header controls (reset / refresh / maximize)', () => {
+    // Regression guard: New chat must be available even on an empty chat — it was
+    // previously gated behind messages.length > 0, so you couldn't reset until
+    // you'd already started a conversation.
+    it('renders the New chat button even with no messages and calls startNewChatSession on click', async () => {
+      const user = userEvent.setup();
+      render(<AiChatContent mode="floating" patientUuid="p1" onClose={vi.fn()} />);
+      const newChat = screen.getByRole('button', { name: /new chat/i });
+      await user.click(newChat);
+      expect(mockStartNewChatSession).toHaveBeenCalledWith('p1');
+    });
+
+    it('renders the Refresh clinical context button and refreshes on click', async () => {
+      const user = userEvent.setup();
+      render(<AiChatContent mode="floating" patientUuid="p1" onClose={vi.fn()} />);
+      const refresh = screen.getByRole('button', { name: /refresh clinical context/i });
+      await user.click(refresh);
+      // Success feedback is an in-thread system notice the hook appends (see the
+      // hook test); the component raises a banner only on failure. So on success
+      // we assert the refresh fired but NO error banner is shown.
+      expect(mockRefreshClinicalContext).toHaveBeenCalledWith('p1');
+      expect(screen.queryByText(/could not refresh clinical context/i)).not.toBeInTheDocument();
+    });
+
+    it('renders an in-thread system notice (not a chat bubble) for a system message', () => {
+      mockUseChartSearchAi.mockReturnValue({
+        messages: [
+          {
+            id: 'sys-1',
+            question: '',
+            answer: 'Clinical context refreshed — the latest chart data is now available to the assistant.',
+            references: [],
+            questionId: '',
+            isLoading: false,
+            error: null,
+            kind: 'system',
+          },
+        ],
+        isAnyLoading: false,
+        submitQuestion: mockSubmitQuestion,
+        stopCurrent: mockStopCurrent,
+        clearMessages: vi.fn(),
+        startNewChatSession: mockStartNewChatSession,
+        refreshClinicalContext: mockRefreshClinicalContext,
+      });
+      render(<AiChatContent mode="workspace" patientUuid="p1" />);
+      expect(screen.getByRole('status')).toHaveTextContent(/clinical context refreshed/i);
+      // A system notice is not a Q+A turn, so it must not mount an answer panel.
+      expect(screen.queryByTestId('ai-response')).not.toBeInTheDocument();
+    });
+
+    it('surfaces an error notice when the refresh fails', async () => {
+      mockRefreshClinicalContext.mockRejectedValueOnce(new Error('boom'));
+      const user = userEvent.setup();
+      render(<AiChatContent mode="floating" patientUuid="p1" onClose={vi.fn()} />);
+      await user.click(screen.getByRole('button', { name: /refresh clinical context/i }));
+      expect(await screen.findByText(/could not refresh clinical context/i)).toBeInTheDocument();
+    });
+
+    it('shows the maximize control only when onToggleExpand is provided, and toggles it', async () => {
+      const onToggleExpand = vi.fn();
+      const user = userEvent.setup();
+      const { rerender } = render(<AiChatContent mode="floating" patientUuid="p1" onClose={vi.fn()} />);
+      // No handler → no maximize control.
+      expect(screen.queryByRole('button', { name: /maximize/i })).not.toBeInTheDocument();
+      rerender(<AiChatContent mode="floating" patientUuid="p1" onClose={vi.fn()} onToggleExpand={onToggleExpand} />);
+      await user.click(screen.getByRole('button', { name: /maximize/i }));
+      expect(onToggleExpand).toHaveBeenCalled();
     });
   });
 

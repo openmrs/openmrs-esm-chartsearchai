@@ -8,6 +8,62 @@
   gap: layout.$spacing-04;
 }
 
+// Per-section validator confidence — parity with the validate dashboard's confSection
+// inversion: red shows the caveat + collapses the message; yellow shows the message +
+// collapses the note; green shows the message. Chip/caveat colors mirror the dashboard,
+// adapted for the light chat surface.
+.csec {
+  margin-top: layout.$spacing-04;
+}
+
+.ctitle {
+  @include type.type-style('label-01');
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: colors.$gray-60;
+  margin-bottom: layout.$spacing-02;
+}
+
+.cchip {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 0.625rem;
+  margin-left: layout.$spacing-02;
+  vertical-align: middle;
+}
+
+.caveat {
+  border-radius: 6px;
+  padding: layout.$spacing-03 layout.$spacing-04;
+  font-size: 0.75rem;
+  margin: layout.$spacing-02 0;
+}
+
+.caveatRed {
+  background: #fff1f1;
+  border: 1px solid #da1e28;
+  color: #a2191f;
+}
+
+.caveatYellow {
+  background: #fcf4d6;
+  border: 1px solid #f1c21b;
+  color: #684e00;
+}
+
+.collapse > summary {
+  cursor: pointer;
+  color: colors.$blue-60;
+  font-size: 0.6875rem;
+  padding: layout.$spacing-02 0;
+}
+
+.ans {
+  margin-top: layout.$spacing-02;
+}
+
 .answerSection {
   position: relative;
 }
@@ -20,12 +76,65 @@
   margin: 0;
 }
 
+// Rendered-markdown answer (headers / bold / lists) with inline citation chips.
+.markdownAnswer {
+  @include type.type-style('body-01');
+  color: colors.$gray-90;
+  line-height: 1.5;
+
+  > :first-child {
+    margin-top: 0;
+  }
+
+  > :last-child {
+    margin-bottom: 0;
+  }
+
+  ul,
+  ol {
+    margin: layout.$spacing-02 0;
+    padding-left: layout.$spacing-06;
+  }
+
+  li {
+    margin-bottom: layout.$spacing-01;
+  }
+}
+
+.answerParagraph {
+  margin: 0 0 layout.$spacing-03 0;
+}
+
+.answerHeading {
+  @include type.type-style('heading-compact-01');
+  color: colors.$gray-100;
+  margin: layout.$spacing-04 0 layout.$spacing-02 0;
+}
+
 .actionsRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: layout.$spacing-03;
   margin-top: layout.$spacing-02;
+}
+
+.actionsLeft {
+  display: flex;
+  align-items: center;
+  gap: layout.$spacing-03;
+  min-width: 0;
+}
+
+// Subtle faded tag naming the backend model that produced this answer.
+.modelTag {
+  @include type.type-style('label-01');
+  color: colors.$gray-50;
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 16rem;
 }
 
 .streamingIndicator {

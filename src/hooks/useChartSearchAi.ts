@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { useConfig, useStore } from '@openmrs/esm-framework';
+import { useStore } from '@openmrs/esm-framework';
 import {
+  type AiBlock,
+  type AiConfidence,
   type AiReference,
   type AiSearchResponse,
-  searchPatientChart,
-  searchPatientChartStream,
+  type ChatHistoryMessage,
+  chatPatientChartStream,
+  fetchChatHistory,
+  refreshChartSnapshot,
+  startNewChat,
 } from '../api/chartsearchai';
-import { type ChartSearchAiConfig } from '../config-schema';
 import { chatSessionStore } from '../store/chat-session.store';
 
 export interface ChatMessage {
@@ -14,12 +18,27 @@ export interface ChatMessage {
   question: string;
   answer: string;
   references: AiReference[];
+  blocks?: AiBlock[];
   questionId: string;
   isLoading: boolean;
   error: string | null;
   /** Live model reasoning while the answer is still being generated — a transient
    *  "thinking" indicator, cleared when the answer completes. Never the answer. */
   reasoning: string;
+  /**
+   * The backend model that produced this answer (the per-request override the
+   * picker selected, or the config default). Surfaced as a subtle per-response
+   * tag. Undefined for older rows / system notices.
+   */
+  resolvedModel?: string;
+  /** Per-section validator confidence (green/yellow/red + note); validated hub tiers only. */
+  confidence?: AiConfidence;
+  /**
+   * A `'system'` message is an in-thread notice (e.g. "clinical context
+   * refreshed") rather than a Q+A turn. Such rows carry only `answer` text and
+   * are rendered as a subtle inline divider, not a chat bubble.
+   */
+  kind?: 'system';
 }
 
 interface UseChartSearchAiReturn {
@@ -28,6 +47,17 @@ interface UseChartSearchAiReturn {
   submitQuestion: (patientUuid: string, question: string) => void;
   clearMessages: () => void;
   stopCurrent: () => void;
+  /**
+   * Close the current server-side session for this patient and open a
+   * fresh one. Use for the "New chat" button.
+   */
+  startNewChatSession: (patientUuid: string) => void;
+  /**
+   * Rebuild the patient's chart snapshot server-side, keeping the current
+   * conversation. Use for the "Refresh clinical context" button. Resolves on
+   * success, rejects on failure so the caller can surface feedback.
+   */
+  refreshClinicalContext: (patientUuid: string) => Promise<void>;
 }
 
 function generateId(): string {
@@ -41,12 +71,65 @@ function updateMessages(patientUuid: string, updater: (prev: ChatMessage[]) => C
   const prev = current[patientUuid] ?? EMPTY_MESSAGES;
   const next = updater(prev);
   if (next === prev) return;
-  chatSessionStore.setState({ messagesByPatient: { ...current, [patientUuid]: next } });
+  chatSessionStore.setState({ ...chatSessionStore.getState(), messagesByPatient: { ...current, [patientUuid]: next } });
+}
+
+function setSessionUuid(patientUuid: string, uuid: string | null): void {
+  const state = chatSessionStore.getState();
+  chatSessionStore.setState({
+    ...state,
+    sessionUuidByPatient: { ...state.sessionUuidByPatient, [patientUuid]: uuid },
+  });
+}
+
+/**
+ * Map a hydration row from the server's chat-history endpoint to a
+ * UI {@link ChatMessage}. Server stores user and assistant rows
+ * separately (one per turn); the UI groups them as Q+A pairs anchored
+ * on the user-message uuid as the row id.
+ */
+function hydrateMessages(history: ChatHistoryMessage[]): ChatMessage[] {
+  const out: ChatMessage[] = [];
+  let pending: ChatMessage | null = null;
+  for (const m of history) {
+    if (m.role === 'user') {
+      if (pending) {
+        // Two consecutive user messages — push the prior with empty answer.
+        // This is unusual (LLM call failed) but the UI must remain coherent.
+        out.push(pending);
+      }
+      pending = {
+        id: m.messageId,
+        question: m.content,
+        answer: '',
+        references: [],
+        questionId: '',
+        isLoading: false,
+        error: null,
+        reasoning: '',
+      };
+    } else if (m.role === 'assistant') {
+      if (pending) {
+        pending.answer = m.content;
+        pending.blocks = m.blocks;
+        pending.confidence = m.confidence;
+        pending.questionId = m.messageId;
+        out.push(pending);
+        pending = null;
+      }
+      // Orphan assistant row without a preceding user — ignore (UI has no
+      // sane render for it); the row stays in the DB for audit purposes.
+    }
+    // 'system' rows are dropped — they belong to the LLM-prompt layer.
+  }
+  if (pending) {
+    out.push(pending);
+  }
+  return out;
 }
 
 export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
-  const config = useConfig<ChartSearchAiConfig>();
-  const { messagesByPatient } = useStore(chatSessionStore);
+  const { messagesByPatient, sessionUuidByPatient } = useStore(chatSessionStore);
   const messages: ChatMessage[] = patientUuid ? (messagesByPatient[patientUuid] ?? EMPTY_MESSAGES) : EMPTY_MESSAGES;
   const abortControllerRef = useRef<AbortController | null>(null);
   const inFlightMessageIdRef = useRef<string | null>(null);
@@ -57,6 +140,34 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       isMountedRef.current = false;
     };
   }, []);
+
+  // Hydrate on mount / patient change. Cleared if the patient has nothing
+  // server-side OR if hydration fails — in either case we start blank and
+  // the first submit creates a fresh session.
+  useEffect(() => {
+    if (!patientUuid) return;
+    if (messagesByPatient[patientUuid] && messagesByPatient[patientUuid].length > 0) {
+      // Local cache already populated (e.g. user just submitted a turn);
+      // skip the round-trip.
+      return;
+    }
+    const controller = new AbortController();
+    fetchChatHistory(patientUuid, controller)
+      .then((response) => {
+        if (!isMountedRef.current || controller.signal.aborted) return;
+        setSessionUuid(patientUuid, response.session ?? null);
+        const hydrated = hydrateMessages(response.messages ?? []);
+        if (hydrated.length > 0) {
+          updateMessages(patientUuid, () => hydrated);
+        }
+      })
+      .catch((err) => {
+        if (err?.name === 'AbortError') return;
+        console.warn('[useChartSearchAi] hydrate failed; starting empty', err);
+      });
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patientUuid]);
 
   const clearMessages = useCallback(() => {
     if (patientUuid) {
@@ -91,6 +202,48 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       });
     }
   }, [patientUuid]);
+
+  const startNewChatSession = useCallback((patientUuid: string) => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    inFlightMessageIdRef.current = null;
+    updateMessages(patientUuid, () => []);
+    setSessionUuid(patientUuid, null);
+    startNewChat(patientUuid)
+      .then((response) => {
+        if (!isMountedRef.current) return;
+        setSessionUuid(patientUuid, response.session ?? null);
+      })
+      .catch((err) => {
+        console.warn('[useChartSearchAi] startNewChat failed', err);
+      });
+  }, []);
+
+  const refreshClinicalContext = useCallback(async (patientUuid: string) => {
+    // Keeps the transcript; the server rebuilds the chart snapshot for the
+    // existing session. Update the (unchanged) session uuid defensively.
+    const response = await refreshChartSnapshot(patientUuid);
+    if (!isMountedRef.current) return;
+    if (response?.session) {
+      setSessionUuid(patientUuid, response.session);
+    }
+    // Drop an in-thread system notice so the refresh is visible in the
+    // conversation flow (rendered as a subtle inline divider, not a bubble).
+    const notice: ChatMessage = {
+      id: generateId(),
+      question: '',
+      answer: 'Clinical context refreshed — the latest chart data is now available to the assistant.',
+      references: [],
+      reasoning: '',
+      questionId: '',
+      isLoading: false,
+      error: null,
+      kind: 'system',
+    };
+    updateMessages(patientUuid, (prev) => [...prev, notice]);
+  }, []);
 
   const submitQuestion = useCallback(
     (patientUuid: string, question: string) => {
@@ -130,13 +283,22 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
             ...updated[idx],
             answer: response.answer,
             references: response.references,
-            questionId: response.questionId ?? '',
+            blocks: response.blocks,
+            confidence: response.confidence,
+            questionId: response.messageId ?? response.questionId ?? '',
+            resolvedModel: response.resolvedModel,
             isLoading: false,
             // the scratchpad served its purpose as a live indicator; don't persist it
             reasoning: '',
           };
           return updated;
         });
+        // Belt-and-braces: the X-ChartSearchAi-Session header captures the
+        // session uuid first, but the `done` event also carries it for
+        // sync clients that can't read response headers.
+        if (response.session) {
+          setSessionUuid(patientUuid, response.session);
+        }
       };
 
       const fail = (errMessage: string) => {
@@ -157,81 +319,82 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         });
       };
 
+      const sessionUuid = sessionUuidByPatient[patientUuid] ?? null;
+      // The picker's per-session selection (null = config default). Read at
+      // submit time so the most recent pick applies to this request only.
+      const selectedBackend = chatSessionStore.getState().selectedBackend;
+
       try {
-        if (config.useStreaming) {
-          searchPatientChartStream(
-            patientUuid,
-            question,
-            {
-              // Live reasoning: shown while the model thinks, before any answer text exists.
-              onThinking: (chunk) => {
-                if (!isMountedRef.current) return;
-                updateMessages(patientUuid, (prev) => {
-                  const idx = prev.findIndex((m) => m.id === messageId);
-                  if (idx === -1) return prev;
-                  const updated = [...prev];
-                  updated[idx] = { ...updated[idx], reasoning: updated[idx].reasoning + chunk };
-                  return updated;
-                });
-              },
-              onToken: (token) => {
-                if (!isMountedRef.current) return;
-                updateMessages(patientUuid, (prev) => {
-                  const idx = prev.findIndex((m) => m.id === messageId);
-                  if (idx === -1) return prev;
-                  const updated = [...prev];
-                  updated[idx] = { ...updated[idx], answer: updated[idx].answer + token };
-                  return updated;
-                });
-              },
-              // Show citations as soon as the server emits them (before grounding finishes).
-              // These carry no grounding verdict yet, so they render unverified; `done` then
-              // overwrites this message's references with the grounded set.
-              onReferences: (references) => {
-                if (!isMountedRef.current) return;
-                updateMessages(patientUuid, (prev) => {
-                  const idx = prev.findIndex((m) => m.id === messageId);
-                  if (idx === -1) return prev;
-                  const updated = [...prev];
-                  updated[idx] = { ...updated[idx], references };
-                  return updated;
-                });
-              },
-              onDone: done,
-              // Trailing verdicts (server runs async grounding): update the SAME message's
-              // references after done completed it. Deliberately NOT gated on isMountedRef —
-              // the chat store outlives the panel, and verdicts that arrive after the user
-              // closed it must still land so badges are correct when the panel reopens.
-              onGrounded: (references) => {
-                updateMessages(patientUuid, (prev) => {
-                  const idx = prev.findIndex((m) => m.id === messageId);
-                  if (idx === -1) return prev;
-                  const updated = [...prev];
-                  updated[idx] = { ...updated[idx], references };
-                  return updated;
-                });
-              },
-              onError: fail,
+        // Multi-turn streaming: chat history is reconstructed server-side
+        // from the session uuid; we only send the new question.
+        chatPatientChartStream(
+          patientUuid,
+          sessionUuid,
+          question,
+          {
+            onSession: (uuid) => {
+              setSessionUuid(patientUuid, uuid);
             },
-            abortController,
-          );
-        } else {
-          searchPatientChart(patientUuid, question, abortController)
-            .then(done)
-            .catch((err) => {
-              if (err.name !== 'AbortError') {
-                console.error('[useChartSearchAi] Fetch failed:', err);
-                fail(err?.responseBody?.error ?? err?.message ?? 'An unknown error occurred');
-              }
-            });
-        }
+            // Live reasoning: shown while the model thinks, before any answer text exists.
+            onThinking: (chunk) => {
+              if (!isMountedRef.current) return;
+              updateMessages(patientUuid, (prev) => {
+                const idx = prev.findIndex((m) => m.id === messageId);
+                if (idx === -1) return prev;
+                const updated = [...prev];
+                updated[idx] = { ...updated[idx], reasoning: updated[idx].reasoning + chunk };
+                return updated;
+              });
+            },
+            onToken: (token) => {
+              if (!isMountedRef.current) return;
+              updateMessages(patientUuid, (prev) => {
+                const idx = prev.findIndex((m) => m.id === messageId);
+                if (idx === -1) return prev;
+                const updated = [...prev];
+                updated[idx] = { ...updated[idx], answer: updated[idx].answer + token };
+                return updated;
+              });
+            },
+            // Show citations as soon as the server emits them (before grounding finishes).
+            // These carry no grounding verdict yet, so they render unverified; `done` then
+            // overwrites this message's references with the grounded set.
+            onReferences: (references) => {
+              if (!isMountedRef.current) return;
+              updateMessages(patientUuid, (prev) => {
+                const idx = prev.findIndex((m) => m.id === messageId);
+                if (idx === -1) return prev;
+                const updated = [...prev];
+                updated[idx] = { ...updated[idx], references };
+                return updated;
+              });
+            },
+            onDone: done,
+            // Trailing verdicts (server runs async grounding): update the SAME message's
+            // references after done completed it. Deliberately NOT gated on isMountedRef —
+            // the chat store outlives the panel, and verdicts that arrive after the user
+            // closed it must still land so badges are correct when the panel reopens.
+            onGrounded: (references) => {
+              updateMessages(patientUuid, (prev) => {
+                const idx = prev.findIndex((m) => m.id === messageId);
+                if (idx === -1) return prev;
+                const updated = [...prev];
+                updated[idx] = { ...updated[idx], references };
+                return updated;
+              });
+            },
+            onError: fail,
+          },
+          abortController,
+          selectedBackend,
+        );
       } catch (err) {
         abortControllerRef.current = null;
         inFlightMessageIdRef.current = null;
         fail(err instanceof Error ? err.message : 'An unknown error occurred');
       }
     },
-    [config.useStreaming],
+    [sessionUuidByPatient],
   );
 
   useEffect(() => {
@@ -253,5 +416,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
     submitQuestion,
     clearMessages,
     stopCurrent,
+    startNewChatSession,
+    refreshClinicalContext,
   };
 }

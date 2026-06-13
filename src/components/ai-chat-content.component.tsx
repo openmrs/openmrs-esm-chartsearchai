@@ -1,21 +1,42 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConfig, usePatient } from '@openmrs/esm-framework';
-import { Close, Microphone, MicrophoneFilled, Send, StopFilled } from '@carbon/react/icons';
-import { InlineLoading } from '@carbon/react';
+import {
+  Add,
+  Close,
+  Maximize,
+  Microphone,
+  MicrophoneFilled,
+  Minimize,
+  Renew,
+  Send,
+  StopFilled,
+} from '@carbon/react/icons';
+import { Button, IconButton, InlineLoading, InlineNotification } from '@carbon/react';
 import { useChartSearchAi } from '../hooks/useChartSearchAi';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { type ChartSearchAiConfig } from '../config-schema';
 import AiResponsePanel from './ai-response-panel.component';
+import ModelPicker from './model-picker.component';
 import styles from './ai-chat-content.scss';
 
 interface AiChatContentProps {
   mode: 'floating' | 'workspace';
   onClose?: () => void;
   patientUuid?: string;
+  /** Floating mode only: whether the panel is maximized to full screen. */
+  isExpanded?: boolean;
+  /** Floating mode only: toggle the maximized state. When omitted, the maximize control is hidden. */
+  onToggleExpand?: () => void;
 }
 
-const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUuid: patientUuidProp }) => {
+const AiChatContent: React.FC<AiChatContentProps> = ({
+  mode,
+  onClose,
+  patientUuid: patientUuidProp,
+  isExpanded = false,
+  onToggleExpand,
+}) => {
   const { t } = useTranslation();
   const config = useConfig<ChartSearchAiConfig>();
   const { patient, isLoading: isPatientLoading } = usePatient();
@@ -26,7 +47,11 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
   const rootRef = useRef<HTMLDivElement>(null);
   const historyAreaRef = useRef<HTMLDivElement>(null);
 
-  const { messages, isAnyLoading, submitQuestion, stopCurrent } = useChartSearchAi(patientUuid);
+  const { messages, isAnyLoading, submitQuestion, stopCurrent, startNewChatSession, refreshClinicalContext } =
+    useChartSearchAi(patientUuid);
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshNotice, setRefreshNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
 
   const questionRef = useRef(question);
   questionRef.current = question;
@@ -145,10 +170,39 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
     inputRef.current?.focus();
   }, []);
 
+  const handleNewChat = useCallback(() => {
+    if (!patientUuid) return;
+    startNewChatSession(patientUuid);
+    setRefreshNotice(null);
+    setQuestion('');
+    inputRef.current?.focus();
+  }, [patientUuid, startNewChatSession]);
+
+  const handleRefreshContext = useCallback(async () => {
+    if (!patientUuid || isRefreshing) return;
+    setIsRefreshing(true);
+    setRefreshNotice(null);
+    try {
+      // On success the hook drops an in-thread system notice into the
+      // conversation flow, so we don't raise the banner here. The banner is
+      // reserved for the error case (a failed refresh has no in-thread row).
+      await refreshClinicalContext(patientUuid);
+    } catch {
+      setRefreshNotice({
+        kind: 'error',
+        text: t('clinicalContextRefreshFailed', 'Could not refresh clinical context'),
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [patientUuid, isRefreshing, refreshClinicalContext, t]);
+
   return (
     // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <div
-      className={`${styles.chatRoot} ${mode === 'floating' ? styles.chatRootFloating : styles.chatRootWorkspace}`}
+      className={`${styles.chatRoot} ${mode === 'floating' ? styles.chatRootFloating : styles.chatRootWorkspace} ${
+        mode === 'floating' && isExpanded ? styles.chatRootFloatingExpanded : ''
+      }`}
       ref={rootRef}
       role={mode === 'floating' ? 'dialog' : undefined}
       aria-label={mode === 'floating' ? t('aiChartSearch', 'AI Chart Search') : undefined}
@@ -160,9 +214,58 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
             <span className={styles.sparkle}>&#10024;</span>
             {t('aiChartSearch', 'AI Chart Search')}
           </span>
-          <button className={styles.closeButton} onClick={onClose} aria-label={t('close', 'Close')} type="button">
-            <Close size={16} />
-          </button>
+          <span className={styles.panelHeaderActions}>
+            <IconButton
+              kind="ghost"
+              size="sm"
+              align="bottom"
+              label={t('refreshClinicalContext', 'Refresh clinical context')}
+              onClick={handleRefreshContext}
+              disabled={!patientUuid || isRefreshing}
+            >
+              <Renew size={16} />
+            </IconButton>
+            <IconButton
+              kind="ghost"
+              size="sm"
+              align="bottom"
+              label={t('newChat', 'New chat')}
+              onClick={handleNewChat}
+              disabled={!patientUuid}
+            >
+              <Add size={16} />
+            </IconButton>
+            {onToggleExpand && (
+              <IconButton
+                kind="ghost"
+                size="sm"
+                align="bottom"
+                label={isExpanded ? t('restore', 'Restore') : t('maximize', 'Maximize')}
+                onClick={onToggleExpand}
+              >
+                {isExpanded ? <Minimize size={16} /> : <Maximize size={16} />}
+              </IconButton>
+            )}
+            <IconButton kind="ghost" size="sm" align="bottom-end" label={t('close', 'Close')} onClick={onClose}>
+              <Close size={16} />
+            </IconButton>
+          </span>
+        </div>
+      )}
+      {mode === 'workspace' && (
+        <div className={styles.workspaceActions}>
+          <Button
+            kind="ghost"
+            size="sm"
+            renderIcon={Renew}
+            onClick={handleRefreshContext}
+            disabled={!patientUuid || isRefreshing}
+          >
+            {t('refreshClinicalContext', 'Refresh clinical context')}
+          </Button>
+          <Button kind="ghost" size="sm" renderIcon={Add} onClick={handleNewChat} disabled={!patientUuid}>
+            {t('newChat', 'New chat')}
+          </Button>
         </div>
       )}
 
@@ -175,28 +278,39 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
           <p className={styles.infoText}>{t('noPatientSelected', 'No patient selected')}</p>
         )}
 
-        {messages.map((msg) => (
-          <div key={msg.id} className={styles.messagePair}>
-            <div className={styles.questionBubble}>{msg.question}</div>
-            <div className={styles.answerBubble}>
-              <AiResponsePanel
-                answer={msg.answer}
-                references={msg.references}
-                questionId={msg.questionId}
-                error={msg.error}
-                isLoading={msg.isLoading}
-                patientUuid={patientUuid ?? ''}
-                onFeedbackComplete={handleFeedbackComplete}
-              />
-              {msg.isLoading && !msg.answer && (
-                <div>
-                  <InlineLoading description={t('thinkingEllipsis', 'Thinking...')} />
-                  {msg.reasoning && <p className={styles.liveReasoning}>{msg.reasoning}</p>}
-                </div>
-              )}
+        {messages.map((msg) =>
+          msg.kind === 'system' ? (
+            // In-thread system notice (e.g. context refreshed) — a subtle
+            // inline divider in the conversation flow, not a Q+A bubble.
+            <div key={msg.id} className={styles.systemNotice} role="status">
+              <span className={styles.systemNoticeText}>{msg.answer}</span>
             </div>
-          </div>
-        ))}
+          ) : (
+            <div key={msg.id} className={styles.messagePair}>
+              <div className={styles.questionBubble}>{msg.question}</div>
+              <div className={styles.answerBubble}>
+                <AiResponsePanel
+                  answer={msg.answer}
+                  references={msg.references}
+                  blocks={msg.blocks}
+                  confidence={msg.confidence}
+                  questionId={msg.questionId}
+                  error={msg.error}
+                  isLoading={msg.isLoading}
+                  resolvedModel={msg.resolvedModel}
+                  patientUuid={patientUuid ?? ''}
+                  onFeedbackComplete={handleFeedbackComplete}
+                />
+                {msg.isLoading && !msg.answer && (
+                  <div>
+                    <InlineLoading description={t('thinkingEllipsis', 'Thinking...')} />
+                    {msg.reasoning && <p className={styles.liveReasoning}>{msg.reasoning}</p>}
+                  </div>
+                )}
+              </div>
+            </div>
+          ),
+        )}
       </div>
 
       {hasCompletedAnswer && (
@@ -215,6 +329,20 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
             : t('speechRecognitionError', 'Speech recognition failed. Please try again.')}
         </p>
       )}
+
+      {refreshNotice && (
+        <InlineNotification
+          className={styles.refreshNotice}
+          kind={refreshNotice.kind}
+          lowContrast
+          title={refreshNotice.text}
+          onCloseButtonClick={() => setRefreshNotice(null)}
+        />
+      )}
+
+      <div className={styles.modelPickerRow}>
+        <ModelPicker />
+      </div>
 
       <form className={styles.inputArea} onSubmit={handleSubmit}>
         <input
