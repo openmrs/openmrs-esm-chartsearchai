@@ -179,8 +179,8 @@ describe('AiResponsePanel reference links', () => {
 
   it('renders a Carbon DataTable below the prose when blocks are present', () => {
     const refs = [
-      { index: 1, resourceType: 'order', resourceId: 100, date: '2024-01-01' },
-      { index: 2, resourceType: 'order', resourceId: 200, date: '2024-02-01' },
+      { index: 1, resourceType: 'order', resourceUuid: 'uuid-100', date: '2024-01-01' },
+      { index: 2, resourceType: 'order', resourceUuid: 'uuid-200', date: '2024-02-01' },
     ];
     const blocks = [
       {
@@ -438,7 +438,7 @@ describe('AiResponsePanel model tag', () => {
 describe('AiResponsePanel per-section confidence', () => {
   const baseProps = {
     answer: '**Answer**\nHgb is 14.0 [1].\n\n**In Depth**\n- within range [1]',
-    references: [{ index: 1, resourceType: 'obs', resourceId: 101, date: '2025-11-24' }],
+    references: [{ index: 1, resourceType: 'obs', resourceUuid: 'uuid-101', date: '2025-11-24' }],
     questionId: 'q1',
     error: null,
     isLoading: false,

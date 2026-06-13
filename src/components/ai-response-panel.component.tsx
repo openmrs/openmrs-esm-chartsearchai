@@ -85,7 +85,11 @@ function splitSections(answer: string): { answerBody: string; inDepthBody: strin
   }
   return {
     answerBody: stripAnswerHeader(answer.slice(0, m.index)),
-    inDepthBody: answer.slice(m.index + m[0].length).replace(/^\s*/, '').trim() || null,
+    inDepthBody:
+      answer
+        .slice(m.index + m[0].length)
+        .replace(/^\s*/, '')
+        .trim() || null,
   };
 }
 

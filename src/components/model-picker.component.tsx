@@ -127,8 +127,7 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onSwitched }) => {
       const labelById = new Map(found.map((x) => [x.it.id, x.it.label]));
       // Only the effective selection's group carries a checked radio.
       const selectedItem =
-        effective &&
-        found.some((x) => x.ep.url === effective.endpointUrl && x.it.id === effective.modelName)
+        effective && found.some((x) => x.ep.url === effective.endpointUrl && x.it.id === effective.modelName)
           ? effective.modelName
           : '';
       return {

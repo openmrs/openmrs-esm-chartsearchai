@@ -236,6 +236,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       question: '',
       answer: 'Clinical context refreshed — the latest chart data is now available to the assistant.',
       references: [],
+      reasoning: '',
       questionId: '',
       isLoading: false,
       error: null,
