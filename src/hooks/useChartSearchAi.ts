@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useConfig, useStore } from '@openmrs/esm-framework';
 import {
   type AiReference,
+  type AiSafetyWarning,
   type AiSearchResponse,
   searchPatientChart,
   searchPatientChartStream,
@@ -14,6 +15,7 @@ export interface ChatMessage {
   question: string;
   answer: string;
   references: AiReference[];
+  safetyWarnings: AiSafetyWarning[];
   questionId: string;
   isLoading: boolean;
   error: string | null;
@@ -104,6 +106,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         question,
         answer: '',
         references: [],
+        safetyWarnings: [],
         questionId: '',
         isLoading: true,
         error: null,
@@ -130,6 +133,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
             ...updated[idx],
             answer: response.answer,
             references: response.references,
+            safetyWarnings: response.safetyWarnings ?? [],
             questionId: response.questionId ?? '',
             isLoading: false,
             // the scratchpad served its purpose as a live indicator; don't persist it

@@ -20,9 +20,25 @@ export interface AiReference {
   grounded?: boolean | null;
 }
 
+/**
+ * A non-blocking drug-safety advisory raised by the backend's post-answer validator
+ * (only when the optional drug-reference feature is enabled). It annotates the answer
+ * — it never alters it. Rendered as a chip below the answer.
+ */
+export interface AiSafetyWarning {
+  /** 'overdose' | 'interaction' | 'contraindication' */
+  type: string;
+  /** the reference drug the warning is about */
+  drug: string;
+  /** human-readable detail, e.g. "interacts with active order warfarin" */
+  detail: string;
+}
+
 export interface AiSearchResponse {
   answer: string;
   references: AiReference[];
+  /** Empty/absent unless the optional drug-reference feature is enabled on the server. */
+  safetyWarnings?: AiSafetyWarning[];
   questionId?: string;
 }
 

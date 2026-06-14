@@ -15,8 +15,21 @@ vi.mock('../hooks/useSpeechRecognition', () => ({
 }));
 vi.mock('./ai-response-panel.component', () => ({
   __esModule: true,
-  default: ({ answer, error }: { answer: string; error: string | null }) => (
-    <div data-testid="ai-response">{error ?? answer}</div>
+  default: ({
+    answer,
+    error,
+    safetyWarnings,
+  }: {
+    answer: string;
+    error: string | null;
+    safetyWarnings?: Array<{ type: string; drug: string; detail: string }>;
+  }) => (
+    <div data-testid="ai-response">
+      {error ?? answer}
+      {safetyWarnings && safetyWarnings.length > 0 ? (
+        <span data-testid="ai-response-safety">{safetyWarnings.map((w) => `${w.type}:${w.drug}`).join('|')}</span>
+      ) : null}
+    </div>
   ),
 }));
 
@@ -213,6 +226,42 @@ describe('AiChatContent', () => {
       rerender(<AiChatContent mode="workspace" patientUuid="p1" />);
 
       expect(log.scrollTop).toBe(1000);
+    });
+  });
+
+  describe('safety-warning forwarding', () => {
+    it('forwards a message safetyWarnings to the response panel', () => {
+      // Regression guard for the wiring at ai-chat-content.component.tsx (safetyWarnings={msg.safetyWarnings}):
+      // the hook populates the message and the panel renders it, but dropping this prop pass-through
+      // would let the chips silently never reach the panel, with no other test catching it.
+      mockUseChartSearchAi.mockReturnValue({
+        messages: [
+          {
+            id: 'm-sw',
+            question: 'Is ibuprofen safe?',
+            answer: 'Ibuprofen is an option [1].',
+            references: [],
+            safetyWarnings: [
+              {
+                type: 'contraindication',
+                drug: 'Ibuprofen',
+                detail: 'the patient has a recorded allergy to Ibuprofen',
+              },
+            ],
+            questionId: 'q',
+            isLoading: false,
+            error: null,
+          },
+        ],
+        isAnyLoading: false,
+        submitQuestion: mockSubmitQuestion,
+        stopCurrent: mockStopCurrent,
+        clearMessages: vi.fn(),
+      });
+
+      render(<AiChatContent mode="workspace" patientUuid="p1" />);
+
+      expect(screen.getByTestId('ai-response-safety')).toHaveTextContent('contraindication:Ibuprofen');
     });
   });
 

@@ -142,6 +142,31 @@ describe('AiResponsePanel reference links', () => {
     expect(link2).toHaveAttribute('href', `/openmrs/spa/patient/${patientUuid}/chart/Orders`);
   });
 
+  it('renders a duplicated citation index ([n, n]) without a React key collision', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const refs = [{ index: 3, resourceType: 'obs', resourceUuid: 'uuid-303', date: '2025-03-10' }];
+
+    render(
+      <AiResponsePanel
+        answer="The same finding is cited twice [3, 3]."
+        references={refs}
+        questionId="q"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    // Both inline citations render (one per position in the bracket group)...
+    expect(screen.getAllByRole('link', { name: '3' })).toHaveLength(2);
+    // ...and React logs no duplicate-key warning, because the key includes the group position.
+    const dupKeyWarning = errorSpy.mock.calls.some(
+      (args) => typeof args[0] === 'string' && args[0].includes('same key'),
+    );
+    expect(dupKeyWarning).toBe(false);
+    errorSpy.mockRestore();
+  });
+
   it('renders unknown resource types as links to Patient Summary', () => {
     const unknownRef = [{ index: 1, resourceType: 'UnknownType', resourceUuid: 'uuid-999', date: '2025-06-01' }];
 
@@ -232,6 +257,158 @@ describe('AiResponsePanel citation grounding', () => {
     expect(screen.queryByText('Unsupported')).not.toBeInTheDocument();
     // plain inline citation, no warning glyph
     expect(screen.getByRole('link', { name: '1' })).toBeInTheDocument();
+  });
+});
+
+describe('AiResponsePanel drug-reference citations', () => {
+  const references = [{ index: 6, resourceType: 'drug_reference', resourceUuid: 'ibuprofen', date: '' }];
+
+  it('renders a drug-reference citation as non-navigating, visually distinct', () => {
+    render(
+      <AiResponsePanel
+        answer="Reference dosing for ibuprofen [6]."
+        references={references}
+        questionId="q"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    // The reference chip reads "Drug reference" (not the raw resourceType + date).
+    const chip = screen.getByText('[6] Drug reference');
+    expect(chip.tagName).not.toBe('A');
+    // A distinct "Reference" badge is shown.
+    expect(screen.getByText('Reference')).toBeInTheDocument();
+    // The inline citation does not navigate (it is a span, not a link).
+    expect(screen.queryByRole('link', { name: '6' })).not.toBeInTheDocument();
+  });
+
+  it('renders a mixed [drug_reference, chart-record] citation: reference non-navigating, record linked', () => {
+    const refs = [
+      { index: 3, resourceType: 'drug_reference', resourceUuid: 'ibuprofen', date: '' },
+      { index: 5, resourceType: 'obs', resourceUuid: 'uuid-505', date: '2025-05-12' },
+    ];
+    render(
+      <AiResponsePanel
+        answer="Per the reference and the patient's labs [3, 5]."
+        references={refs}
+        questionId="q"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    // The chart-record index stays a navigable inline link...
+    expect(screen.getByRole('link', { name: '5' })).toHaveAttribute(
+      'href',
+      `/openmrs/spa/patient/${patientUuid}/chart/Results`,
+    );
+    // ...while the drug_reference index in the same bracket does NOT navigate (rendered as a span).
+    expect(screen.queryByRole('link', { name: '3' })).not.toBeInTheDocument();
+  });
+});
+
+describe('AiResponsePanel safety warnings', () => {
+  it('renders safety warnings as chips below the answer', () => {
+    render(
+      <AiResponsePanel
+        answer="Ibuprofen 600 mg every 6 hours [6]."
+        references={[]}
+        safetyWarnings={[
+          { type: 'overdose', drug: 'Ibuprofen', detail: 'stated dose ~2400 mg/day exceeds the 1200 mg/day maximum' },
+          { type: 'interaction', drug: 'Ibuprofen', detail: 'interacts with active order warfarin' },
+        ]}
+        questionId="q"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    expect(screen.getByText('Safety checks:')).toBeInTheDocument();
+    expect(screen.getByText('Dose')).toBeInTheDocument();
+    expect(screen.getByText('Interaction')).toBeInTheDocument();
+    expect(screen.getByText(/exceeds the 1200 mg\/day maximum/)).toBeInTheDocument();
+    expect(screen.getByText(/interacts with active order warfarin/)).toBeInTheDocument();
+  });
+
+  it('renders a contraindication warning with the Contraindication label', () => {
+    // Contraindication is the highest-stakes warning type (and the one the backend's
+    // question-driven validator most often produces); its switch case must render, not fall
+    // through to the generic fallback.
+    render(
+      <AiResponsePanel
+        answer="Ibuprofen is an option [1]."
+        references={[]}
+        safetyWarnings={[
+          { type: 'contraindication', drug: 'Ibuprofen', detail: 'the patient has a recorded allergy to Ibuprofen' },
+        ]}
+        questionId="q"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    expect(screen.getByText('Safety checks:')).toBeInTheDocument();
+    expect(screen.getByText('Contraindication')).toBeInTheDocument();
+    expect(screen.getByText(/recorded allergy to Ibuprofen/)).toBeInTheDocument();
+  });
+
+  it('renders no safety section when there are no warnings', () => {
+    render(
+      <AiResponsePanel
+        answer="The blood pressure is 120/80 [1]."
+        references={[]}
+        safetyWarnings={[]}
+        questionId="q"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    expect(screen.queryByText('Safety checks:')).not.toBeInTheDocument();
+  });
+
+  it('surfaces an unrecognised warning type with the fallback label (never drops a warning)', () => {
+    render(
+      <AiResponsePanel
+        answer="Some answer."
+        references={[]}
+        safetyWarnings={[{ type: 'future-unknown-type', drug: 'Ibuprofen', detail: 'a new advisory kind' }]}
+        questionId="q"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    // A future/unknown warning type must still surface — not silently vanish.
+    expect(screen.getByText('Safety checks:')).toBeInTheDocument();
+    expect(screen.getByText('Safety')).toBeInTheDocument();
+    expect(screen.getByText(/a new advisory kind/)).toBeInTheDocument();
+  });
+
+  it('does not mark the safety section as an assertive alert (it sits inside a polite live region)', () => {
+    render(
+      <AiResponsePanel
+        answer="Ibuprofen 600 mg [1]."
+        references={[]}
+        safetyWarnings={[{ type: 'overdose', drug: 'Ibuprofen', detail: 'exceeds the maximum' }]}
+        questionId="q"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    // A role="alert" here would preempt the answer announcement in the enclosing role="log".
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    // ...but the warning still renders.
+    expect(screen.getByText('Safety checks:')).toBeInTheDocument();
   });
 });
 
