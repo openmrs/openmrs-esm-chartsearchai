@@ -360,6 +360,7 @@ describe('useChartSearchAi', () => {
     });
     const secondCallbacks = mockSearchPatientChartStream.mock.calls[1][2];
     act(() => {
+      secondCallbacks.onThinking('Still thinking...');
       secondCallbacks.onToken('Partial...');
     });
 
@@ -375,6 +376,8 @@ describe('useChartSearchAi', () => {
     expect(result.current.messages[0].answer).toBe('Answer.');
     expect(result.current.messages[1].isLoading).toBe(false);
     expect(result.current.messages[1].answer).toBe('Partial...');
+    // The settled message keeps no leftover reasoning scratchpad (mirrors `done`).
+    expect(result.current.messages[1].reasoning).toBe('');
   });
 
   it('stopCurrent aborts the in-flight request', async () => {

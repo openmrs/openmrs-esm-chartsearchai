@@ -88,7 +88,8 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           return prev.filter((_, i) => i !== idx);
         }
         const updated = [...prev];
-        updated[idx] = { ...msg, isLoading: false };
+        // Mirror `done`: a settled message keeps no reasoning scratchpad, even when stopped mid-stream.
+        updated[idx] = { ...msg, isLoading: false, reasoning: '' };
         return updated;
       });
     }
