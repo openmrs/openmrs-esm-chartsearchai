@@ -2,16 +2,17 @@ import React, { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IconButton, InlineLoading, Tag } from '@carbon/react';
 import { Copy } from '@carbon/react/icons';
-import { navigate } from '@openmrs/esm-framework';
-import { type AiReference, type AiSafetyWarning } from '../api/chartsearchai';
-import { highlightReference } from '../utils/highlight-reference';
-import { type AiBlock, type AiReference } from '../api/chartsearchai';
-import { type AiBlock, type AiConfidence, type AiReference } from '../api/chartsearchai';
-import { type AiBlock, type AiConfidence, type AiConfidenceSection, type AiReference } from '../api/chartsearchai';
+import {
+  type AiBlock,
+  type AiConfidence,
+  type AiConfidenceSection,
+  type AiReference,
+  type AiSafetyWarning,
+} from '../api/chartsearchai';
 import AiFeedback from './ai-feedback.component';
 import AiTableBlockView from './ai-table-block.component';
 import MarkdownAnswer from './ai-markdown-answer.component';
-import { buildReferenceUrl, handleReferenceNavigate } from './citation-chip.component';
+import { buildReferenceUrl, handleReferenceNavigate, isDrugReference } from './citation-chip.component';
 import styles from './ai-response-panel.scss';
 
 interface AiResponsePanelProps {
@@ -28,39 +29,6 @@ interface AiResponsePanelProps {
   /** Per-section validator confidence (validated hub tiers); rendered as green/yellow/red chips. */
   confidence?: AiConfidence;
   onFeedbackComplete?: () => void;
-}
-
-/** Reference data, not patient data — cited like a record but it has no chart tab to navigate to. */
-const RESOURCE_TYPE_DRUG_REFERENCE = 'drug_reference';
-
-const RESOURCE_TYPE_TO_CHART_PAGE: Record<string, string> = {
-  obs: 'Results',
-  order: 'Orders',
-  allergy: 'Allergies',
-  condition: 'Conditions',
-  diagnosis: 'Visits',
-  program: 'Programs',
-  medication_dispense: 'Medications',
-};
-
-function isDrugReference(ref: AiReference): boolean {
-  return ref.resourceType.toLowerCase() === RESOURCE_TYPE_DRUG_REFERENCE;
-}
-
-function buildReferenceUrl(ref: AiReference, patientUuid: string): string | null {
-  if (!patientUuid || isDrugReference(ref)) {
-    // Drug-reference citations are reference data with no patient chart tab —
-    // they do not navigate (a detail side panel is a follow-up).
-    return null;
-  }
-  const chartPage = RESOURCE_TYPE_TO_CHART_PAGE[ref.resourceType.toLowerCase()];
-  return `${window.spaBase}/patient/${patientUuid}/chart/${encodeURIComponent(chartPage ?? 'Patient Summary')}`;
-}
-
-function handleReferenceNavigate(e: React.MouseEvent, url: string, ref: AiReference) {
-  e.preventDefault();
-  navigate({ to: url });
-  highlightReference(ref.resourceUuid, ref.date);
 }
 
 type Translate = (key: string, fallback: string) => string;

@@ -1,8 +1,12 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { navigate } from '@openmrs/esm-framework';
 import { type AiReference } from '../api/chartsearchai';
 import { highlightReference } from '../utils/highlight-reference';
 import styles from './ai-response-panel.scss';
+
+/** Reference data, not patient data — has no chart tab to navigate to. */
+const RESOURCE_TYPE_DRUG_REFERENCE = 'drug_reference';
 
 const RESOURCE_TYPE_TO_CHART_PAGE: Record<string, string> = {
   obs: 'Results',
@@ -14,8 +18,14 @@ const RESOURCE_TYPE_TO_CHART_PAGE: Record<string, string> = {
   medication_dispense: 'Medications',
 };
 
+export function isDrugReference(ref: AiReference): boolean {
+  return ref.resourceType.toLowerCase() === RESOURCE_TYPE_DRUG_REFERENCE;
+}
+
 export function buildReferenceUrl(ref: AiReference, patientUuid: string): string | null {
-  if (!patientUuid) {
+  if (!patientUuid || isDrugReference(ref)) {
+    // Drug-reference citations are clinical reference data with no patient chart tab —
+    // they render as a non-navigating chip. Navigation to a detail panel is a follow-up.
     return null;
   }
   const chartPage = RESOURCE_TYPE_TO_CHART_PAGE[ref.resourceType.toLowerCase()];
@@ -25,7 +35,7 @@ export function buildReferenceUrl(ref: AiReference, patientUuid: string): string
 export function handleReferenceNavigate(e: React.MouseEvent, url: string, ref: AiReference) {
   e.preventDefault();
   navigate({ to: url });
-  highlightReference(ref.resourceId, ref.date);
+  highlightReference(ref.resourceUuid, ref.date);
 }
 
 interface CitationChipProps {
@@ -34,9 +44,28 @@ interface CitationChipProps {
   patientUuid: string;
 }
 
+/**
+ * Inline citation chip. Navigating chips link to the patient chart page for the cited
+ * record. Drug-reference citations are rendered as a non-navigating span with a tooltip
+ * indicating they are clinical reference data, not this patient's records.
+ */
 export const CitationChip: React.FC<CitationChipProps> = ({ index, reference, patientUuid }) => {
-  const url = reference ? buildReferenceUrl(reference, patientUuid) : null;
-  if (!url || !reference) {
+  const { t } = useTranslation();
+  if (!reference) {
+    return <>{index}</>;
+  }
+  if (isDrugReference(reference)) {
+    return (
+      <span
+        className={styles.inlineCitationReference}
+        title={t('drugReferenceCitation', "Clinical reference data — not this patient\u2019s record.")}
+      >
+        {index}
+      </span>
+    );
+  }
+  const url = buildReferenceUrl(reference, patientUuid);
+  if (!url) {
     return <>{index}</>;
   }
   return (
