@@ -292,6 +292,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({
                 <AiResponsePanel
                   answer={msg.answer}
                   references={msg.references}
+                  safetyWarnings={msg.safetyWarnings}
                   blocks={msg.blocks}
                   confidence={msg.confidence}
                   questionId={msg.questionId}
@@ -301,7 +302,13 @@ const AiChatContent: React.FC<AiChatContentProps> = ({
                   patientUuid={patientUuid ?? ''}
                   onFeedbackComplete={handleFeedbackComplete}
                 />
-                {msg.isLoading && !msg.answer && <InlineLoading description={t('thinkingEllipsis', 'Thinking...')} />}
+                {msg.isLoading &&
+                  !msg.answer &&
+                  (msg.reasoning ? (
+                    <p className={styles.reasoningText}>{msg.reasoning}</p>
+                  ) : (
+                    <InlineLoading description={t('thinkingEllipsis', 'Thinking...')} />
+                  ))}
               </div>
             </div>
           ),

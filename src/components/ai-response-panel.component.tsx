@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IconButton, InlineLoading, Tag } from '@carbon/react';
 import { Copy } from '@carbon/react/icons';
@@ -105,73 +105,6 @@ function stripCitations(answer: string): string {
   return answer.replace(/\s?\[\d+(?:\s*,\s*\d+)*\]/g, '').trim();
 }
 
-function renderAnswerWithCitations(
-  answer: string,
-  references: AiReference[],
-  patientUuid: string,
-  t: Translate,
-): React.ReactNode[] {
-  const refByIndex = new Map(references.map((r) => [r.index, r]));
-  const parts: React.ReactNode[] = [];
-  const pattern = /\[(\d+(?:\s*,\s*\d+)*)\]/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = pattern.exec(answer)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(answer.slice(lastIndex, match.index));
-    }
-    const matchIndex = match.index;
-    const citIndices = match[1].split(/\s*,\s*/).map(Number);
-    parts.push('[');
-    citIndices.forEach((citIndex, i) => {
-      const ref = refByIndex.get(citIndex);
-      const url = ref ? buildReferenceUrl(ref, patientUuid) : null;
-      const ungrounded = ref?.grounded === false;
-      const drugReference = ref ? isDrugReference(ref) : false;
-      const citKey = `cit-${matchIndex}-${i}-${citIndex}`;
-      parts.push(
-        url && ref ? (
-          <a
-            key={citKey}
-            className={
-              ungrounded ? `${styles.inlineCitation} ${styles.inlineCitationUngrounded}` : styles.inlineCitation
-            }
-            href={url}
-            title={
-              ungrounded
-                ? t('notGroundedTitle', 'The cited record may not support this statement — verify against the chart.')
-                : undefined
-            }
-            onClick={(e) => handleReferenceNavigate(e, url, ref)}
-          >
-            {ungrounded ? `${citIndex} ⚠` : citIndex}
-          </a>
-        ) : drugReference ? (
-          <span
-            key={citKey}
-            className={`${styles.inlineCitation} ${styles.inlineCitationReference}`}
-            title={drugReferenceTitle(t)}
-          >
-            {citIndex}
-          </span>
-        ) : (
-          `${citIndex}`
-        ),
-      );
-      if (i < citIndices.length - 1) {
-        parts.push(', ');
-      }
-    });
-    parts.push(']');
-    lastIndex = pattern.lastIndex;
-  }
-  if (lastIndex < answer.length) {
-    parts.push(answer.slice(lastIndex));
-  }
-  return parts;
-}
-/** Confidence level → label, mirroring the validation dashboard's tag wording. */
 /** Solid confidence pill matching the validate dashboard's chip (label + color per level). */
 const CONF: Record<string, [string, string]> = {
   green: ['High confidence', '#196c2e'],
@@ -194,7 +127,11 @@ function splitSections(answer: string): { answerBody: string; inDepthBody: strin
   }
   return {
     answerBody: stripAnswerHeader(answer.slice(0, m.index)),
-    inDepthBody: answer.slice(m.index + m[0].length).replace(/^\s*/, '').trim() || null,
+    inDepthBody:
+      answer
+        .slice(m.index + m[0].length)
+        .replace(/^\s*/, '')
+        .trim() || null,
   };
 }
 
@@ -270,11 +207,6 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   onFeedbackComplete,
 }) => {
   const { t } = useTranslation();
-  const renderedAnswer = useMemo(() => {
-    if (!answer) return null;
-    if (isLoading) return answer;
-    return renderAnswerWithCitations(answer, references, patientUuid, t);
-  }, [answer, references, patientUuid, isLoading, t]);
 
   const handleCopy = useCallback(() => {
     navigator.clipboard?.writeText(stripCitations(answer));
@@ -385,7 +317,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
         // No live-region role: the panel already sits inside the chat history's
         // role="log" aria-live="polite", which announces this content in order. An
         // assertive role="alert" here would preempt the answer it annotates.
-        <div className={styles.safetyWarningsSection}>
+        <div className={styles.safetyWarningsSection} data-testid="ai-response-safety">
           <span className={styles.safetyWarningsLabel}>{t('safetyChecks', 'Safety checks')}:</span>
           <div className={styles.safetyWarningsList}>
             {safetyWarnings.map((warning, i) => {
@@ -396,7 +328,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                     {label}
                   </Tag>
                   <span className={styles.safetyWarningText}>
-                    {warning.drug}: {warning.detail}
+                    {warning.type}:{warning.drug}: {warning.detail}
                   </span>
                 </span>
               );

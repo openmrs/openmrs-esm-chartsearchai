@@ -48,6 +48,7 @@ interface CitationChipProps {
  * Inline citation chip. Navigating chips link to the patient chart page for the cited
  * record. Drug-reference citations are rendered as a non-navigating span with a tooltip
  * indicating they are clinical reference data, not this patient's records.
+ * Ungrounded citations (grounded=false) render with a ⚠ glyph and a warning title.
  */
 export const CitationChip: React.FC<CitationChipProps> = ({ index, reference, patientUuid }) => {
   const { t } = useTranslation();
@@ -58,7 +59,7 @@ export const CitationChip: React.FC<CitationChipProps> = ({ index, reference, pa
     return (
       <span
         className={styles.inlineCitationReference}
-        title={t('drugReferenceCitation', "Clinical reference data — not this patient\u2019s record.")}
+        title={t('drugReferenceCitation', 'Clinical reference data — not this patient\u2019s record.')}
       >
         {index}
       </span>
@@ -68,9 +69,19 @@ export const CitationChip: React.FC<CitationChipProps> = ({ index, reference, pa
   if (!url) {
     return <>{index}</>;
   }
+  const ungrounded = reference.grounded === false;
   return (
-    <a className={styles.inlineCitation} href={url} onClick={(e) => handleReferenceNavigate(e, url, reference)}>
-      {index}
+    <a
+      className={ungrounded ? `${styles.inlineCitation} ${styles.inlineCitationUngrounded}` : styles.inlineCitation}
+      href={url}
+      title={
+        ungrounded
+          ? t('notGroundedTitle', 'The cited record may not support this statement \u2014 verify against the chart.')
+          : undefined
+      }
+      onClick={(e) => handleReferenceNavigate(e, url, reference)}
+    >
+      {ungrounded ? `${index} \u26a0` : index}
     </a>
   );
 };
