@@ -278,27 +278,6 @@ const AiChatContent: React.FC<AiChatContentProps> = ({
           <p className={styles.infoText}>{t('noPatientSelected', 'No patient selected')}</p>
         )}
 
-        {messages.map((msg) => (
-          <div key={msg.id} className={styles.messagePair}>
-            <div className={styles.questionBubble}>{msg.question}</div>
-            <div className={styles.answerBubble}>
-              <AiResponsePanel
-                answer={msg.answer}
-                references={msg.references}
-                safetyWarnings={msg.safetyWarnings}
-                blocks={msg.blocks}
-                questionId={msg.questionId}
-                error={msg.error}
-                isLoading={msg.isLoading}
-                patientUuid={patientUuid ?? ''}
-                onFeedbackComplete={handleFeedbackComplete}
-              />
-              {msg.isLoading && !msg.answer && (
-                <div>
-                  <InlineLoading description={t('thinkingEllipsis', 'Thinking...')} />
-                  {msg.reasoning && <p className={styles.liveReasoning}>{msg.reasoning}</p>}
-                </div>
-              )}
         {messages.map((msg) =>
           msg.kind === 'system' ? (
             // In-thread system notice (e.g. context refreshed) — a subtle

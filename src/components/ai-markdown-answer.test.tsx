@@ -14,7 +14,7 @@ afterAll(() => {
 });
 
 describe('MarkdownAnswer', () => {
-  const references = [{ index: 4, resourceType: 'order', resourceId: 404, date: '2006-01-01' }];
+  const references = [{ index: 4, resourceType: 'order', resourceUuid: 'uuid-404', date: '2006-01-01' }];
 
   it('renders **bold** as a <strong> element, not literal asterisks', () => {
     const { container } = render(<MarkdownAnswer answer="**Answer**" references={[]} patientUuid={patientUuid} />);

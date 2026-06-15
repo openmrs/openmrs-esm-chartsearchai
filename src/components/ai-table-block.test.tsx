@@ -16,9 +16,9 @@ afterAll(() => {
 
 describe('AiTableBlockView', () => {
   const references: AiReference[] = [
-    { index: 1, resourceType: 'order', resourceId: 100, date: '2024-01-01' },
-    { index: 2, resourceType: 'order', resourceId: 200, date: '2024-02-01' },
-    { index: 3, resourceType: 'order', resourceId: 300, date: '2024-03-01' },
+    { index: 1, resourceType: 'order', resourceUuid: 'uuid-100', date: '2024-01-01' },
+    { index: 2, resourceType: 'order', resourceUuid: 'uuid-200', date: '2024-02-01' },
+    { index: 3, resourceType: 'order', resourceUuid: 'uuid-300', date: '2024-03-01' },
   ];
 
   const block: AiTableBlock = {

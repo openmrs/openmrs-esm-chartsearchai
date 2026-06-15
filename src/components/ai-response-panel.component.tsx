@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IconButton, InlineLoading, Tag } from '@carbon/react';
 import { Copy } from '@carbon/react/icons';
@@ -172,10 +172,6 @@ function renderAnswerWithCitations(
   return parts;
 }
 /** Confidence level → label, mirroring the validation dashboard's tag wording. */
-const CONFIDENCE_LABEL: Record<string, string> = {
-  green: 'High confidence',
-  yellow: 'Medium confidence',
-  red: 'Low confidence',
 /** Solid confidence pill matching the validate dashboard's chip (label + color per level). */
 const CONF: Record<string, [string, string]> = {
   green: ['High confidence', '#196c2e'],
@@ -279,8 +275,6 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     if (isLoading) return answer;
     return renderAnswerWithCitations(answer, references, patientUuid, t);
   }, [answer, references, patientUuid, isLoading, t]);
-    return renderTextWithCitations(answer, references, patientUuid);
-  }, [answer, references, patientUuid, isLoading]);
 
   const handleCopy = useCallback(() => {
     navigator.clipboard?.writeText(stripCitations(answer));

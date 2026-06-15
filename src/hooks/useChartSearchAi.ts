@@ -19,7 +19,7 @@ export interface ChatMessage {
   question: string;
   answer: string;
   references: AiReference[];
-  safetyWarnings: AiSafetyWarning[];
+  safetyWarnings?: AiSafetyWarning[];
   blocks?: AiBlock[];
   questionId: string;
   isLoading: boolean;
@@ -108,6 +108,7 @@ function hydrateMessages(history: ChatHistoryMessage[]): ChatMessage[] {
         questionId: '',
         isLoading: false,
         error: null,
+        reasoning: '',
       };
     } else if (m.role === 'assistant') {
       if (pending) {
@@ -240,6 +241,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       questionId: '',
       isLoading: false,
       error: null,
+      reasoning: '',
       kind: 'system',
     };
     updateMessages(patientUuid, (prev) => [...prev, notice]);
@@ -257,7 +259,6 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         question,
         answer: '',
         references: [],
-        safetyWarnings: [],
         questionId: '',
         isLoading: true,
         error: null,
@@ -285,14 +286,11 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
             answer: response.answer,
             references: response.references,
             safetyWarnings: response.safetyWarnings ?? [],
-            questionId: response.questionId ?? '',
             blocks: response.blocks,
             confidence: response.confidence,
             questionId: response.messageId ?? response.questionId ?? '',
             resolvedModel: response.resolvedModel,
             isLoading: false,
-            // the scratchpad served its purpose as a live indicator; don't persist it
-            reasoning: '',
           };
           return updated;
         });
@@ -328,60 +326,6 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       const selectedBackend = chatSessionStore.getState().selectedBackend;
 
       try {
-        if (config.useStreaming) {
-          searchPatientChartStream(
-            patientUuid,
-            question,
-            {
-              // Live reasoning: shown while the model thinks, before any answer text exists.
-              onThinking: (chunk) => {
-                if (!isMountedRef.current) return;
-                updateMessages(patientUuid, (prev) => {
-                  const idx = prev.findIndex((m) => m.id === messageId);
-                  if (idx === -1) return prev;
-                  const updated = [...prev];
-                  updated[idx] = { ...updated[idx], reasoning: updated[idx].reasoning + chunk };
-                  return updated;
-                });
-              },
-              onToken: (token) => {
-                if (!isMountedRef.current) return;
-                updateMessages(patientUuid, (prev) => {
-                  const idx = prev.findIndex((m) => m.id === messageId);
-                  if (idx === -1) return prev;
-                  const updated = [...prev];
-                  updated[idx] = { ...updated[idx], answer: updated[idx].answer + token };
-                  return updated;
-                });
-              },
-              // Show citations as soon as the server emits them (before grounding finishes).
-              // These carry no grounding verdict yet, so they render unverified; `done` then
-              // overwrites this message's references with the grounded set.
-              onReferences: (references) => {
-                if (!isMountedRef.current) return;
-                updateMessages(patientUuid, (prev) => {
-                  const idx = prev.findIndex((m) => m.id === messageId);
-                  if (idx === -1) return prev;
-                  const updated = [...prev];
-                  updated[idx] = { ...updated[idx], references };
-                  return updated;
-                });
-              },
-              onDone: done,
-              // Trailing verdicts (server runs async grounding): update the SAME message's
-              // references after done completed it. Deliberately NOT gated on isMountedRef —
-              // the chat store outlives the panel, and verdicts that arrive after the user
-              // closed it must still land so badges are correct when the panel reopens.
-              onGrounded: (references) => {
-                updateMessages(patientUuid, (prev) => {
-                  const idx = prev.findIndex((m) => m.id === messageId);
-                  if (idx === -1) return prev;
-                  const updated = [...prev];
-                  updated[idx] = { ...updated[idx], references };
-                  return updated;
-                });
-              },
-              onError: fail,
         // Multi-turn streaming: chat history is reconstructed server-side
         // from the session uuid; we only send the new question.
         chatPatientChartStream(
