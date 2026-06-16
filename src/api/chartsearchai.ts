@@ -2,6 +2,10 @@ import { openmrsFetch, restBaseUrl } from '@openmrs/esm-framework';
 
 const BASE_PATH = `${restBaseUrl}/chartsearchai`;
 
+/** Shown for every way an expired session surfaces on the SSE endpoint: the 302 opaque redirect,
+ *  a bare 401/403, and the committed-redirect 500. Kept in one place so the wording stays consistent. */
+const SESSION_EXPIRED_MESSAGE = 'Your session has expired. Please log in again.';
+
 export interface AiReference {
   index: number;
   resourceType: string;
@@ -166,7 +170,7 @@ export function searchPatientChartStream(
     })
     .then(async (response) => {
       if (response.type === 'opaqueredirect' || response.status === 0) {
-        callbacks.onError('Your session has expired. Please log in again.');
+        callbacks.onError(SESSION_EXPIRED_MESSAGE);
         return;
       }
 
@@ -190,7 +194,7 @@ export function searchPatientChartStream(
           // (the SSE stream commits the response, so the expired-session login redirect can't fire
           // and surfaces as a bare HTML 500). Treat all of these as session expiry — the same
           // actionable cause as the 302 handled above — rather than a cryptic "Server error: 500".
-          callbacks.onError('Your session has expired. Please log in again.');
+          callbacks.onError(SESSION_EXPIRED_MESSAGE);
         } else {
           callbacks.onError(`Server error: ${response.status}`);
         }
