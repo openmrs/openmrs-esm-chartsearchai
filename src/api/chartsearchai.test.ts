@@ -1,7 +1,12 @@
 import { TextEncoder, TextDecoder } from 'util';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi, type Mock, type MockInstance } from 'vitest';
 import { openmrsFetch } from '@openmrs/esm-framework';
-import { searchPatientChart, searchPatientChartStream, type AiSearchResponse } from './chartsearchai';
+import {
+  searchPatientChart,
+  searchPatientChartStream,
+  SESSION_EXPIRED_ERROR_CODE,
+  type AiSearchResponse,
+} from './chartsearchai';
 
 // Polyfill for jsdom
 (globalThis as unknown as Record<string, unknown>).TextEncoder = TextEncoder;
@@ -404,7 +409,7 @@ describe('searchPatientChartStream', () => {
     callStream(cb);
     await flushPromises();
 
-    expect(cb.onError).toHaveBeenCalledWith('Your session has expired. Please log in again.');
+    expect(cb.onError).toHaveBeenCalledWith(SESSION_EXPIRED_ERROR_CODE);
   });
 
   // Guards the bodyError-first ordering: a genuine controller 500 (JSON body) must surface its own
@@ -438,7 +443,7 @@ describe('searchPatientChartStream', () => {
     callStream(cb);
     await flushPromises();
 
-    expect(cb.onError).toHaveBeenCalledWith('Your session has expired. Please log in again.');
+    expect(cb.onError).toHaveBeenCalledWith(SESSION_EXPIRED_ERROR_CODE);
   });
 
   it('still reports a generic server error for a non-auth status with no JSON body', async () => {
@@ -486,7 +491,7 @@ describe('searchPatientChartStream', () => {
     callStream(cb);
     await flushPromises();
 
-    expect(cb.onError).toHaveBeenCalledWith('Your session has expired. Please log in again.');
+    expect(cb.onError).toHaveBeenCalledWith(SESSION_EXPIRED_ERROR_CODE);
   });
 
   it('ignores blank lines that have no pending event (no false dispatch)', async () => {

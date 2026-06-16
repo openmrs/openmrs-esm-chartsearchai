@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { IconButton, InlineLoading, Tag } from '@carbon/react';
 import { Copy } from '@carbon/react/icons';
 import { navigate } from '@openmrs/esm-framework';
-import { type AiReference, type AiSafetyWarning } from '../api/chartsearchai';
+import { type AiReference, type AiSafetyWarning, SESSION_EXPIRED_ERROR_CODE } from '../api/chartsearchai';
 import { highlightReference } from '../utils/highlight-reference';
 import AiFeedback from './ai-feedback.component';
 import styles from './ai-response-panel.scss';
@@ -215,10 +215,17 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     navigator.clipboard?.writeText(stripCitations(answer));
   }, [answer]);
 
+  // The API layer emits a code (not display text) for session expiry so the wording can be localized
+  // here; every other error is already a human-readable string from the server or browser.
+  const displayError =
+    error === SESSION_EXPIRED_ERROR_CODE
+      ? t('sessionExpired', 'Your session has expired. Please log in again.')
+      : error;
+
   if (error && !answer) {
     return (
       <div className={styles.errorContainer} role="alert">
-        <p className={styles.errorText}>{error}</p>
+        <p className={styles.errorText}>{displayError}</p>
       </div>
     );
   }
@@ -235,7 +242,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
       {error && answer && (
         <div className={styles.errorContainer} role="alert">
           <p className={styles.errorText}>
-            {t('streamInterrupted', 'Response interrupted:')} {error}
+            {t('streamInterrupted', 'Response interrupted:')} {displayError}
           </p>
         </div>
       )}

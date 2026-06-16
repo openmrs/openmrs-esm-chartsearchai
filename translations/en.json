@@ -27,6 +27,7 @@
   "safetyOverdose": "Dose",
   "safetyWarning": "Safety",
   "send": "Send",
+  "sessionExpired": "Your session has expired. Please log in again.",
   "speechRecognitionError": "Speech recognition failed. Please try again.",
   "stop": "Stop",
   "stopListening": "Stop listening",
