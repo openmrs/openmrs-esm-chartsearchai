@@ -407,6 +407,24 @@ describe('searchPatientChartStream', () => {
     expect(cb.onError).toHaveBeenCalledWith('Your session has expired. Please log in again.');
   });
 
+  // Guards the bodyError-first ordering: a genuine controller 500 (JSON body) must surface its own
+  // message, NOT be masked as session expiry — only the bare/no-body 500 is the committed-redirect case.
+  it('surfaces a JSON 500 error verbatim rather than as session expiry', async () => {
+    const cb = makeCallbacks();
+    const resp = {
+      ok: false,
+      status: 500,
+      body: null,
+      json: () => Promise.resolve({ error: 'Internal error' }),
+    } as unknown as Response;
+    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(resp);
+
+    callStream(cb);
+    await flushPromises();
+
+    expect(cb.onError).toHaveBeenCalledWith('Internal error');
+  });
+
   it('treats a non-JSON 401 as session expiry', async () => {
     const cb = makeCallbacks();
     const resp = {
