@@ -48,7 +48,8 @@ vi.mock('../hooks/useSpeechRecognition', () => ({
   },
 }));
 
-vi.mock('../api/chartsearchai', () => ({
+vi.mock('../api/chartsearchai', async (importActual) => ({
+  ...(await importActual<typeof import('../api/chartsearchai')>()),
   submitFeedback: vi.fn().mockResolvedValue(undefined),
 }));
 
