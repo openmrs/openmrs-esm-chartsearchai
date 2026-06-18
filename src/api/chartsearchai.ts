@@ -2,6 +2,14 @@ import { openmrsFetch, restBaseUrl } from '@openmrs/esm-framework';
 
 const BASE_PATH = `${restBaseUrl}/chartsearchai`;
 
+/**
+ * Error code emitted via {@code onError} for every way an expired session surfaces on the SSE
+ * endpoint: the 302 opaque redirect, a bare 401/403, and the committed-redirect 500. It is a stable
+ * code, NOT a display string — user-facing text must be localized in a component (the translation
+ * extractor only scans {@code *.component.tsx}). {@code AiResponsePanel} maps this to a translated message.
+ */
+export const SESSION_EXPIRED_ERROR_CODE = 'chartsearchai:session-expired';
+
 export interface AiReference {
   index: number;
   resourceType: string;
@@ -224,21 +232,34 @@ export function searchPatientChartStream(
     })
     .then(async (response) => {
       if (response.type === 'opaqueredirect' || response.status === 0) {
-        callbacks.onError('Your session has expired. Please log in again.');
+        callbacks.onError(SESSION_EXPIRED_ERROR_CODE);
         return;
       }
 
       if (!response.ok) {
-        let message = `Server error: ${response.status}`;
+        let bodyError: string | null = null;
         try {
           const body = await response.json();
           if (body?.error) {
-            message = body.error;
+            bodyError = body.error;
           }
         } catch {
-          // no JSON body
+          // non-JSON body (a bare container/auth response, not a controller error)
         }
-        callbacks.onError(message);
+        if (bodyError) {
+          // The controller always serializes its errors as JSON, so a parseable error is a genuine
+          // server-side failure — surface it verbatim.
+          callbacks.onError(bodyError);
+        } else if (response.status >= 500 || response.status === 401 || response.status === 403) {
+          // No JSON body means this came from OpenMRS's auth/session layer, not the controller:
+          // a 401/403, or a 500 that is really "sendRedirect() after the response was committed"
+          // (the SSE stream commits the response, so the expired-session login redirect can't fire
+          // and surfaces as a bare HTML 500). Treat all of these as session expiry — the same
+          // actionable cause as the 302 handled above — rather than a cryptic "Server error: 500".
+          callbacks.onError(SESSION_EXPIRED_ERROR_CODE);
+        } else {
+          callbacks.onError(`Server error: ${response.status}`);
+        }
         return;
       }
 

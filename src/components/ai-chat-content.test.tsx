@@ -233,6 +233,47 @@ describe('AiChatContent', () => {
 
       expect(log.scrollTop).toBe(1000);
     });
+
+    // Regression: the live "Thinking..." reasoning streams before any answer text exists,
+    // so it changes neither `answer` nor `isAnyLoading`. If the scroll effect ignores
+    // reasoning, the growing scratchpad runs past the viewport and is clipped out of sight
+    // (it disappears behind the disclaimer). The effect must re-fire on each reasoning chunk.
+    it('scrolls history area to bottom as reasoning streams (before any answer)', () => {
+      const thinking = {
+        id: 'm1',
+        question: 'Summarize the visits.',
+        answer: '',
+        references: [],
+        questionId: '',
+        isLoading: true,
+        error: null,
+        reasoning: 'Scanning',
+      };
+      mockUseChartSearchAi.mockReturnValue({
+        messages: [thinking],
+        isAnyLoading: true,
+        submitQuestion: mockSubmitQuestion,
+        stopCurrent: mockStopCurrent,
+        clearMessages: vi.fn(),
+      });
+      const { rerender } = render(<AiChatContent mode="workspace" patientUuid="p1" />);
+
+      const log = screen.getByRole('log');
+      Object.defineProperty(log, 'scrollHeight', { configurable: true, value: 1000 });
+      log.scrollTop = 0;
+
+      // Only `reasoning` grows — answer stays empty, isAnyLoading stays true.
+      mockUseChartSearchAi.mockReturnValue({
+        messages: [{ ...thinking, reasoning: 'Scanning visits, then active problems, then medications…' }],
+        isAnyLoading: true,
+        submitQuestion: mockSubmitQuestion,
+        stopCurrent: mockStopCurrent,
+        clearMessages: vi.fn(),
+      });
+      rerender(<AiChatContent mode="workspace" patientUuid="p1" />);
+
+      expect(log.scrollTop).toBe(1000);
+    });
   });
 
   describe('safety-warning forwarding', () => {

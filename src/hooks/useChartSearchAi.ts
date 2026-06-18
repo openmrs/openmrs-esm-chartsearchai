@@ -199,7 +199,8 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           return prev.filter((_, i) => i !== idx);
         }
         const updated = [...prev];
-        updated[idx] = { ...msg, isLoading: false };
+        // Mirror `done`: a settled message keeps no reasoning scratchpad, even when stopped mid-stream.
+        updated[idx] = { ...msg, isLoading: false, reasoning: '' };
         return updated;
       });
     }
@@ -335,6 +336,18 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           {
             onSession: (uuid) => {
               setSessionUuid(patientUuid, uuid);
+            },
+            // Live reasoning: streamed by the server before the answer text exists; shown as a
+            // transient "thinking" scratchpad and cleared once the answer settles (done/stop).
+            onThinking: (chunk) => {
+              if (!isMountedRef.current) return;
+              updateMessages(patientUuid, (prev) => {
+                const idx = prev.findIndex((m) => m.id === messageId);
+                if (idx === -1) return prev;
+                const updated = [...prev];
+                updated[idx] = { ...updated[idx], reasoning: updated[idx].reasoning + chunk };
+                return updated;
+              });
             },
             onToken: (token) => {
               if (!isMountedRef.current) return;

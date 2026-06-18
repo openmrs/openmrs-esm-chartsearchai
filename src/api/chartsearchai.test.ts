@@ -5,6 +5,7 @@ import {
   chatPatientChartStream,
   searchPatientChart,
   searchPatientChartStream,
+  SESSION_EXPIRED_ERROR_CODE,
   type AiSearchResponse,
 } from './chartsearchai';
 
@@ -393,7 +394,10 @@ describe('searchPatientChartStream', () => {
     expect(cb.onError).toHaveBeenCalledWith('Forbidden: missing privilege');
   });
 
-  it('calls onError on non-OK HTTP status without JSON body', async () => {
+  // A bare (non-JSON) 500 on the SSE endpoint is OpenMRS's expired-session login redirect failing
+  // with "sendRedirect() after the response has been committed" (the stream already committed the
+  // response), not a controller error — controller errors are always JSON. Surface it as expiry.
+  it('treats a non-JSON 500 as session expiry (sendRedirect-after-commit)', async () => {
     const cb = makeCallbacks();
     const resp = {
       ok: false,
@@ -406,7 +410,57 @@ describe('searchPatientChartStream', () => {
     callStream(cb);
     await flushPromises();
 
-    expect(cb.onError).toHaveBeenCalledWith('Server error: 500');
+    expect(cb.onError).toHaveBeenCalledWith(SESSION_EXPIRED_ERROR_CODE);
+  });
+
+  // Guards the bodyError-first ordering: a genuine controller 500 (JSON body) must surface its own
+  // message, NOT be masked as session expiry — only the bare/no-body 500 is the committed-redirect case.
+  it('surfaces a JSON 500 error verbatim rather than as session expiry', async () => {
+    const cb = makeCallbacks();
+    const resp = {
+      ok: false,
+      status: 500,
+      body: null,
+      json: () => Promise.resolve({ error: 'Internal error' }),
+    } as unknown as Response;
+    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(resp);
+
+    callStream(cb);
+    await flushPromises();
+
+    expect(cb.onError).toHaveBeenCalledWith('Internal error');
+  });
+
+  it('treats a non-JSON 401 as session expiry', async () => {
+    const cb = makeCallbacks();
+    const resp = {
+      ok: false,
+      status: 401,
+      body: null,
+      json: () => Promise.reject(new Error('no body')),
+    } as unknown as Response;
+    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(resp);
+
+    callStream(cb);
+    await flushPromises();
+
+    expect(cb.onError).toHaveBeenCalledWith(SESSION_EXPIRED_ERROR_CODE);
+  });
+
+  it('still reports a generic server error for a non-auth status with no JSON body', async () => {
+    const cb = makeCallbacks();
+    const resp = {
+      ok: false,
+      status: 400,
+      body: null,
+      json: () => Promise.reject(new Error('no body')),
+    } as unknown as Response;
+    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(resp);
+
+    callStream(cb);
+    await flushPromises();
+
+    expect(cb.onError).toHaveBeenCalledWith('Server error: 400');
   });
 
   it('calls onError when streaming is not supported (no body)', async () => {
@@ -438,7 +492,7 @@ describe('searchPatientChartStream', () => {
     callStream(cb);
     await flushPromises();
 
-    expect(cb.onError).toHaveBeenCalledWith('Your session has expired. Please log in again.');
+    expect(cb.onError).toHaveBeenCalledWith(SESSION_EXPIRED_ERROR_CODE);
   });
 
   it('ignores blank lines that have no pending event (no false dispatch)', async () => {

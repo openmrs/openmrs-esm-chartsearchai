@@ -48,7 +48,8 @@ vi.mock('../hooks/useSpeechRecognition', () => ({
   },
 }));
 
-vi.mock('../api/chartsearchai', () => ({
+vi.mock('../api/chartsearchai', async (importActual) => ({
+  ...(await importActual<typeof import('../api/chartsearchai')>()),
   submitFeedback: vi.fn().mockResolvedValue(undefined),
   // ModelPicker (mounted inside AiChatContent) imports fetchEndpoints. Reject it
   // so the picker hides itself silently — keeps these tests focused on the panel

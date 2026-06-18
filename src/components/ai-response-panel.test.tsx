@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi, type Mock } 
 import { fireEvent, render, screen } from '@testing-library/react';
 import AiResponsePanel from './ai-response-panel.component';
 import { highlightReference } from '../utils/highlight-reference';
+import { SESSION_EXPIRED_ERROR_CODE } from '../api/chartsearchai';
 
 vi.mock('../utils/highlight-reference', () => ({ highlightReference: vi.fn() }));
 const mockHighlightReference = highlightReference as Mock;
@@ -269,6 +270,23 @@ describe('AiResponsePanel reference links', () => {
     // The streaming-time render only shows prose; blocks land atomically once done.
     expect(screen.queryByText('Stale')).not.toBeInTheDocument();
     expect(screen.queryByText('should-not-show')).not.toBeInTheDocument();
+  });
+
+  it('localizes the session-expired error code (does not render the raw code)', () => {
+    render(
+      <AiResponsePanel
+        answer=""
+        references={[]}
+        questionId="test-question-id"
+        error={SESSION_EXPIRED_ERROR_CODE}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    // The API emits a code; the panel must render the (localizable) message, never the raw code.
+    expect(screen.getByText('Your session has expired. Please log in again.')).toBeInTheDocument();
+    expect(screen.queryByText(SESSION_EXPIRED_ERROR_CODE)).not.toBeInTheDocument();
   });
 
   it('shows partial answer with error banner when stream fails mid-response', () => {

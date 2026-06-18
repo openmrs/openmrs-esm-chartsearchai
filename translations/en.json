@@ -38,6 +38,7 @@
   "refreshClinicalContext": "Refresh clinical context",
   "restore": "Restore",
   "send": "Send",
+  "sessionExpired": "Your session has expired. Please log in again.",
   "speechRecognitionError": "Speech recognition failed. Please try again.",
   "stop": "Stop",
   "stopListening": "Stop listening",

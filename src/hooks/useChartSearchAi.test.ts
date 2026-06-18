@@ -280,6 +280,7 @@ describe('useChartSearchAi', () => {
     });
     const secondCallbacks = mockChatStream.mock.calls[1][3];
     act(() => {
+      secondCallbacks.onThinking('Still thinking...');
       secondCallbacks.onToken('Partial...');
     });
 
@@ -294,6 +295,8 @@ describe('useChartSearchAi', () => {
     expect(result.current.messages[0].answer).toBe('Answer.');
     expect(result.current.messages[1].isLoading).toBe(false);
     expect(result.current.messages[1].answer).toBe('Partial...');
+    // The settled message keeps no leftover reasoning scratchpad (mirrors `done`).
+    expect(result.current.messages[1].reasoning).toBe('');
   });
 
   it('stopCurrent removes the message bubble when no answer was received', async () => {
