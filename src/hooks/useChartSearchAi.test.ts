@@ -215,6 +215,33 @@ describe('useChartSearchAi', () => {
     expect(result.current.messages[0].answer).toBe('Aspirin [1]');
   });
 
+  it('accumulates preliminary preview reasoning and replaces it when committed reasoning arrives', () => {
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'BP history?');
+    });
+
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+
+    // The progressive-reasoning preview streams first, onto its own channel.
+    act(() => {
+      callbacks.onPreliminary('Quick look: ');
+      callbacks.onPreliminary('records [2] mention BP.');
+    });
+    expect(result.current.messages[0].preliminaryReasoning).toBe('Quick look: records [2] mention BP.');
+    expect(result.current.messages[0].reasoning).toBe('');
+
+    // The committed reasoning supersedes and CLEARS the provisional preview — a wrong preview
+    // must not linger once the full-chart pass corrects it.
+    act(() => {
+      callbacks.onThinking('Reviewing the full chart.');
+    });
+    expect(result.current.messages[0].reasoning).toBe('Reviewing the full chart.');
+    expect(result.current.messages[0].preliminaryReasoning).toBe('');
+  });
+
   it('applies trailing grounded verdicts to the completed message (async grounding)', () => {
     mockUseConfig.mockReturnValue({ useStreaming: true });
     const { result } = renderHook(() => useChartSearchAi('patient-uuid'));

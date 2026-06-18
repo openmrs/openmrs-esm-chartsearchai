@@ -154,6 +154,16 @@ export function searchPatientChartStream(
      * the answer.
      */
     onThinking?: (chunk: string) => void;
+    /**
+     * Preliminary reasoning chunks from the optional progressive-reasoning preview pass (server
+     * GP {@code chartsearchai.progressiveReasoning.enabled}). Streamed before {@code onThinking}
+     * over only the top-K focused chart, so the UI can show reasoning almost immediately on a
+     * slow host. It is provisional and can be wrong until the committed full-chart reasoning
+     * arrives — render it distinctly (e.g. "Preliminary — verifying…") and REPLACE it the moment
+     * the first {@code onThinking} (or {@code onToken}) chunk arrives. Never fires when the server
+     * GP is off.
+     */
+    onPreliminary?: (chunk: string) => void;
   },
   abortController?: AbortController,
 ): void {
@@ -229,6 +239,8 @@ export function searchPatientChartStream(
           callbacks.onToken(data);
         } else if (eventType === 'thinking') {
           callbacks.onThinking?.(data);
+        } else if (eventType === 'preliminary') {
+          callbacks.onPreliminary?.(data);
         } else if (eventType === 'references') {
           // Pre-grounding citations: best-effort, so a malformed payload is ignored rather
           // than failing the stream — the authoritative references arrive with `done`.
