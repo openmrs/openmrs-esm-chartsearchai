@@ -312,9 +312,8 @@ describe('AiChatContent', () => {
     });
   });
   describe('header controls (reset / refresh / maximize)', () => {
-    // Regression guard: New chat must be available even on an empty chat — it was
-    // previously gated behind messages.length > 0, so you couldn't reset until
-    // you'd already started a conversation.
+    // New chat must be available even on an empty chat, before any conversation
+    // has started.
     it('renders the New chat button even with no messages and calls startNewChatSession on click', async () => {
       const user = userEvent.setup();
       render(<AiChatContent mode="floating" patientUuid="p1" onClose={vi.fn()} />);

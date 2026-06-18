@@ -7,9 +7,7 @@
  * `{ "error": "<message>" }`, so the real reason (e.g. LM Studio's "insufficient
  * system resources" text bubbled up from `POST /api/v1/models/load`) lives at
  * `err.responseBody.error` — NOT on `err.message`, which is the generic
- * "Server responded with 503" string. Reading only `err.message` is why the
- * picker previously showed an opaque "failed to switch" instead of the real
- * cause.
+ * "Server responded with 503" string.
  */
 export interface ApiErrorInfo {
   /** Backend error text when present, else the thrown error's message. */

@@ -614,7 +614,7 @@ export interface ModelListResponse {
    * Backend probe outcome:
    *   "lm-studio"             — /api/v1/models returned the v1 shape; entries[] populated.
    *   "generic-openai-compat" — fell back to /v1/models; entries[] derived from IDs only.
-   *   undefined / null        — legacy backend (PR #15 baseline) didn't supply the field.
+   *   undefined / null        — legacy backend didn't supply the field.
    */
   provider?: 'lm-studio' | 'generic-openai-compat' | string | null;
   /** Per-entry richer info. Populated when the backend probe gave it; absent otherwise. */

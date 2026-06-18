@@ -6,7 +6,7 @@ import { fetchEndpoints } from '../api/chartsearchai';
 import { chatSessionStore } from '../store/chat-session.store';
 import { useConfig } from '@openmrs/esm-framework';
 
-// NB: do NOT vi.mock('@openmrs/esm-framework') here — the picker now reads the
+// NB: do NOT vi.mock('@openmrs/esm-framework') here — the picker reads the
 // shared chatSessionStore via useStore, and the store module itself depends on
 // createGlobalStore/getSessionStore. The vitest config already aliases the whole
 // framework to its mock (real useStore/createGlobalStore, jest.fn useConfig), so
