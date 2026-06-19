@@ -120,8 +120,8 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
   const lastMessage = messages.length > 0 ? messages[messages.length - 1] : undefined;
   const lastAnswer = lastMessage?.answer ?? '';
   const lastReasoning = lastMessage?.reasoning ?? '';
-  // Preliminary preview reasoning streams before any answer/reasoning text; track it for the same
-  // reason as lastReasoning so the live preview scrolls into view instead of being clipped.
+  // Track the preview text so the live preview scrolls into view (same reason as lastReasoning);
+  // it is hidden once committed reasoning or the answer arrives.
   const lastPreliminary = lastMessage?.preliminaryReasoning ?? '';
   useEffect(() => {
     if (historyAreaRef.current) {

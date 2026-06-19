@@ -249,7 +249,7 @@
   margin-top: 0.25rem;
   font-size: 0.75rem;
   font-style: italic;
-  color: #8d8d8d;
+  color: colors.$gray-50;
   white-space: pre-wrap;
   opacity: 0.85;
 }
@@ -260,5 +260,5 @@
   text-transform: uppercase;
   letter-spacing: 0.02em;
   font-size: 0.6875rem;
-  color: #6f6f6f;
+  color: colors.$gray-60;
 }
