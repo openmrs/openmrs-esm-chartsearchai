@@ -120,11 +120,14 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
   const lastMessage = messages.length > 0 ? messages[messages.length - 1] : undefined;
   const lastAnswer = lastMessage?.answer ?? '';
   const lastReasoning = lastMessage?.reasoning ?? '';
+  // Track the preview text so the live preview scrolls into view (same reason as lastReasoning);
+  // it is hidden once committed reasoning or the answer arrives.
+  const lastPreliminary = lastMessage?.preliminaryReasoning ?? '';
   useEffect(() => {
     if (historyAreaRef.current) {
       historyAreaRef.current.scrollTop = historyAreaRef.current.scrollHeight;
     }
-  }, [lastAnswer, lastReasoning, isAnyLoading]);
+  }, [lastAnswer, lastReasoning, lastPreliminary, isAnyLoading]);
 
   const hasCompletedAnswer = messages.some((m) => !m.isLoading && m.answer);
 
@@ -196,6 +199,17 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
                 <div>
                   <InlineLoading description={t('thinkingEllipsis', 'Thinking...')} />
                   {msg.reasoning && <p className={styles.liveReasoning}>{msg.reasoning}</p>}
+                  {/* Provisional preview reasoning, shown only until the committed reasoning/answer
+                      arrives (the hook then clears preliminaryReasoning). Labelled so a clinician
+                      knows it may change. */}
+                  {!msg.reasoning && msg.preliminaryReasoning && (
+                    <p className={styles.preliminaryReasoning}>
+                      <span className={styles.preliminaryLabel}>
+                        {t('preliminaryReasoning', 'Reviewing the most relevant records…')}
+                      </span>{' '}
+                      {msg.preliminaryReasoning}
+                    </p>
+                  )}
                 </div>
               )}
             </div>

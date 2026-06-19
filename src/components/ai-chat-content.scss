@@ -242,3 +242,23 @@
   color: #6f6f6f;
   white-space: pre-wrap;
 }
+
+/* Progressive-reasoning preview: visibly provisional (more subdued than liveReasoning) and
+   prefixed by a small badge, so a clinician reads it as a draft the committed answer replaces. */
+.preliminaryReasoning {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  font-style: italic;
+  color: colors.$gray-50;
+  white-space: pre-wrap;
+  opacity: 0.85;
+}
+
+.preliminaryLabel {
+  font-style: normal;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 0.6875rem;
+  color: colors.$gray-60;
+}

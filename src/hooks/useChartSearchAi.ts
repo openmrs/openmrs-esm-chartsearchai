@@ -22,6 +22,12 @@ export interface ChatMessage {
   /** Live model reasoning while the answer is still being generated — a transient
    *  "thinking" indicator, cleared when the answer completes. Never the answer. */
   reasoning: string;
+  /** Transient PRELIMINARY reasoning from the progressive-reasoning preview pass (server GP
+   *  chartsearchai.progressiveReasoning.enabled): shown before {@link reasoning} on a slow host,
+   *  and provisional — REPLACED the moment real reasoning or the answer arrives, and never
+   *  persisted. Optional: only the streaming path sets it (always to '' first); it stays
+   *  absent/empty when progressive reasoning is off, so non-streaming fixtures need not supply it. */
+  preliminaryReasoning?: string;
 }
 
 interface UseChartSearchAiReturn {
@@ -34,6 +40,15 @@ interface UseChartSearchAiReturn {
 
 function generateId(): string {
   return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+}
+
+/** Removes citation markers ([3], [1, 2], …) from the progressive-reasoning PREVIEW text only.
+ *  The preview reasons over an independently-numbered top-K focused chart, so its [N] markers do
+ *  NOT line up with the committed answer's record numbering — showing them would mislead. Mirrors
+ *  the citation regex in ai-response-panel's stripCitations, but WITHOUT trimming, since the preview
+ *  is accumulated chunk-by-chunk and the trailing space must survive between chunks. */
+function stripPreviewCitations(text: string): string {
+  return text.replace(/\s?\[\d+(?:\s*,\s*\d+)*\]/g, '');
 }
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
@@ -89,7 +104,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         }
         const updated = [...prev];
         // Mirror `done`: a settled message keeps no reasoning scratchpad, even when stopped mid-stream.
-        updated[idx] = { ...msg, isLoading: false, reasoning: '' };
+        updated[idx] = { ...msg, isLoading: false, reasoning: '', preliminaryReasoning: '' };
         return updated;
       });
     }
@@ -112,6 +127,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         isLoading: true,
         error: null,
         reasoning: '',
+        preliminaryReasoning: '',
       };
 
       updateMessages(patientUuid, (prev) => [...prev, newMessage]);
@@ -139,6 +155,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
             isLoading: false,
             // the scratchpad served its purpose as a live indicator; don't persist it
             reasoning: '',
+            preliminaryReasoning: '',
           };
           return updated;
         });
@@ -168,6 +185,24 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
             patientUuid,
             question,
             {
+              // Preliminary reasoning: the progressive-reasoning preview, shown before any real
+              // reasoning exists. Provisional — cleared the moment real reasoning or the answer
+              // arrives (see onThinking/onToken), so a wrong preview can't linger.
+              onPreliminary: (chunk) => {
+                if (!isMountedRef.current) return;
+                updateMessages(patientUuid, (prev) => {
+                  const idx = prev.findIndex((m) => m.id === messageId);
+                  if (idx === -1) return prev;
+                  const updated = [...prev];
+                  updated[idx] = {
+                    ...updated[idx],
+                    // strip the preview's [N] markers: they index the focused chart, not the
+                    // committed answer's records, so showing them would mislead.
+                    preliminaryReasoning: stripPreviewCitations((updated[idx].preliminaryReasoning ?? '') + chunk),
+                  };
+                  return updated;
+                });
+              },
               // Live reasoning: shown while the model thinks, before any answer text exists.
               onThinking: (chunk) => {
                 if (!isMountedRef.current) return;
@@ -175,7 +210,12 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
                   const idx = prev.findIndex((m) => m.id === messageId);
                   if (idx === -1) return prev;
                   const updated = [...prev];
-                  updated[idx] = { ...updated[idx], reasoning: updated[idx].reasoning + chunk };
+                  updated[idx] = {
+                    ...updated[idx],
+                    reasoning: updated[idx].reasoning + chunk,
+                    // committed reasoning supersedes the provisional preview
+                    preliminaryReasoning: '',
+                  };
                   return updated;
                 });
               },
@@ -185,7 +225,12 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
                   const idx = prev.findIndex((m) => m.id === messageId);
                   if (idx === -1) return prev;
                   const updated = [...prev];
-                  updated[idx] = { ...updated[idx], answer: updated[idx].answer + token };
+                  updated[idx] = {
+                    ...updated[idx],
+                    answer: updated[idx].answer + token,
+                    // the answer supersedes any provisional preview reasoning
+                    preliminaryReasoning: '',
+                  };
                   return updated;
                 });
               },

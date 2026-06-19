@@ -215,6 +215,55 @@ describe('useChartSearchAi', () => {
     expect(result.current.messages[0].answer).toBe('Aspirin [1]');
   });
 
+  it('accumulates preliminary preview reasoning and replaces it when committed reasoning arrives', () => {
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'BP history?');
+    });
+
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+
+    // The progressive-reasoning preview streams first, onto its own channel.
+    act(() => {
+      callbacks.onPreliminary('Quick look: ');
+      callbacks.onPreliminary('records [2] mention BP.');
+    });
+    // The preview's [N] markers are stripped — they index the focused chart, not the final answer's
+    // records, so showing them would mislead. (The committed reasoning keeps its markers.)
+    expect(result.current.messages[0].preliminaryReasoning).toBe('Quick look: records mention BP.');
+    expect(result.current.messages[0].preliminaryReasoning).not.toContain('[');
+    expect(result.current.messages[0].reasoning).toBe('');
+
+    // The committed reasoning supersedes and CLEARS the provisional preview — a wrong preview
+    // must not linger once the full-chart pass corrects it.
+    act(() => {
+      callbacks.onThinking('Reviewing the full chart.');
+    });
+    expect(result.current.messages[0].reasoning).toBe('Reviewing the full chart.');
+    expect(result.current.messages[0].preliminaryReasoning).toBe('');
+  });
+
+  it('strips a preview citation marker even when it is split across SSE chunks', () => {
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'BP?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+
+    // The marker [2] is split across two chunks ('records [' then '2] mention BP.'); accumulation
+    // re-strips the whole buffer each chunk, so it must still come out clean.
+    act(() => {
+      callbacks.onPreliminary('records [');
+      callbacks.onPreliminary('2] mention BP.');
+    });
+    expect(result.current.messages[0].preliminaryReasoning).toBe('records mention BP.');
+    expect(result.current.messages[0].preliminaryReasoning).not.toContain('[');
+  });
+
   it('applies trailing grounded verdicts to the completed message (async grounding)', () => {
     mockUseConfig.mockReturnValue({ useStreaming: true });
     const { result } = renderHook(() => useChartSearchAi('patient-uuid'));

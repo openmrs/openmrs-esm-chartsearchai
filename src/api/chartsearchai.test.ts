@@ -115,6 +115,7 @@ describe('searchPatientChartStream', () => {
       onReferences: vi.fn(),
       onGrounded: vi.fn(),
       onThinking: vi.fn(),
+      onPreliminary: vi.fn(),
     };
   }
 
@@ -198,6 +199,32 @@ describe('searchPatientChartStream', () => {
 
     expect(cb.onThinking).toHaveBeenNthCalledWith(1, 'The query asks about medications. ');
     expect(cb.onThinking).toHaveBeenNthCalledWith(2, 'Records [1] and [3] are drug orders.');
+    expect(cb.onDone).toHaveBeenCalled();
+    expect(cb.onError).not.toHaveBeenCalled();
+  });
+
+  it('parses preliminary events and delivers preview reasoning to onPreliminary', async () => {
+    // Progressive reasoning: the server streams a fast preview over the focused chart on its own
+    // "preliminary" event, ahead of the committed "thinking" reasoning, so the UI can show it as
+    // provisional and replace it when the real reasoning arrives. It is a distinct channel from
+    // onThinking.
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:preliminary\ndata: Quick look: records [2] mention BP.\n\n',
+          'event:thinking\ndata: Reviewing the full chart.\n\n',
+          'event:token\ndata: Yes [2]\n\n',
+          'event:done\ndata: {"answer":"Yes [2]","references":[]}\n\n',
+        ]),
+      );
+
+    callStream(cb);
+    await flushPromises();
+
+    expect(cb.onPreliminary).toHaveBeenCalledWith('Quick look: records [2] mention BP.');
+    expect(cb.onThinking).toHaveBeenCalledWith('Reviewing the full chart.');
     expect(cb.onDone).toHaveBeenCalled();
     expect(cb.onError).not.toHaveBeenCalled();
   });
