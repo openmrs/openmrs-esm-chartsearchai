@@ -42,6 +42,15 @@ function generateId(): string {
   return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
 }
 
+/** Removes citation markers ([3], [1, 2], …) from the progressive-reasoning PREVIEW text only.
+ *  The preview reasons over an independently-numbered top-K focused chart, so its [N] markers do
+ *  NOT line up with the committed answer's record numbering — showing them would mislead. Mirrors
+ *  the citation regex in ai-response-panel's stripCitations, but WITHOUT trimming, since the preview
+ *  is accumulated chunk-by-chunk and the trailing space must survive between chunks. */
+function stripPreviewCitations(text: string): string {
+  return text.replace(/\s?\[\d+(?:\s*,\s*\d+)*\]/g, '');
+}
+
 const EMPTY_MESSAGES: ChatMessage[] = [];
 
 function updateMessages(patientUuid: string, updater: (prev: ChatMessage[]) => ChatMessage[]): void {
@@ -187,7 +196,9 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
                   const updated = [...prev];
                   updated[idx] = {
                     ...updated[idx],
-                    preliminaryReasoning: (updated[idx].preliminaryReasoning ?? '') + chunk,
+                    // strip the preview's [N] markers: they index the focused chart, not the
+                    // committed answer's records, so showing them would mislead.
+                    preliminaryReasoning: stripPreviewCitations((updated[idx].preliminaryReasoning ?? '') + chunk),
                   };
                   return updated;
                 });

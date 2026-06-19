@@ -230,7 +230,10 @@ describe('useChartSearchAi', () => {
       callbacks.onPreliminary('Quick look: ');
       callbacks.onPreliminary('records [2] mention BP.');
     });
-    expect(result.current.messages[0].preliminaryReasoning).toBe('Quick look: records [2] mention BP.');
+    // The preview's [N] markers are stripped — they index the focused chart, not the final answer's
+    // records, so showing them would mislead. (The committed reasoning keeps its markers.)
+    expect(result.current.messages[0].preliminaryReasoning).toBe('Quick look: records mention BP.');
+    expect(result.current.messages[0].preliminaryReasoning).not.toContain('[');
     expect(result.current.messages[0].reasoning).toBe('');
 
     // The committed reasoning supersedes and CLEARS the provisional preview — a wrong preview

@@ -205,7 +205,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
                   {!msg.reasoning && msg.preliminaryReasoning && (
                     <p className={styles.preliminaryReasoning}>
                       <span className={styles.preliminaryLabel}>
-                        {t('preliminaryReasoning', 'Preliminary — verifying against full record…')}
+                        {t('preliminaryReasoning', 'Reviewing the most relevant records…')}
                       </span>{' '}
                       {msg.preliminaryReasoning}
                     </p>
