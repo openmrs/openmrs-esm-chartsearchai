@@ -245,6 +245,25 @@ describe('useChartSearchAi', () => {
     expect(result.current.messages[0].preliminaryReasoning).toBe('');
   });
 
+  it('strips a preview citation marker even when it is split across SSE chunks', () => {
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'BP?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+
+    // The marker [2] is split across two chunks ('records [' then '2] mention BP.'); accumulation
+    // re-strips the whole buffer each chunk, so it must still come out clean.
+    act(() => {
+      callbacks.onPreliminary('records [');
+      callbacks.onPreliminary('2] mention BP.');
+    });
+    expect(result.current.messages[0].preliminaryReasoning).toBe('records mention BP.');
+    expect(result.current.messages[0].preliminaryReasoning).not.toContain('[');
+  });
+
   it('applies trailing grounded verdicts to the completed message (async grounding)', () => {
     mockUseConfig.mockReturnValue({ useStreaming: true });
     const { result } = renderHook(() => useChartSearchAi('patient-uuid'));

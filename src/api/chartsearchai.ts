@@ -159,9 +159,9 @@ export function searchPatientChartStream(
      * GP {@code chartsearchai.progressiveReasoning.enabled}). Streamed before {@code onThinking}
      * over only the top-K focused chart, so the UI can show reasoning almost immediately on a
      * slow host. It is provisional and can be wrong until the committed full-chart reasoning
-     * arrives — render it distinctly (e.g. "Preliminary — verifying…") and REPLACE it the moment
-     * the first {@code onThinking} (or {@code onToken}) chunk arrives. Never fires when the server
-     * GP is off.
+     * arrives — render it distinctly (subdued/labelled as an in-progress preview, not the answer)
+     * and REPLACE it the moment the first {@code onThinking} (or {@code onToken}) chunk arrives.
+     * Never fires when the server GP is off.
      */
     onPreliminary?: (chunk: string) => void;
   },
