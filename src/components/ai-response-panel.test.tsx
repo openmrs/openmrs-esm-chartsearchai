@@ -375,6 +375,55 @@ describe('AiResponsePanel safety warnings', () => {
     expect(screen.getByText(/recorded allergy to Ibuprofen/)).toBeInTheDocument();
   });
 
+  it('renders every warning when several share the same type and drug (the common backend shape)', () => {
+    // Verbatim from a live backend response (2026-07-10): the rule + ATC-class + curated-group
+    // layers routinely emit several warnings of the SAME type for the SAME drug. Every one must
+    // render — the list keys are index-suffixed, so duplicates can never collide or drop.
+    render(
+      <AiResponsePanel
+        answer="No. The patient has a documented allergy to Ibuprofen [1]."
+        references={[]}
+        safetyWarnings={[
+          {
+            type: 'contraindication',
+            drug: 'Ibuprofen',
+            detail: 'contraindicated by active allergy: documented ibuprofen allergy',
+          },
+          {
+            type: 'contraindication',
+            drug: 'Ibuprofen',
+            detail: 'contraindicated by active condition: active gastrointestinal bleeding',
+          },
+          {
+            type: 'contraindication',
+            drug: 'Ibuprofen',
+            detail: 'contraindicated by active condition: active peptic ulcer disease',
+          },
+          { type: 'contraindication', drug: 'Ibuprofen', detail: 'the patient has a recorded allergy to Ibuprofen' },
+          {
+            type: 'interaction',
+            drug: 'Ibuprofen',
+            detail: 'interacts with active order warfarin — increased risk of GI bleeding',
+          },
+          {
+            type: 'interaction',
+            drug: 'Ibuprofen',
+            detail:
+              'same cross-reactivity group (NSAID) as active order N02BA01 — possible additive or duplicate-class therapy',
+          },
+        ]}
+        questionId="q"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    expect(screen.getAllByText('Contraindication')).toHaveLength(4);
+    expect(screen.getAllByText('Interaction')).toHaveLength(2);
+    expect(screen.getByText(/cross-reactivity group \(NSAID\)/)).toBeInTheDocument();
+  });
+
   it('renders no safety section when there are no warnings', () => {
     render(
       <AiResponsePanel
