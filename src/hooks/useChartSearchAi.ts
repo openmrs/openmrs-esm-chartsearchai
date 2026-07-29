@@ -149,7 +149,11 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           updated[idx] = {
             ...updated[idx],
             answer: response.answer,
-            references: response.references,
+            // `?? []` for the same reason as safetyWarnings below: the panel calls
+            // `references.length` and `references.map` during render, so a payload without the key
+            // would throw inside the message list and take the whole chat workspace down, losing
+            // the answer that had already streamed. The SSE paths guard this; these did not.
+            references: response.references ?? [],
             safetyWarnings: response.safetyWarnings ?? [],
             questionId: response.questionId ?? '',
             isLoading: false,

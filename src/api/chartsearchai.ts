@@ -10,6 +10,27 @@ const BASE_PATH = `${restBaseUrl}/chartsearchai`;
  */
 export const SESSION_EXPIRED_ERROR_CODE = 'chartsearchai:session-expired';
 
+/**
+ * Stable codes for the errors this module authors itself, for the same reason
+ * {@link SESSION_EXPIRED_ERROR_CODE} exists: a code can be localized by the component, an English
+ * sentence created here cannot. The i18next parser only scans `*.component.tsx`, so any user-facing
+ * wording that originates in this file is unreachable by translation — it would stay English in
+ * every locale.
+ *
+ * Errors that originate from the SERVER or the BROWSER still pass through as their own message:
+ * those are not ours to translate, and replacing them with a generic code would discard detail a
+ * clinician or an administrator needs.
+ */
+export const STREAMING_UNSUPPORTED_ERROR_CODE = 'chartsearchai:streaming-unsupported';
+
+export const RESPONSE_PARSE_ERROR_CODE = 'chartsearchai:response-parse-failed';
+
+export const STREAM_INCOMPLETE_ERROR_CODE = 'chartsearchai:stream-incomplete';
+
+export const UNEXPECTED_RESPONSE_ERROR_CODE = 'chartsearchai:unexpected-response';
+
+export const UNKNOWN_ERROR_CODE = 'chartsearchai:unknown-error';
+
 export interface AiReference {
   index: number;
   resourceType: string;
@@ -18,7 +39,13 @@ export interface AiReference {
    * Used to locate and highlight the record's row after navigating to its chart page.
    */
   resourceUuid: string;
-  date: string;
+  /**
+   * The record's clinical date, or `null` when it has none to show. The backend nulls the date for
+   * types whose only timestamp is administrative rather than clinical (`allergy` and the
+   * demographics record), and injected reference entries never carry one — so callers must handle
+   * null rather than interpolating it into a label.
+   */
+  date: string | null;
   /**
    * Citation grounding verdict from the backend: true = the cited record
    * supports the claim, false = it does not, null/absent = unverified
@@ -26,6 +53,20 @@ export interface AiReference {
    * never as "verified".
    */
   grounded?: boolean | null;
+  /**
+   * What kind of source this citation is, as classified by the backend:
+   * `chart` = a record retrieved from THIS patient's chart, `reference` =
+   * module-supplied reference prose (a drug knowledge-base entry), which is not a
+   * record about the patient and must not be presented as one.
+   *
+   * Prefer this over testing `resourceType` yourself — the backend owns the
+   * classification, so a second kind of injected record is handled without a change
+   * here. It is OPTIONAL on purpose: an older backend omits the field entirely, so
+   * callers must keep a `resourceType` fallback rather than treating absence as `chart`.
+   *
+   * The backend also orders the array so the groups are contiguous with `chart` first.
+   */
+  group?: 'chart' | 'reference';
 }
 
 /**
@@ -44,7 +85,13 @@ export interface AiSafetyWarning {
 
 export interface AiSearchResponse {
   answer: string;
-  references: AiReference[];
+  /**
+   * Optional because the payload is cast, not validated: `searchPatientChart` asserts only that
+   * `answer` is present, so nothing guarantees this key arrives. Consumers must normalise it —
+   * the panel calls `.length` and `.map` during render, so an absent value would throw inside the
+   * message list and take the whole chat workspace down.
+   */
+  references?: AiReference[];
   /** Empty/absent unless the optional drug-reference feature is enabled on the server. */
   safetyWarnings?: AiSafetyWarning[];
   questionId?: string;
@@ -110,7 +157,7 @@ export async function searchPatientChart(
     signal: abortController?.signal,
   });
   if (!response.data?.answer) {
-    throw new Error('Unexpected response from server');
+    throw new Error(UNEXPECTED_RESPONSE_ERROR_CODE);
   }
   return response.data as AiSearchResponse;
 }
@@ -218,7 +265,7 @@ export function searchPatientChartStream(
       const reader = response.body;
 
       if (!reader || typeof reader.getReader !== 'function') {
-        callbacks.onError('Streaming not supported by this browser.');
+        callbacks.onError(STREAMING_UNSUPPORTED_ERROR_CODE);
         return;
       }
 
@@ -265,7 +312,7 @@ export function searchPatientChartStream(
             const parsed: AiSearchResponse = JSON.parse(data);
             callbacks.onDone(parsed);
           } catch {
-            callbacks.onError('Failed to parse final response');
+            callbacks.onError(RESPONSE_PARSE_ERROR_CODE);
           }
         } else if (eventType === 'error') {
           streamFinalized = true;
@@ -314,12 +361,12 @@ export function searchPatientChartStream(
       dispatchEvent();
 
       if (!streamFinalized) {
-        callbacks.onError('Stream ended unexpectedly without a response');
+        callbacks.onError(STREAM_INCOMPLETE_ERROR_CODE);
       }
     })
     .catch((err) => {
       if (err.name !== 'AbortError') {
-        callbacks.onError(err?.message ?? 'An unknown error occurred');
+        callbacks.onError(err?.message ?? UNKNOWN_ERROR_CODE);
       }
     });
 }

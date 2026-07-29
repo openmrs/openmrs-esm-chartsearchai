@@ -190,6 +190,27 @@ describe('useChartSearchAi', () => {
     expect(result.current.messages[0].isLoading).toBe(false);
   });
 
+  // The panel calls references.length and references.map during render, so an absent key would
+  // throw inside the message list and take the whole chat workspace down — losing an answer that
+  // had already streamed. The two SSE callbacks guard this; the done and blocking paths must too.
+  it('normalises a missing references key to an empty array rather than passing it through', () => {
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Any allergies?');
+    });
+
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+    act(() => {
+      // No `references` key at all, as an older or erroring backend could send.
+      callbacks.onDone({ answer: 'No allergies are recorded.', questionId: 'q-1' });
+    });
+
+    expect(result.current.messages[0].references).toEqual([]);
+    expect(result.current.messages[0].isLoading).toBe(false);
+  });
+
   it('accumulates live reasoning on the in-flight message and clears it on done', () => {
     mockUseConfig.mockReturnValue({ useStreaming: true });
     const { result } = renderHook(() => useChartSearchAi('patient-uuid'));

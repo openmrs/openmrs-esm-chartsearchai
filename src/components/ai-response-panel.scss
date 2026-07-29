@@ -181,3 +181,40 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+/* Text present in the accessibility tree but not painted. Needed because the citation states —
+   chart record vs reference data, supported vs unsupported — were otherwise conveyed only by hue,
+   and Carbon's blue-60 and purple-60 are luminance-matched (1.00:1 with each other), so they are
+   indistinguishable in greyscale and for common colour-vision deficiencies. Standard clip-rect
+   pattern rather than display:none, which would remove it from the tree as well. */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Keyboard focus. Only :hover was styled, so a keyboard user relying on focus had nothing but the
+   user-agent ring — and inside prose, against coloured bold text, that is easy to lose. Uses
+   :focus-visible so a mouse click does not leave a ring behind. blue-60 is the same hue the
+   citation already uses, so the ring reads as belonging to it. */
+.inlineCitation:focus-visible,
+.referenceTag:focus-visible {
+  outline: 2px solid colors.$blue-60;
+  outline-offset: 2px;
+  text-decoration: underline;
+}
+
+/* The references and safety-check rows are real lists now, so strip the default list affordances
+   the layout never wanted. The semantics are for assistive tech; the visual row is unchanged. */
+.referencesList,
+.safetyWarningsList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}

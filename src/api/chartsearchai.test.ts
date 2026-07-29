@@ -6,6 +6,9 @@ import {
   searchPatientChartStream,
   SESSION_EXPIRED_ERROR_CODE,
   type AiSearchResponse,
+  RESPONSE_PARSE_ERROR_CODE,
+  STREAM_INCOMPLETE_ERROR_CODE,
+  STREAMING_UNSUPPORTED_ERROR_CODE,
 } from './chartsearchai';
 
 // Polyfill for jsdom
@@ -125,9 +128,9 @@ describe('searchPatientChartStream', () => {
       .spyOn(window, 'fetch')
       .mockResolvedValueOnce(
         mockStreamResponse([
-          'event:references\ndata: {"references":[{"index":2,"resourceType":"condition","resourceUuid":"uuid-7","date":"2022-11-13"}]}\n\n',
+          'event:references\ndata: {"references":[{"index":2,"resourceType":"condition","resourceUuid":"uuid-7","date":"2022-11-13","group":"chart"}]}\n\n',
           'event:token\ndata: Has it [2]\n\n',
-          'event:done\ndata: {"answer":"Has it [2]","references":[{"index":2,"resourceType":"condition","resourceUuid":"uuid-7","date":"2022-11-13","grounded":true}]}\n\n',
+          'event:done\ndata: {"answer":"Has it [2]","references":[{"index":2,"resourceType":"condition","resourceUuid":"uuid-7","date":"2022-11-13","grounded":true,"group":"chart"}]}\n\n',
         ]),
       );
 
@@ -136,7 +139,7 @@ describe('searchPatientChartStream', () => {
 
     // Early (pre-grounding) citations arrive without a grounding verdict.
     expect(cb.onReferences).toHaveBeenCalledWith([
-      { index: 2, resourceType: 'condition', resourceUuid: 'uuid-7', date: '2022-11-13' },
+      { index: 2, resourceType: 'condition', resourceUuid: 'uuid-7', date: '2022-11-13', group: 'chart' },
     ]);
     expect(cb.onDone).toHaveBeenCalled();
     expect(cb.onError).not.toHaveBeenCalled();
@@ -238,8 +241,8 @@ describe('searchPatientChartStream', () => {
       .mockResolvedValueOnce(
         mockStreamResponse([
           'event:token\ndata: Has it [2]\n\n',
-          'event:done\ndata: {"answer":"Has it [2]","references":[{"index":2,"resourceType":"condition","resourceUuid":"uuid-7","date":"2022-11-13"}],"questionId":"q-9"}\n\n',
-          'event:grounded\ndata: {"references":[{"index":2,"resourceType":"condition","resourceUuid":"uuid-7","date":"2022-11-13","grounded":true}],"questionId":"q-9"}\n\n',
+          'event:done\ndata: {"answer":"Has it [2]","references":[{"index":2,"resourceType":"condition","resourceUuid":"uuid-7","date":"2022-11-13","group":"chart"}],"questionId":"q-9"}\n\n',
+          'event:grounded\ndata: {"references":[{"index":2,"resourceType":"condition","resourceUuid":"uuid-7","date":"2022-11-13","grounded":true,"group":"chart"}],"questionId":"q-9"}\n\n',
         ]),
       );
 
@@ -248,7 +251,14 @@ describe('searchPatientChartStream', () => {
 
     expect(cb.onDone).toHaveBeenCalled();
     expect(cb.onGrounded).toHaveBeenCalledWith([
-      { index: 2, resourceType: 'condition', resourceUuid: 'uuid-7', date: '2022-11-13', grounded: true },
+      {
+        index: 2,
+        resourceType: 'condition',
+        resourceUuid: 'uuid-7',
+        date: '2022-11-13',
+        grounded: true,
+        group: 'chart',
+      },
     ]);
     // done must have been delivered before the verdicts.
     expect(cb.onDone.mock.invocationCallOrder[0]).toBeLessThan(cb.onGrounded.mock.invocationCallOrder[0]);
@@ -389,7 +399,7 @@ describe('searchPatientChartStream', () => {
     await flushPromises();
 
     expect(cb.onToken).toHaveBeenCalledWith('hello');
-    expect(cb.onError).toHaveBeenCalledWith('Stream ended unexpectedly without a response');
+    expect(cb.onError).toHaveBeenCalledWith(STREAM_INCOMPLETE_ERROR_CODE);
   });
 
   it('calls onError when done event contains invalid JSON', async () => {
@@ -401,7 +411,7 @@ describe('searchPatientChartStream', () => {
     callStream(cb);
     await flushPromises();
 
-    expect(cb.onError).toHaveBeenCalledWith('Failed to parse final response');
+    expect(cb.onError).toHaveBeenCalledWith(RESPONSE_PARSE_ERROR_CODE);
   });
 
   it('calls onError on non-OK HTTP status with JSON error body', async () => {
@@ -502,7 +512,7 @@ describe('searchPatientChartStream', () => {
     callStream(cb);
     await flushPromises();
 
-    expect(cb.onError).toHaveBeenCalledWith('Streaming not supported by this browser.');
+    expect(cb.onError).toHaveBeenCalledWith(STREAMING_UNSUPPORTED_ERROR_CODE);
   });
 
   it('calls onError with session expired message on redirect (302 to login)', async () => {

@@ -66,9 +66,10 @@ function highlightElement(element: HTMLElement): void {
  * Strategy 1: Match by resource UUID against Carbon DataTable row IDs.
  * Some widgets use the resource UUID as the DataTable row `id`.
  *
- * Strategy 2: Fall back to searching for a table row containing the date string.
+ * Strategy 2: Fall back to searching for a table row containing the date string. A null date
+ * (an allergy, whose only timestamp is administrative) simply skips that strategy.
  */
-function findElement(resourceUuid: string, date: string): HTMLElement | null {
+function findElement(resourceUuid: string, date: string | null): HTMLElement | null {
   const contentArea = document.querySelector('.omrs-main-content') ?? document;
   const idStr = resourceUuid;
 
@@ -99,7 +100,7 @@ function findElement(resourceUuid: string, date: string): HTMLElement | null {
  * Waits for the SPA navigation to settle before searching, then uses a
  * MutationObserver to handle lazy-loaded content.
  */
-export function highlightReference(resourceUuid: string, date: string): void {
+export function highlightReference(resourceUuid: string, date: string | null): void {
   injectHighlightStyles();
   cleanup();
 

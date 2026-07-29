@@ -2,8 +2,17 @@ import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IconButton, InlineLoading, Tag } from '@carbon/react';
 import { Copy } from '@carbon/react/icons';
-import { navigate } from '@openmrs/esm-framework';
-import { type AiReference, type AiSafetyWarning, SESSION_EXPIRED_ERROR_CODE } from '../api/chartsearchai';
+import { formatDate, navigate, parseDate } from '@openmrs/esm-framework';
+import {
+  type AiReference,
+  type AiSafetyWarning,
+  RESPONSE_PARSE_ERROR_CODE,
+  SESSION_EXPIRED_ERROR_CODE,
+  STREAM_INCOMPLETE_ERROR_CODE,
+  STREAMING_UNSUPPORTED_ERROR_CODE,
+  UNEXPECTED_RESPONSE_ERROR_CODE,
+  UNKNOWN_ERROR_CODE,
+} from '../api/chartsearchai';
 import { highlightReference } from '../utils/highlight-reference';
 import AiFeedback from './ai-feedback.component';
 import styles from './ai-response-panel.scss';
@@ -22,24 +31,70 @@ interface AiResponsePanelProps {
 /** Reference data, not patient data — cited like a record but it has no chart tab to navigate to. */
 const RESOURCE_TYPE_DRUG_REFERENCE = 'drug_reference';
 
+/**
+ * Backend `resourceType` → O3 chart dashboard path.
+ *
+ * <p>Values must be paths actually registered by `openmrs-esm-patient-chart`; `chart-review`
+ * resolves an unregistered path by redirecting to the default dashboard, so a wrong value here
+ * silently lands the clinician on Patient Summary and then `highlightReference` scans that page
+ * for a row it cannot contain until it times out. Registered paths at time of writing: Patient
+ * Summary, Visits, Encounters, Allergies, Conditions, Programs, Medications, Test Results,
+ * Vitals &amp; Biometrics, Immunizations, Attachments, Appointments.
+ *
+ * <p>Keys are drawn from the types querystore serializes, but the map is deliberately NOT
+ * exhaustive over them — it lists only those with a dashboard worth opening. Note the order
+ * sub-types are distinct (`drug_order`, `test_order`, `referral_order`); a bare `order` is never
+ * sent, so it is absent rather than mapped to a guess, and there is no `Orders` dashboard to map it
+ * to in any case.
+ *
+ * <p>Unlisted types fall back to Patient Summary. That is the right answer, not a gap, for the two
+ * that reach it in practice: `patient` (demographics live there) and `referral_order` (O3 registers
+ * no referrals dashboard). Adding a key that names a non-existent dashboard would be strictly
+ * worse — chart-review would redirect to Patient Summary anyway, but `highlightReference` would
+ * then hunt for the row on the wrong page until it times out.
+ */
 const RESOURCE_TYPE_TO_CHART_PAGE: Record<string, string> = {
-  obs: 'Results',
-  order: 'Orders',
+  obs: 'Test Results',
+  drug_order: 'Medications',
+  test_order: 'Test Results',
   allergy: 'Allergies',
   condition: 'Conditions',
   diagnosis: 'Visits',
+  visit: 'Visits',
+  encounter: 'Encounters',
   program: 'Programs',
   medication_dispense: 'Medications',
 };
 
+/**
+ * Whether a citation is module-supplied reference material rather than evidence from this
+ * patient's chart. Prefers the backend's `group` discriminator, which owns the classification and
+ * so covers any future kind of injected record; the `resourceType` check remains as a fallback for
+ * an older backend that does not send `group` at all.
+ *
+ * Deliberately treats EITHER signal as sufficient. Getting this wrong in the reference→chart
+ * direction is the harmful one: `buildReferenceUrl` would hand back a real chart URL and
+ * `highlightReference` would be called with a knowledge-base id, so knowledge-base prose would be
+ * presented to a clinician as a navigable record of their patient's. Erring the other way only
+ * costs a citation its navigation.
+ */
+function isReferenceMaterial(ref: AiReference): boolean {
+  return ref.group === 'reference' || isDrugReference(ref);
+}
+
+/**
+ * Narrower than {@link isReferenceMaterial}: specifically a drug knowledge-base entry, which is
+ * the only reference kind we have wording for. Used to decide the chip's label, never to decide
+ * whether a citation navigates — that must stay keyed off the broader predicate.
+ */
 function isDrugReference(ref: AiReference): boolean {
   return ref.resourceType.toLowerCase() === RESOURCE_TYPE_DRUG_REFERENCE;
 }
 
 function buildReferenceUrl(ref: AiReference, patientUuid: string): string | null {
-  if (!patientUuid || isDrugReference(ref)) {
-    // Drug-reference citations are reference data with no patient chart tab —
-    // they do not navigate (a detail side panel is a follow-up).
+  if (!patientUuid || isReferenceMaterial(ref)) {
+    // Reference material is not a record about this patient and has no chart tab to open —
+    // it does not navigate (a detail side panel is a follow-up).
     return null;
   }
   const chartPage = RESOURCE_TYPE_TO_CHART_PAGE[ref.resourceType.toLowerCase()];
@@ -123,6 +178,92 @@ function safetyWarningTag(type: string, t: Translate): { tagType: 'red' | 'magen
   }
 }
 
+/**
+ * Human wording for a backend `resourceType`. The wire values are lower_snake tokens
+ * (`medication_dispense`, `drug_order`) and were previously rendered verbatim, so clinicians read
+ * the transport format in every locale. Keys are string literals because the i18next parser only
+ * extracts static keys — a lookup table of `t(variable)` would silently drop them from en.json.
+ *
+ * An unrecognised type falls back to the raw token: wrong-looking is recoverable, whereas inventing
+ * a friendly name for a type we do not know the semantics of is not.
+ */
+function resourceTypeLabel(resourceType: string, t: Translate): string {
+  switch (resourceType.toLowerCase()) {
+    case 'obs':
+      return t('resourceTypeObs', 'Observation');
+    case 'condition':
+      return t('resourceTypeCondition', 'Condition');
+    case 'diagnosis':
+      return t('resourceTypeDiagnosis', 'Diagnosis');
+    case 'allergy':
+      return t('resourceTypeAllergy', 'Allergy');
+    case 'drug_order':
+      return t('resourceTypeDrugOrder', 'Medication');
+    case 'test_order':
+      return t('resourceTypeTestOrder', 'Test order');
+    case 'referral_order':
+      return t('resourceTypeReferralOrder', 'Referral');
+    case 'program':
+      return t('resourceTypeProgram', 'Program enrolment');
+    case 'medication_dispense':
+      return t('resourceTypeMedicationDispense', 'Medication dispensed');
+    case 'visit':
+      return t('resourceTypeVisit', 'Visit');
+    case 'encounter':
+      return t('resourceTypeEncounter', 'Encounter');
+    case 'patient':
+      return t('resourceTypePatient', 'Patient details');
+    default:
+      return resourceType;
+  }
+}
+
+/**
+ * The citation date in the user's locale and calendar, via the framework helpers rather than the
+ * raw ISO string the backend sends. Returns null when there is no date to show, or when the value
+ * will not parse — a citation is still useful without its date, so a bad value degrades to the
+ * no-date label instead of throwing out of render.
+ *
+ * `noToday` because a provenance list wants a stable, explicit date: "Today" is ambiguous the next
+ * morning and useless when copied into a note. Default `mode` renders `15-Jan-2025`, which also
+ * avoids colliding with the em dash separating the label's own parts.
+ */
+function formattedCitationDate(date: string | null): string | null {
+  if (!date) {
+    return null;
+  }
+  try {
+    const parsed = parseDate(date);
+    return Number.isNaN(parsed.getTime()) ? null : formatDate(parsed, { time: false, noToday: true });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Translated wording for an error code the API layer raised, or null when the string is not one of
+ * our codes (a server or browser message, which the caller should show as-is). String-literal keys
+ * so the extractor can find them.
+ */
+function localizedError(error: string, t: Translate): string | null {
+  switch (error) {
+    case SESSION_EXPIRED_ERROR_CODE:
+      return t('sessionExpired', 'Your session has expired. Please log in again.');
+    case STREAMING_UNSUPPORTED_ERROR_CODE:
+      return t('streamingUnsupported', 'This browser cannot stream responses. Try a different browser.');
+    case RESPONSE_PARSE_ERROR_CODE:
+      return t('responseParseFailed', 'The response could not be read. Please try again.');
+    case STREAM_INCOMPLETE_ERROR_CODE:
+      return t('streamIncomplete', 'The response ended before it was complete. Please try again.');
+    case UNEXPECTED_RESPONSE_ERROR_CODE:
+      return t('unexpectedResponse', 'The server returned an unexpected response. Please try again.');
+    case UNKNOWN_ERROR_CODE:
+      return t('unknownError', 'Something went wrong. Please try again.');
+    default:
+      return null;
+  }
+}
+
 function stripCitations(answer: string): string {
   return answer.replace(/\s?\[\d+(?:\s*,\s*\d+)*\]/g, '').trim();
 }
@@ -150,7 +291,7 @@ function renderAnswerWithCitations(
       const ref = refByIndex.get(citIndex);
       const url = ref ? buildReferenceUrl(ref, patientUuid) : null;
       const ungrounded = ref?.grounded === false;
-      const drugReference = ref ? isDrugReference(ref) : false;
+      const referenceMaterial = ref ? isReferenceMaterial(ref) : false;
       const citKey = `cit-${matchIndex}-${i}-${citIndex}`;
       parts.push(
         url && ref ? (
@@ -167,15 +308,53 @@ function renderAnswerWithCitations(
             }
             onClick={(e) => handleReferenceNavigate(e, url, ref)}
           >
-            {ungrounded ? `${citIndex} ⚠` : citIndex}
+            {citIndex}
+            {ungrounded && (
+              <>
+                {/* aria-hidden: the glyph is decoration once the text below carries the meaning.
+                    U+26A0 is commonly silent at default screen-reader verbosity, so on its own an
+                    unsupported citation announced identically to a verified one. */}
+                <span aria-hidden="true"> ⚠</span>
+                <span className={styles.visuallyHidden}> {t('unsupportedCitationA11y', 'unsupported')}</span>
+              </>
+            )}
           </a>
-        ) : drugReference ? (
+        ) : referenceMaterial ? (
+          // A reference citation can still carry a FALSE verdict (demote-only suppresses only TRUE),
+          // and when it does the inline marker must say so — the chip list already does, and the
+          // inline marker is the one embedded in the prose a clinician reads and copies.
           <span
             key={citKey}
-            className={`${styles.inlineCitation} ${styles.inlineCitationReference}`}
-            title={drugReferenceTitle(t)}
+            // Both classes when both are true: an unsupported verdict ADDS to the reference
+            // treatment, it does not replace it. `.inlineCitationReference` carries `cursor: help`,
+            // which is the only thing overriding `.inlineCitation`'s `cursor: pointer` — dropping
+            // it makes a non-clickable span look navigable, the very confusion this branch exists
+            // to avoid. `.inlineCitationUngrounded` only recolours, so the two compose.
+            className={`${styles.inlineCitation} ${styles.inlineCitationReference}${
+              ungrounded ? ` ${styles.inlineCitationUngrounded}` : ''
+            }`}
+            // And the wording keeps the provenance. The chart-record phrasing ("verify against the
+            // chart") is unfollowable here: reference prose is by construction not in the chart.
+            title={
+              ungrounded
+                ? t(
+                    'referenceNotSupportedTitle',
+                    'Clinical reference data — not this patient’s record, and it may not support this statement.',
+                  )
+                : drugReferenceTitle(t)
+            }
           >
             {citIndex}
+            {ungrounded && <span aria-hidden="true"> ⚠</span>}
+            {/* Without this the marker is a bare number in the accessibility tree — identical to a
+                chart-record citation and to an unresolvable one. The purple hue is the only other
+                signal, and it is luminance-matched to the chart-record blue. */}
+            <span className={styles.visuallyHidden}>
+              {' '}
+              {ungrounded
+                ? t('referenceNotSupportedA11y', 'reference data, unsupported')
+                : t('referenceDataA11y', 'reference data, not this patient’s record')}
+            </span>
           </span>
         ) : (
           `${citIndex}`
@@ -215,12 +394,11 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     navigator.clipboard?.writeText(stripCitations(answer));
   }, [answer]);
 
-  // The API layer emits a code (not display text) for session expiry so the wording can be localized
-  // here; every other error is already a human-readable string from the server or browser.
-  const displayError =
-    error === SESSION_EXPIRED_ERROR_CODE
-      ? t('sessionExpired', 'Your session has expired. Please log in again.')
-      : error;
+  // The API layer emits stable CODES for every error it authors itself, so the wording lives here
+  // where the i18next parser can see it. Anything that is not one of those codes is a message from
+  // the server or the browser — passed through untouched, because it is not ours to translate and
+  // its detail is what makes it useful.
+  const displayError = error ? (localizedError(error, t) ?? error) : error;
 
   if (error && !answer) {
     return (
@@ -249,15 +427,39 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
 
       {references.length > 0 && (
         <div className={styles.referencesSection}>
-          <span className={styles.referencesLabel}>{t('references', 'References')}:</span>
-          <div className={styles.referencesList}>
+          {/* A real labelled list: a screen reader announces "References, list, 3 items" and can
+              jump between them. Previously this was a div of spans, so the citations arrived as an
+              unannounced run of links with no count and no indication of what they belonged to. */}
+          <span className={styles.referencesLabel} id="chartsearchai-references-label">
+            {t('references', 'References')}:
+          </span>
+          <ul className={styles.referencesList} aria-labelledby="chartsearchai-references-label">
             {references.map((ref) => {
               const url = buildReferenceUrl(ref, patientUuid);
-              const drugReference = isDrugReference(ref);
-              const label = drugReference
-                ? `[${ref.index}] ${t('drugReferenceLabel', 'Drug reference')}`
-                : `[${ref.index}] ${ref.resourceType} — ${ref.date}`;
-              const g = drugReference ? referenceTag(t) : groundedTag(ref.grounded, t);
+              const referenceMaterial = isReferenceMaterial(ref);
+              // "Drug reference" only when it really is one. `group: 'reference'` is broader than
+              // drug references, so any other injected kind gets the generic label rather than a
+              // provenance claim that is simply untrue.
+              // The date is omitted when absent rather than interpolated: the backend sends
+              // `date: null` for records whose only timestamp is administrative and deliberately
+              // unrendered (an allergy — exactly what a drug-safety answer cites), and template
+              // interpolation would put the literal text "null" in front of a clinician.
+              // Composed rather than built from one interpolated key. Interpolation would let a
+              // translator control the separator and word order (the `[N] type — date` run resolves
+              // badly in RTL), but `t(key, fallback, values)` does NOT interpolate in this app's
+              // i18n setup — it renders the fallback verbatim, i.e. a literal "{{index}}" on screen.
+              // Shipping that would be far worse than the bidi ordering it fixes. Revisit once
+              // interpolation is confirmed working at runtime, not just assumed.
+              const citationDate = formattedCitationDate(ref.date);
+              const label = referenceMaterial
+                ? `[${ref.index}] ${isDrugReference(ref) ? t('drugReferenceLabel', 'Drug reference') : t('reference', 'Reference')}`
+                : `[${ref.index}] ${resourceTypeLabel(ref.resourceType, t)}${citationDate ? ` — ${citationDate}` : ''}`;
+              // Reference material normally shows a neutral "Reference" tag instead of a grounding
+              // verdict — but a `false` verdict is not suppressed. Drug-reference citations are
+              // demote-only, not exempt: grounding nulls a TRUE verdict for them and lets a FALSE
+              // through precisely to flag an off-topic citation, so showing "Reference" over it
+              // would hide the one verdict the backend went to the trouble of computing.
+              const g = referenceMaterial && ref.grounded !== false ? referenceTag(t) : groundedTag(ref.grounded, t);
               // Tooltip via a native-title wrapper rather than Tag's deprecated `title` prop.
               // Rendered as a sibling of the link (Carbon Tag is a <div>) so the metadata
               // badge is not nested in, or part of, the navigation click target.
@@ -276,13 +478,13 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                 <span className={styles.referenceTagInert}>{label}</span>
               );
               return (
-                <span key={ref.index} className={styles.referenceItem}>
+                <li key={ref.index} className={styles.referenceItem}>
                   {link}
                   {badge}
-                </span>
+                </li>
               );
             })}
-          </div>
+          </ul>
         </div>
       )}
 
@@ -291,22 +493,27 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
         // role="log" aria-live="polite", which announces this content in order. An
         // assertive role="alert" here would preempt the answer it annotates.
         <div className={styles.safetyWarningsSection}>
-          <span className={styles.safetyWarningsLabel}>{t('safetyChecks', 'Safety checks')}:</span>
-          <div className={styles.safetyWarningsList}>
+          {/* Labelled list for the same reason as the references above: these are the clinically
+              consequential rows, so a screen-reader user needs to know how many there are and that
+              they are safety checks rather than more of the answer. */}
+          <span className={styles.safetyWarningsLabel} id="chartsearchai-safety-label">
+            {t('safetyChecks', 'Safety checks')}:
+          </span>
+          <ul className={styles.safetyWarningsList} aria-labelledby="chartsearchai-safety-label">
             {safetyWarnings.map((warning, i) => {
               const { tagType, label } = safetyWarningTag(warning.type, t);
               return (
-                <span key={`${warning.type}-${warning.drug}-${i}`} className={styles.safetyWarningItem}>
+                <li key={`${warning.type}-${warning.drug}-${i}`} className={styles.safetyWarningItem}>
                   <Tag type={tagType} size="sm" className={styles.safetyWarningBadge}>
                     {label}
                   </Tag>
                   <span className={styles.safetyWarningText}>
                     {warning.drug}: {warning.detail}
                   </span>
-                </span>
+                </li>
               );
             })}
-          </div>
+          </ul>
         </div>
       )}
 

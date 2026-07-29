@@ -70,14 +70,18 @@ Response:
   "answer": "The patient is currently on metformin [1] and lisinopril [2]...",
   "disclaimer": "AI-generated summary. Verify with the full chart.",
   "references": [
-    { "index": 1, "resourceType": "order", "resourceUuid": "5946f880-b197-400b-9caa-a3c661d71165", "date": "2025-12-01" },
-    { "index": 2, "resourceType": "order", "resourceUuid": "a8f5f167-4ee2-4d2a-94f9-3f3f86d2e9b6", "date": "2025-11-15" }
+    { "index": 1, "resourceType": "order", "resourceUuid": "5946f880-b197-400b-9caa-a3c661d71165", "date": "2025-12-01", "grounded": null, "group": "chart" },
+    { "index": 2, "resourceType": "order", "resourceUuid": "a8f5f167-4ee2-4d2a-94f9-3f3f86d2e9b6", "date": "2025-11-15", "grounded": null, "group": "chart" }
   ],
   "safetyWarnings": []
 }
 ```
 
 `references[].resourceUuid` is the cited record's UUID (used to locate and highlight the chart row). `safetyWarnings` (each `{ type, drug, detail }`) is always present and empty unless the backend's optional drug-reference feature is enabled; the panel renders any entries as chips below the answer.
+
+`references[].grounded` is the citation-grounding verdict — `true`/`false` once verified, `null` when grounding is disabled (the backend default) or did not check that citation. The panel renders `null` as unverified, never as verified.
+
+`references[].group` says what kind of source the citation is: `chart` for a record retrieved from this patient's chart, `reference` for module-supplied drug knowledge-base prose that is *not* a record about the patient. The panel uses it to render reference citations as non-navigating "Reference" chips, and the backend orders the array `chart` group first. **It is optional** — an older backend omits it, so `isReferenceMaterial` keeps a `resourceType === 'drug_reference'` fallback; treating an absent `group` as `chart` would make every drug-reference citation navigate to a chart page on those versions.
 
 The required privilege is **AI Query Patient Data**.
 
