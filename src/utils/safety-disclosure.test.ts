@@ -343,6 +343,148 @@ describe('resolveFindingSeverities', () => {
     expect(resolved.size).toBe(0);
   });
 
+  it('withdraws only the candidate set it could not fully resolve', () => {
+    // Per-SET isolation, not per-answer: mutating the sweep to clear everything left the whole
+    // suite green, because no fixture had ever put two candidate sets in one response.
+    const refs: AiReference[] = [
+      ...[350, 352].map((index) => ({
+        index,
+        resourceType: 'safety_finding',
+        resourceUuid: 'interaction:Clarithromycin',
+        date: '' as unknown as string,
+        group: 'reference',
+      })),
+      ...[360, 361].map((index) => ({
+        index,
+        resourceType: 'safety_finding',
+        resourceUuid: 'interaction:Ibuprofen',
+        date: '' as unknown as string,
+        group: 'reference',
+      })),
+    ];
+    const warnings: AiSafetyWarning[] = [
+      interaction('Methylprednisolone', 'Major'),
+      interaction('Prednisone', 'Moderate'),
+      {
+        type: 'interaction',
+        drug: 'Ibuprofen',
+        detail: 'Ibuprofen interacts with active order Warfarin — Major. …',
+        severity: 'Major',
+        chartOrderBridges: [],
+      },
+      {
+        type: 'interaction',
+        drug: 'Ibuprofen',
+        detail: 'Ibuprofen interacts with active order Aspirin — Minor. …',
+        severity: 'Minor',
+        chartOrderBridges: [],
+      },
+    ];
+    // The Clarithromycin set is fully identified; the Ibuprofen set has one member the answer
+    // does not single out, so that set alone is withdrawn.
+    const answer =
+      'Clarithromycin interacts with active order Methylprednisolone [350], ' +
+      'Clarithromycin interacts with active order Prednisone [352], ' +
+      'Ibuprofen interacts with active order Warfarin [360], and there are others [361].';
+    const resolved = resolveFindingSeverities(answer, refs, warnings, [350, 352, 360, 361]);
+    expect(Object.fromEntries(resolved)).toEqual({ 350: 'Major', 352: 'Moderate' });
+  });
+
+  it('is unaffected by an index the measurement lists twice', () => {
+    // The list is deduped upstream, but the backend's own javadoc calls that "belt and braces
+    // rather than load-bearing" — so this must not depend on it. An earlier sweep counted
+    // occurrences against distinct indices and withdrew the whole set on a repeat.
+    const once = resolveFindingSeverities(ANSWER_BY_SUBSTANCE, REFERENCES, SAFETY_WARNINGS, UNSTATED);
+    const twice = resolveFindingSeverities(ANSWER_BY_SUBSTANCE, REFERENCES, SAFETY_WARNINGS, [...UNSTATED, 350]);
+    expect(Object.fromEntries(twice)).toEqual(Object.fromEntries(once));
+    expect(twice.get(350)).toBe('Major');
+  });
+
+  it('finds a lead that occurs first inside a longer word and again as a whole term', () => {
+    // The whole-term scan must RETRY past a substring hit: replacing it with a single indexOf
+    // plus one boundary check left the suite green. Both Cortisone and Hydrocortisone are live
+    // orders on this chart, so a claim naming both is reachable — and it must refuse, which is
+    // only possible if the second occurrence is found.
+    const warnings: AiSafetyWarning[] = [
+      {
+        ...interaction('Cortisone', 'Minor'),
+        chartOrderBridges: [{ substance: 'Cortisone', orderDisplay: 'Cortone 25mg' }],
+      },
+      interaction('Hydrocortisone', 'Major'),
+    ];
+    const refs: AiReference[] = [
+      {
+        index: 351,
+        resourceType: 'safety_finding',
+        resourceUuid: 'interaction:Clarithromycin',
+        date: '',
+        group: 'reference',
+      },
+    ];
+    const resolved = resolveFindingSeverities(
+      'Clarithromycin interacts with active order Hydrocortisone and with Cortisone [351].',
+      refs,
+      warnings,
+      [351],
+    );
+    expect(resolved.size).toBe(0);
+  });
+
+  it('survives a malformed warning rather than taking the panel down', () => {
+    // These run inside a render memo with no error boundary above them, so a throw here costs
+    // the answer, its citations and its safety chips. `severity` was guarded and its siblings
+    // were not — one guarded member of a family is not a guarded family.
+    const refs: AiReference[] = [
+      {
+        index: 351,
+        resourceType: 'safety_finding',
+        resourceUuid: 'interaction:Clarithromycin',
+        date: '',
+        group: 'reference',
+      },
+    ];
+    const malformed = [
+      { ...interaction('Budesonide', 'Major'), detail: null as unknown as string },
+      { ...interaction('Prednisone', 'Major'), chartOrderBridges: 'nope' as unknown as [] },
+      { ...interaction('Dexamethasone', 'Major'), severity: 7 as unknown as string },
+    ];
+    for (const bad of malformed) {
+      expect(() =>
+        resolveFindingSeverities(
+          'Clarithromycin interacts with active order Hydrocortisone [351].',
+          refs,
+          [bad, interaction('Hydrocortisone', 'Moderate')],
+          [351],
+        ),
+      ).not.toThrow();
+    }
+  });
+
+  it('keeps a set’s ratings when one of its indices is never cited in the prose', () => {
+    // Measured live: the model wrote "[37]" where reference 367 was published. An index whose
+    // marker is absent has no claim to be identified from and renders nothing either way, so
+    // counting it as a failed set member threw away every correct rating beside it.
+    const withUncited = [...UNSTATED, 999];
+    const refs: AiReference[] = [
+      ...REFERENCES,
+      {
+        index: 999,
+        resourceType: 'safety_finding',
+        resourceUuid: 'interaction:Clarithromycin',
+        date: '',
+        group: 'reference',
+      },
+    ];
+    const resolved = resolveFindingSeverities(ANSWER_BY_SUBSTANCE, refs, SAFETY_WARNINGS, withUncited);
+    expect(Object.fromEntries(resolved)).toEqual({
+      350: 'Major',
+      351: 'Major',
+      352: 'Moderate',
+      353: 'Moderate',
+      354: 'Moderate',
+    });
+  });
+
   it('refuses where the badged sentence names two candidates', () => {
     // The one-candidate requirement is what keeps a resolved rating honest: where the sentence
     // the badge will be drawn against reproduces two candidates' own statements, nothing is
@@ -371,9 +513,10 @@ describe('resolveFindingSeverities', () => {
     });
   });
 
-  it('prefers the bridge over the detail lead where they would disagree', () => {
-    // Tier order matters, not just tier presence: the bridged candidate is identified by a
-    // string the backend publishes as a field, and it wins before any prose is parsed.
+  it('resolves from the bridge where the prose names no candidate', () => {
+    // Named for what it actually exercises: here the prose groups match nothing and the bridge
+    // matches one, so the bridge is the only evidence there is. It is NOT a precedence test —
+    // `electCandidate` is order-free, and the disagreement case is covered separately below.
     const warnings: AiSafetyWarning[] = [
       interaction('Methylprednisolone', 'Major', 'Solu-Medrol 125mg/5ml'),
       interaction('Budesonide', 'Minor', 'Pulmicort 90mcg'),

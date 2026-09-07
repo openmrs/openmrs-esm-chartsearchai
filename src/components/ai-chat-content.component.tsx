@@ -4,6 +4,7 @@ import { useConfig, usePatient } from '@openmrs/esm-framework';
 import { Close, Microphone, MicrophoneFilled, Send, StopFilled } from '@carbon/react/icons';
 import { InlineLoading } from '@carbon/react';
 import { useChartSearchAi } from '../hooks/useChartSearchAi';
+import { answerLimitsOf } from '../utils/answer-limits';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { type ChartSearchAiConfig } from '../config-schema';
 import AiResponsePanel from './ai-response-panel.component';
@@ -188,10 +189,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
                 answer={msg.answer}
                 references={msg.references}
                 safetyWarnings={msg.safetyWarnings}
-                misattributedOrderCitations={msg.misattributedOrderCitations}
-                unstatedFindingSeverities={msg.unstatedFindingSeverities}
-                conditionRuleCoverage={msg.conditionRuleCoverage}
-                interactionPairs={msg.interactionPairs}
+                {...answerLimitsOf(msg)}
                 questionId={msg.questionId}
                 error={msg.error}
                 isLoading={msg.isLoading}

@@ -116,10 +116,19 @@ function groundedTag(grounded: boolean | null | undefined, t: Translate): Ground
     return {
       type: 'red',
       text: t('notGrounded', 'Unsupported'),
-      title: t('notGroundedTitle', 'The cited record may not support this statement — verify against the chart.'),
+      title: notGroundedTitle(t),
     };
   }
   return null;
+}
+
+/**
+ * The wording for a citation whose cited record does not support the claim. One home, because
+ * it is shown on two surfaces — the chip's badge and the inline marker's tooltip — and a
+ * clinician hovering the same citation in both places must not be told two different things.
+ */
+function notGroundedTitle(t: Translate): string {
+  return t('notGroundedTitle', 'The cited record may not support this statement — verify against the chart.');
 }
 
 /** The tooltip shared by the reference-data chip and its inline citation: one wording, one i18n key. */
@@ -261,11 +270,7 @@ function renderAnswerWithCitations(answer: string, ctx: CitationContext): React.
                 ? `${styles.inlineCitation} ${styles.inlineCitationMisattributed} ${styles.inlineCitationUngrounded}`
                 : `${styles.inlineCitation} ${styles.inlineCitationMisattributed}`
             }
-            title={
-              ungrounded
-                ? `${misattributedTitle(t)} ${t('notGroundedTitle', 'The cited record may not support this statement — verify against the chart.')}`
-                : misattributedTitle(t)
-            }
+            title={ungrounded ? `${misattributedTitle(t)} ${notGroundedTitle(t)}` : misattributedTitle(t)}
           >
             {ungrounded ? `${citIndex} ⚠` : citIndex}
           </span>
@@ -276,11 +281,7 @@ function renderAnswerWithCitations(answer: string, ctx: CitationContext): React.
               ungrounded ? `${styles.inlineCitation} ${styles.inlineCitationUngrounded}` : styles.inlineCitation
             }
             href={url}
-            title={
-              ungrounded
-                ? t('notGroundedTitle', 'The cited record may not support this statement — verify against the chart.')
-                : undefined
-            }
+            title={ungrounded ? notGroundedTitle(t) : undefined}
             onClick={(e) => handleReferenceNavigate(e, url, ref)}
           >
             {ungrounded ? `${citIndex} ⚠` : citIndex}
@@ -359,7 +360,12 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
 }) => {
   const { t } = useTranslation();
 
-  const misattributed = useMemo(() => new Set(misattributedOrderCitations ?? []), [misattributedOrderCitations]);
+  // Array.isArray, not `?? []`: a non-iterable value here would throw inside this memo, and a
+  // string would iterate its characters and silently match nothing.
+  const misattributed = useMemo(
+    () => new Set(Array.isArray(misattributedOrderCitations) ? misattributedOrderCitations : []),
+    [misattributedOrderCitations],
+  );
 
   const severities = useMemo(
     () => resolveFindingSeverities(answer, references, safetyWarnings ?? [], unstatedFindingSeverities),

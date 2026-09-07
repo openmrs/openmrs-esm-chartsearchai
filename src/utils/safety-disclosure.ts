@@ -179,6 +179,11 @@ export function claimTextByCitation(answer: string): Map<number, string> {
  * this candidate from its siblings.
  */
 function leadClause(detail: string): string {
+  // Guarded like `severity` beside it, and for the same reason: this runs inside a render memo
+  // with no error boundary above it, so a non-string here would take the answer, its citations
+  // and its safety chips off the screen. Guarding one member of the family and not the others
+  // is how the panel stayed one malformed field away from blanking.
+  if (typeof detail !== 'string') return '';
   const dash = detail.indexOf(' — ');
   const stop = detail.indexOf('. ');
   const cut = [dash, stop].filter((i) => i >= 0).sort((a, b) => a - b)[0];
@@ -186,20 +191,28 @@ function leadClause(detail: string): string {
 }
 
 /**
- * The strings that can identify a warning in the answer's own words, strongest tier first.
+ * The groups of strings that can identify a warning in the answer's own words.
  *
- * Tier 0 is `chartOrderBridges`: typed fields, published so a client is handed two strings
- * rather than a sentence to parse, and carrying both vocabularies — a chip names its substances
- * as the knowledge base does (`Methylprednisolone`) while the answer names the same
- * prescription as the chart does (`Solu-Medrol 125mg/5ml`), and both spellings are observed live
- * in the same position. Tier 1 is the `detail` lead clause, which is longer and therefore
- * harder to collide with, but rests on a delimiter the backend does not promise.
+ * Three groups, and their ORDER carries no precedence — {@link electCandidate} is deliberately
+ * order-free, so a group can only ever corroborate or contradict, never outrank. Reversing this
+ * array changes no behaviour, and nothing here should be read as a ladder:
  *
- * Every lead is passed through {@link discriminatingLeads} before it is matched, because a bare
- * name is far easier to confuse than tier 1's anchored phrase.
+ * - `bridges` — `chartOrderBridges`, typed fields published so a client is handed two strings
+ *   rather than a sentence to parse, and carrying both vocabularies: a chip names its substances
+ *   as the knowledge base does (`Methylprednisolone`) while the answer names the same
+ *   prescription as the chart does (`Solu-Medrol 125mg/5ml`), both observed live in the same
+ *   position.
+ * - `partner` — the partner substance alone (see {@link partnerFromLead}), for an answer that
+ *   names the finding more briefly than the module does.
+ * - `leadClause` — the module's whole *"X interacts with active order Y"* sentence, which is the
+ *   longest and hardest to collide with, but rests on a delimiter the backend does not promise.
+ *
+ * Every lead is passed through {@link discriminatingLeads} first, because a bare name is far
+ * easier to confuse than the anchored sentence.
  */
 function candidateLeadTiers(warning: AiSafetyWarning): string[][] {
-  const bridges = warning.chartOrderBridges ?? [];
+  // Array.isArray, not `?? []`: a non-array here would reach `flatMap` and throw.
+  const bridges = Array.isArray(warning.chartOrderBridges) ? warning.chartOrderBridges : [];
   const lead = leadClause(warning.detail);
   return [bridges.flatMap((bridge) => [bridge.orderDisplay, bridge.substance]), [partnerFromLead(lead)], [lead]];
 }
@@ -250,10 +263,10 @@ function isWordish(character: string): boolean {
 /**
  * Whether the claim names the lead as a whole term rather than inside a longer one.
  *
- * A bare substring test is what made tier 0 weaker than the tier it preempts: `Cortisone`
- * occurs inside `Hydrocortisone`, so a chip bridged to the first was resolved for a sentence
- * about the second — while tier 1, whose lead is the anchored *"interacts with active order …"*
- * phrase, got the same case right.
+ * A bare substring test is what made the bridge group unsafe: `Cortisone` occurs inside
+ * `Hydrocortisone`, so a chip bridged to the first was resolved for a sentence about the second
+ * — while the `leadClause` group, anchored by the *"interacts with active order …"* phrase, got
+ * the same case right.
  */
 function namesLead(claim: string, lead: string): boolean {
   for (let from = 0; ; from += 1) {
@@ -269,15 +282,17 @@ function namesLead(claim: string, lead: string): boolean {
 /**
  * Reconciles the per-tier match lists into one candidate, or null to refuse.
  *
- * The tiers are ordered strongest first, but tier order is not allowed to decide anything on
- * its own — three ways to refuse, and each was reached by a real or reproduced payload:
+ * ORDER-FREE by construction: both loops below are set predicates, so permuting the groups
+ * cannot change the outcome. That is the safety property — a lead group can corroborate or
+ * contradict, never outrank — and it is why nothing may describe these as a precedence ladder.
+ * Three ways to refuse, each reached by a real or reproduced payload:
  *
  * - no tier names exactly one candidate: nothing was identified;
  * - two tiers name DIFFERENT candidates: the evidence contradicts itself, which is stronger
  *   evidence of ambiguity than either tier is of its own winner;
- * - a tier was ambiguous and its matches do NOT include the winner: that tier positively
- *   rejected the candidate a weaker tier went on to elect, and an ambiguous strong tier must
- *   narrow the field rather than be discarded.
+ * - a group was ambiguous and its matches do NOT include the winner: that group positively
+ *   rejected the candidate another group elected, so an ambiguous group narrows the field rather
+ *   than being discarded.
  */
 function electCandidate(perTierMatches: AiSafetyWarning[][]): AiSafetyWarning | null {
   let winner: AiSafetyWarning | null = null;
@@ -328,10 +343,14 @@ export function resolveFindingSeverities(
 
   const refByIndex = new Map(references.map((ref) => [ref.index, ref]));
   const claims = claimTextByCitation(answer);
-  // Which candidate set each resolved index came from, so an incompletely-resolved set can be
-  // withdrawn whole below.
+  // Which candidate set each index belongs to, so an incompletely-resolved set can be withdrawn
+  // whole below. One map, keyed by index: an earlier version counted set members in a second map
+  // as it looped, which counted OCCURRENCES while this counts distinct indices — so a list that
+  // named one index twice reported a set larger than could ever resolve, and withdrew it. The
+  // backend does not repeat an index today, and its own javadoc calls that dedup "belt and
+  // braces rather than load-bearing", so deriving both numbers from one map is what keeps this
+  // from depending on that.
   const setOfIndex = new Map<number, string>();
-  const setSize = new Map<string, number>();
 
   for (const index of unstatedFindingSeverities) {
     const ref = refByIndex.get(index);
@@ -343,6 +362,11 @@ export function resolveFindingSeverities(
       (warning) =>
         // typeof, not just a truthy check: a non-string rating would throw inside this render
         // memo and take the whole answer panel down with it.
+        //
+        // This filter also DEFINES the candidate set as the rated subset of the chips sharing
+        // this (type, drug) — the backend's set includes unrated ones. That is what makes the
+        // single-candidate shortcut below sound, and it is only correct because the backend
+        // never lists a finding whose record states no rating.
         typeof warning.severity === 'string' &&
         warning.severity.trim() !== '' &&
         warning.type?.toLowerCase() === finding.type.toLowerCase() &&
@@ -352,9 +376,12 @@ export function resolveFindingSeverities(
 
     // Findings sharing one (type, drug) are a candidate SET, and the backend requires a client
     // to "render them together or render none" — so track the set this index belongs to.
+    // An index the prose never carries has no claim to be identified from, and nothing renders
+    // for it either way — so it is not a member the all-or-none sweep can fail on. Measured
+    // live: the model wrote `[37]` where reference `367` was published, and counting the
+    // uncited `367` as a failed member withdrew every correct rating in its set.
     const setKey = `${finding.type.toLowerCase()}:${finding.drug.toLowerCase()}`;
-    setOfIndex.set(index, setKey);
-    setSize.set(setKey, (setSize.get(setKey) ?? 0) + 1);
+    if (claims.has(index)) setOfIndex.set(index, setKey);
 
     if (candidates.length === 1) {
       resolved.set(index, candidates[0].severity!.trim());
@@ -362,9 +389,8 @@ export function resolveFindingSeverities(
     }
 
     // Several findings share this (type, drug), so the answer's own sentence has to single one
-    // out. Each tier is asked of the whole candidate list, and the verdicts are then reconciled
-    // — see `electCandidate`, which refuses on every disagreement rather than letting tier
-    // order pick a winner.
+    // out. Each lead group is asked of the whole candidate list and the verdicts are reconciled
+    // by `electCandidate`, which refuses on every disagreement — group order decides nothing.
     const claim = normalize(claims.get(index) ?? '');
     const tiersPerCandidate = candidates.map(candidateLeadTiers);
     const perTierMatches = tiersPerCandidate[0].map((_, tier) =>
@@ -381,10 +407,13 @@ export function resolveFindingSeverities(
   // three bare items — and a bare item reads as "no rating exists", not "we declined". The
   // backend's instruction is to render the set together or not at all, because a partial
   // rendering is how a reader infers a ranking the module never stated.
-  for (const [setKey, expected] of setSize) {
-    const resolvedInSet = [...setOfIndex].filter(([index, key]) => key === setKey && resolved.has(index));
-    if (resolvedInSet.length !== expected) {
-      for (const [index] of resolvedInSet) resolved.delete(index);
+  const indicesBySet = new Map<string, number[]>();
+  for (const [index, setKey] of setOfIndex) {
+    indicesBySet.set(setKey, [...(indicesBySet.get(setKey) ?? []), index]);
+  }
+  for (const indices of indicesBySet.values()) {
+    if (!indices.every((index) => resolved.has(index))) {
+      for (const index of indices) resolved.delete(index);
     }
   }
 

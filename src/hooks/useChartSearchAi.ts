@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useConfig, useStore } from '@openmrs/esm-framework';
 import {
-  type AiAnswerLimits,
   type AiReference,
   type AiSafetyWarning,
   type AiSearchResponse,
@@ -10,15 +9,8 @@ import {
 } from '../api/chartsearchai';
 import { type ChartSearchAiConfig } from '../config-schema';
 import { chatSessionStore } from '../store/chat-session.store';
+import { type MessageAnswerLimits, mergeDisclosure, NO_ANSWER_LIMITS } from '../utils/answer-limits';
 import { citationStripPattern } from '../utils/safety-disclosure';
-
-/**
- * The four answer-limit measurements, required on a message and null until stated. Their
- * semantics — in particular that an empty array is not a certificate — live once on
- * {@link AiAnswerLimits}; `Required` only makes each key present so a message can never
- * silently omit one.
- */
-type MessageAnswerLimits = Required<AiAnswerLimits>;
 
 export interface ChatMessage extends MessageAnswerLimits {
   id: string;
@@ -54,32 +46,12 @@ function generateId(): string {
 
 /** Removes citation markers ([3], [1, 2], …) from the progressive-reasoning PREVIEW text only.
  *  The preview reasons over an independently-numbered top-K focused chart, so its [N] markers do
- *  NOT line up with the committed answer's record numbering — showing them would mislead. Mirrors
- *  the citation regex in ai-response-panel's stripCitations, but WITHOUT trimming, since the preview
+ *  NOT line up with the committed answer's record numbering — showing them would mislead. Shares
+ *  the resolver's citationStripPattern(), so marker syntax has one home; unlike stripCitations
+ *  this does NOT trim, since the preview
  *  is accumulated chunk-by-chunk and the trailing space must survive between chunks. */
 function stripPreviewCitations(text: string): string {
   return text.replace(citationStripPattern(), '');
-}
-
-/**
- * Carries the answer-limit measurements from a response — or from the trailing `grounded`
- * event — onto the message.
- *
- * Falls back to what the message already holds rather than assigning outright, because under
- * `chartsearchai.grounding.async=true` the early `done` event states nulls for every
- * measurement taken after the answer and the trailing `grounded` event supplies them, while
- * `conditionRuleCoverage` is already final on `done` and merely re-sent. So a null or absent
- * value never erases one already stated, whichever order a given server states them in. A
- * stated value DOES replace an earlier one — including `[]` replacing null, which is the whole
- * distinction between "the check ran and named none" and "no measurement stated".
- */
-function mergeDisclosure(previous: MessageAnswerLimits, source: Partial<AiSearchResponse>): MessageAnswerLimits {
-  return {
-    misattributedOrderCitations: source.misattributedOrderCitations ?? previous.misattributedOrderCitations,
-    unstatedFindingSeverities: source.unstatedFindingSeverities ?? previous.unstatedFindingSeverities,
-    conditionRuleCoverage: source.conditionRuleCoverage ?? previous.conditionRuleCoverage,
-    interactionPairs: source.interactionPairs ?? previous.interactionPairs,
-  };
 }
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
@@ -154,10 +126,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         answer: '',
         references: [],
         safetyWarnings: [],
-        misattributedOrderCitations: null,
-        unstatedFindingSeverities: null,
-        conditionRuleCoverage: null,
-        interactionPairs: null,
+        ...NO_ANSWER_LIMITS,
         questionId: '',
         isLoading: true,
         error: null,
@@ -170,6 +139,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       inFlightMessageIdRef.current = messageId;
 
       const done = (response: AiSearchResponse) => {
+        const stopped = inFlightMessageIdRef.current !== messageId;
         // Deliberately NOT gated on isMountedRef, for the same reason onGrounded is not: this
         // only writes to the chat store, which outlives the panel. Gating it meant closing the
         // floating panel mid-answer dropped `done` entirely, leaving that message `isLoading`
@@ -184,6 +154,10 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         updateMessages(patientUuid, (prev) => {
           const idx = prev.findIndex((m) => m.id === messageId);
           if (idx === -1) return prev;
+          // A `done` already in the last read chunk still arrives after abort(), so a message
+          // the user STOPPED would otherwise be replaced under them by the full answer. An
+          // unmounted-but-unstopped message is still loading, so this does not re-gate that.
+          if (!prev[idx].isLoading && stopped) return prev;
           const updated = [...prev];
           updated[idx] = {
             ...updated[idx],
@@ -304,7 +278,12 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
                   const updated = [...prev];
                   updated[idx] = {
                     ...updated[idx],
-                    references: update.references ?? updated[idx].references,
+                    // The API layer normalises this to `[]` before calling back, so the
+                    // fallback is unreachable — but a payload that parses with no `references`
+                    // key would then BLANK the list, which is the opposite of the documented
+                    // "leaves citations rendered as unverified". Keep the message's own list
+                    // unless the event actually carries one.
+                    references: update.references?.length ? update.references : updated[idx].references,
                     safetyWarnings: update.safetyWarnings ?? updated[idx].safetyWarnings,
                     ...mergeDisclosure(updated[idx], update),
                   };

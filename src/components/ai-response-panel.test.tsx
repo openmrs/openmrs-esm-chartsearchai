@@ -685,9 +685,11 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     // An empty array says the check ran and named none — it is NOT a certificate that the
     // remaining citations are sound, so nothing here may read as a clean bill of health.
     renderPanel({ misattributedOrderCitations: [] });
+    // The positive control is the sibling test above, which shows all three tags appear with
+    // this same fixture when the check does name citations.
     expect(screen.queryByText('Not the order named')).not.toBeInTheDocument();
-    expect(screen.queryByText(/citations verified/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/all citations/i)).not.toBeInTheDocument();
+    // ...and no marker is struck through or made inert, which is the whole of what `[]` licenses.
+    expect(screen.getByText('177', { selector: 'a' })).toBeInTheDocument();
   });
 
   it('gives a module-attached citation somewhere to appear and says who supplied it', () => {
@@ -856,6 +858,17 @@ describe('AiResponsePanel answer-limit disclosure', () => {
       'href',
       `/openmrs/spa/patient/${patientUuid}/chart/Orders`,
     );
+  });
+
+  it('renders rather than blanking when a measurement arrives in the wrong shape', () => {
+    // The panel has no error boundary above it, so a throw in a render memo costs the whole
+    // answer. A string is iterable and would silently match nothing; an object throws.
+    for (const misattributedOrderCitations of ['177', {} as unknown as number[], 5 as unknown as number[]]) {
+      const { unmount } = renderPanel({ misattributedOrderCitations });
+      expect(answerText()).toContain('Clarithromycin');
+      expect(screen.queryByText('Not the order named')).not.toBeInTheDocument();
+      unmount();
+    }
   });
 
   it('says conditions were not screened, and why, on "absent"', () => {

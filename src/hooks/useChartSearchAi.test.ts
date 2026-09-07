@@ -736,3 +736,30 @@ describe('useChartSearchAi after the panel closes', () => {
     expect(stored[0].error).toBe('boom');
   });
 });
+
+describe('useChartSearchAi late events', () => {
+  it('does not let a done in the last chunk replace an answer the user stopped', () => {
+    // abort() cannot unwind a chunk already in hand, so `done` can still arrive after Stop.
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Safe to start clarithromycin?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+    act(() => {
+      callbacks.onToken('Partial answer');
+    });
+    act(() => {
+      result.current.stopCurrent();
+    });
+    expect(result.current.messages[0].answer).toBe('Partial answer');
+    expect(result.current.messages[0].isLoading).toBe(false);
+
+    act(() => {
+      callbacks.onDone({ answer: 'THE FULL ANSWER', references: [], questionId: 'q-1' });
+    });
+    // The answer the user chose to stop at must not change under them.
+    expect(result.current.messages[0].answer).toBe('Partial answer');
+  });
+});
