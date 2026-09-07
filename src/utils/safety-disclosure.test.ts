@@ -491,6 +491,54 @@ describe('resolveFindingSeverities', () => {
     expect(resolved.size).toBe(0);
   });
 
+  it('refuses a table that puts the citation before its subject', () => {
+    // Live and uncached: asked to tabulate, the model emitted a markdown table with the citation
+    // in the FIRST column. Unconfined, each marker took the PREVIOUS row's text and the whole
+    // map rotated by one — Methylprednisolone (Major) rendered Moderate, Prednisone (Moderate)
+    // rendered Major. The complete-and-injective sweep cannot catch a rotation: it is a
+    // bijection, so it is both complete and injective.
+    const answer =
+      'Her Hydrocortisone Injection vial 100mg order is listed last below.\n' +
+      '| Citation | Interacting Substance | Chart Order Name |\n' +
+      '| [350] | Methylprednisolone | Solu-Medrol 125mg/5ml |\n' +
+      '| [351] | Budesonide | Pulmicort 90mcg |\n' +
+      '| [352] | Prednisone | Prednisone Co 5mg |\n' +
+      '| [353] | Dexamethasone | Dexamethasone Injection vial 8mg |\n' +
+      '| [354] | Hydrocortisone | Hydrocortisone Injection vial 100mg |';
+    const resolved = resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, UNSTATED);
+    expect(resolved.size).toBe(0);
+  });
+
+  it('resolves an order the answer abbreviates after the module’s own phrase', () => {
+    // Live: "Clarithromycin interacts with active order Solu-Medrol [350]" — the bridge carries
+    // the full display "Solu-Medrol 125mg/5ml", the partner is named nowhere, and the lead
+    // clause names the substance. Both MAJOR findings refused while a Moderate one beside them
+    // resolved, so the reader saw a rating on the finding the answer called least concerning
+    // and none on the two graver ones.
+    const answer =
+      'Clarithromycin interacts with active order Solu-Medrol [350].\n' +
+      'Clarithromycin interacts with active order Pulmicort [351].\n' +
+      'Clarithromycin interacts with active order Prednisone [352].\n' +
+      'Clarithromycin interacts with active order Dexamethasone [353].\n' +
+      'Clarithromycin interacts with active order Hydrocortisone [354].';
+    const resolved = resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, UNSTATED);
+    expect(Object.fromEntries(resolved)).toEqual({
+      350: 'Major',
+      351: 'Major',
+      352: 'Moderate',
+      353: 'Moderate',
+      354: 'Moderate',
+    });
+  });
+
+  it('survives references arriving in the wrong shape', () => {
+    // The last member of the guarded family. Not reachable from this backend, but the panel has
+    // no error boundary above it and the cost of the inconsistency is the whole answer blanking.
+    expect(() =>
+      resolveFindingSeverities(ANSWER_BY_SUBSTANCE, undefined as unknown as AiReference[], SAFETY_WARNINGS, UNSTATED),
+    ).not.toThrow();
+  });
+
   it('refuses where the badged sentence names two candidates', () => {
     // The one-candidate requirement is what keeps a resolved rating honest: where the sentence
     // the badge will be drawn against reproduces two candidates' own statements, nothing is

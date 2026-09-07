@@ -153,7 +153,21 @@ export function claimTextByCitation(answer: string): Map<number, string> {
   const claims = new Map<number, string>();
   let previousRunEnd = 0;
   for (const run of runs) {
-    const claim = answer.slice(previousRunEnd, run.start);
+    // Confined to the marker's OWN line. A marker's claim is the prose that PRECEDES it, which
+    // assumes the marker trails its subject — and the model does not always oblige. Live, asked
+    // to tabulate, it emitted a markdown table with the citation in the FIRST column:
+    //
+    //   | [363] Moderate | Methylprednisolone | Solu-Medrol 125mg/5ml |
+    //   | [364] Major    | Budesonide         | Pulmicort 90mcg       |
+    //
+    // Unconfined, each marker took the PREVIOUS row's text and the whole index-to-finding map
+    // rotated by one: Methylprednisolone (Major) rendered Moderate and Prednisone (Moderate)
+    // rendered Major. The complete-and-injective sweep cannot catch that — a rotation is a
+    // bijection, so it is both. Confining the claim leaves such a marker with only "| " before
+    // it, which names no candidate, so the index refuses and the sweep withdraws the set.
+    const precedingText = answer.slice(previousRunEnd, run.start);
+    const lineStart = precedingText.lastIndexOf('\n');
+    const claim = lineStart < 0 ? precedingText : precedingText.slice(lineStart + 1);
     for (const group of run.groups) {
       for (const index of parseCitationIndices(group[1])) {
         // No finiteness check: the pattern captures only digit groups, so `Number` cannot
@@ -219,14 +233,36 @@ type LeadGroups = [bridges: string[], partner: string[], leadClause: string[]];
  * Every lead is passed through {@link discriminatingLeads} first, because a bare name is far
  * easier to confuse than the anchored sentence.
  */
+/**
+ * An order display with its dose tokens dropped — `Solu-Medrol 125mg/5ml` → `Solu-Medrol`.
+ *
+ * The model routinely re-writes a chart order in short form after reproducing the module's own
+ * phrase: live, *"Clarithromycin interacts with active order Solu-Medrol [350]"*, where the
+ * bridge carries the full display. Without this the two MAJOR findings of that answer refused
+ * while a Moderate one beside them resolved, so the reader saw a rating on the finding the
+ * answer called least concerning and none on the two graver ones.
+ *
+ * Empty when there is no dose token to drop, so it never duplicates the full display as a lead.
+ */
+function shortOrderDisplay(display: string): string {
+  const tokens = display.trim().split(/\s+/);
+  const firstDose = tokens.findIndex((token) => /\d/.test(token));
+  if (firstDose <= 0) return '';
+  return tokens.slice(0, firstDose).join(' ');
+}
+
 function candidateLeadTiers(warning: AiSafetyWarning): LeadGroups {
   // Guarded at the element level, not just the array: a null entry or a non-string member would
   // reach `normalize` and throw inside a render memo. An Array.isArray on the outside alone was
   // the same partial guard this file has now been caught making twice.
   const bridges = Array.isArray(warning.chartOrderBridges) ? warning.chartOrderBridges : [];
-  const bridgeLeads = bridges.flatMap((bridge) =>
-    [bridge?.orderDisplay, bridge?.substance].filter((value): value is string => typeof value === 'string'),
-  );
+  const bridgeLeads = bridges.flatMap((bridge) => {
+    const stated = [bridge?.orderDisplay, bridge?.substance].filter(
+      (value): value is string => typeof value === 'string',
+    );
+    const short = typeof bridge?.orderDisplay === 'string' ? shortOrderDisplay(bridge.orderDisplay) : '';
+    return short ? [...stated, short] : stated;
+  });
   const lead = leadClause(warning.detail);
   return [bridgeLeads, [partnerFromLead(lead)], [lead]];
 }
@@ -382,7 +418,10 @@ export function resolveFindingSeverities(
   if (!Array.isArray(unstatedFindingSeverities) || !Array.isArray(safetyWarnings)) return resolved;
   if (unstatedFindingSeverities.length === 0 || safetyWarnings.length === 0) return resolved;
 
-  const refByIndex = new Map(references.map((ref) => [ref.index, ref]));
+  // Array.isArray on `references` too — the last member of this family without the guard its
+  // siblings got. It is not reachable from this backend, but the panel has no error boundary
+  // above it and the cost of the inconsistency is the whole answer blanking.
+  const refByIndex = new Map((Array.isArray(references) ? references : []).map((ref) => [ref.index, ref]));
   const claims = claimTextByCitation(answer);
   // Which candidate set each index belongs to, so an incompletely-resolved set can be withdrawn
   // whole below. One map, keyed by index: an earlier version counted set members in a second map
