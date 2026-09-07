@@ -16,7 +16,7 @@ A floating AI button appears on the patient chart page. Clicking it opens a sear
 
 The module streams an answer token-by-token (via SSE) with numbered citations (e.g. `[1]`, `[2]`) that link back to the relevant section of the patient chart (Results, Orders, Allergies, etc.).
 
-When the backend's optional [drug-reference feature](https://github.com/openmrs/openmrs-module-chartsearchai#drug-reference-injection--safety-validation) is enabled, the panel also shows non-blocking **safety-check** chips below the answer (overdose / interaction / contraindication) and renders drug-reference citations as distinct, non-navigating reference chips.
+When the backend's optional [drug-reference feature](https://github.com/openmrs/openmrs-module-chartsearchai#drug-reference-injection--safety-validation) is enabled, the panel also shows non-blocking **safety-check** chips below the answer (overdose / interaction / contraindication), renders module-supplied reference citations (drug references, safety findings, drug-class notes) as distinct non-navigating reference chips, and states what the safety check did and did not cover — see [Fields that state the answer's limits](#fields-that-state-the-answers-limits).
 
 ## Backend
 
@@ -73,11 +73,31 @@ Response:
     { "index": 1, "resourceType": "order", "resourceUuid": "5946f880-b197-400b-9caa-a3c661d71165", "date": "2025-12-01" },
     { "index": 2, "resourceType": "order", "resourceUuid": "a8f5f167-4ee2-4d2a-94f9-3f3f86d2e9b6", "date": "2025-11-15" }
   ],
-  "safetyWarnings": []
+  "safetyWarnings": [],
+  "misattributedOrderCitations": [],
+  "unstatedFindingSeverities": [],
+  "conditionRuleCoverage": "unloaded",
+  "interactionPairs": null
 }
 ```
 
-`references[].resourceUuid` is the cited record's UUID (used to locate and highlight the chart row). `safetyWarnings` (each `{ type, drug, detail }`) is always present and empty unless the backend's optional drug-reference feature is enabled; the panel renders any entries as chips below the answer.
+`references[].resourceUuid` is the cited record's UUID (used to locate and highlight the chart row). `safetyWarnings` (each `{ type, drug, detail, severity, chartOrderBridges }`) is always present and empty unless the backend's optional drug-reference feature is enabled; the panel renders any entries as chips below the answer.
+
+### Fields that state the answer's limits
+
+Four response fields, plus one per-reference field, say what a bounded safety answer did **not** cover. The panel renders each; the backend README is authoritative for what each does and does not assert.
+
+| Field | Rendered as |
+|---|---|
+| `unstatedFindingSeverities` | The rating from the matching `safetyWarnings[].severity`, beside the sentence whose finding the answer left unrated |
+| `misattributedOrderCitations` | Those citations struck through and non-navigating, marked *Not the order named* — bad **evidence** for a sound finding, never an unsupported claim |
+| `conditionRuleCoverage` | A neutral note on `absent`/`unloaded`, each with its own wording; nothing on `published`, which says the dataset *can* run the condition arm and never that a condition was screened |
+| `interactionPairs` | "N of M drug pairs shown", calling out the withholding where `reported < found` |
+| `references[].attachedByTheModule` | A chip tagged *Added by the module* — the prose carries no `[N]` marker for such a citation, so this is the only place it appears |
+
+Two readings the panel deliberately does not offer. An empty `misattributedOrderCitations` renders **nothing** — the check reads only answers reproducing the module's own phrasing, so `[]` is not a certificate that the other citations are sound. And a `null` measurement renders nothing rather than a completeness claim.
+
+Under `chartsearchai.grounding.async=true` the SSE `done` event is emitted before validation runs, so `safetyWarnings` and every measurement above arrive on the trailing `grounded` event instead — which is why the stream's `onGrounded` callback hands over the whole payload rather than the references alone.
 
 The required privilege is **AI Query Patient Data**.
 

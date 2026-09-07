@@ -169,7 +169,14 @@ export function resolveFindingSeverities(
     }
 
     const claim = normalize(claims.get(index) ?? '');
-    const matched = claim ? candidates.filter((c) => claim.includes(normalize(leadClause(c.detail)))) : [];
+    const matched = candidates.filter((candidate) => {
+      const lead = normalize(leadClause(candidate.detail));
+      // A candidate with no lead clause carries no evidence to match on, and `''` is contained
+      // in every string — so without this it would match vacuously and win any tie it was part
+      // of, attributing a rating to a sentence nothing tied it to. An operator-supplied dataset
+      // can leave a rule's note empty while still rating it, so this is reachable.
+      return lead !== '' && claim.includes(lead);
+    });
     if (matched.length === 1) {
       resolved.set(index, matched[0].severity!.trim());
     }

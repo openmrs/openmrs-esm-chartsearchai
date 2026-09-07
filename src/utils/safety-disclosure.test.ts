@@ -147,6 +147,51 @@ describe('resolveFindingSeverities', () => {
     });
   });
 
+  it('pairs each rating with its own finding, not merely the right multiset of ratings', () => {
+    // The fixture above cannot catch a permutation among same-rated neighbours: swapping 350
+    // and 351 (both Major) leaves its assertion green. Distinct ratings make any mis-mapping
+    // visible, which is what stops "the ratings are all present" from passing for "each
+    // rating is beside the finding it belongs to".
+    const distinct: AiSafetyWarning[] = [
+      interaction('Methylprednisolone', 'Major'),
+      interaction('Budesonide', 'Minor'),
+      interaction('Prednisone', 'Moderate'),
+      interaction('Dexamethasone', 'Unknown'),
+      interaction('Hydrocortisone', 'Contraindicated'),
+    ];
+    const resolved = resolveFindingSeverities(ANSWER, REFERENCES, distinct, UNSTATED);
+    expect(Object.fromEntries(resolved)).toEqual({
+      350: 'Major',
+      351: 'Minor',
+      352: 'Moderate',
+      353: 'Unknown',
+      354: 'Contraindicated',
+    });
+  });
+
+  it('refuses a candidate whose detail is empty rather than letting it match everything', () => {
+    // leadClause('') is '', and every string contains '' — so a rating-carrying warning with no
+    // detail would otherwise match vacuously and win any tie it was part of. An operator's own
+    // dataset can rate a rule while leaving its note empty, so this is a reachable shape.
+    const warnings: AiSafetyWarning[] = [
+      { type: 'interaction', drug: 'Clarithromycin', detail: '', severity: 'Major' },
+      interaction('Budesonide', 'Moderate'),
+    ];
+    const resolved = resolveFindingSeverities('Some claim with no marker text [351].', REFERENCES, warnings, [351]);
+    expect(resolved.size).toBe(0);
+  });
+
+  it('refuses every candidate when the marker has no claim text of its own', () => {
+    // The blanked duplicate-index case: no claim means nothing can single a candidate out.
+    const resolved = resolveFindingSeverities(
+      'Methylprednisolone [350]. Later, unrelated sentence [350].',
+      REFERENCES,
+      SAFETY_WARNINGS,
+      [350],
+    );
+    expect(resolved.size).toBe(0);
+  });
+
   it('renders no rating for a finding the answer already rates', () => {
     // The backend check asks of the WHOLE answer, so an answer stating its ratings anywhere is
     // absent from the list — and must not have them repeated beside the sentence.

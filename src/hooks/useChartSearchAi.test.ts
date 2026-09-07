@@ -541,3 +541,145 @@ describe('useChartSearchAi', () => {
     expect(abortController.signal.aborted).toBe(true);
   });
 });
+
+/**
+ * The answer-limit measurements (issue #26). Where they arrive from depends on the server:
+ * with `chartsearchai.grounding.async=false` the `done` event carries them, and with it true
+ * `done` is emitted before validation runs so they arrive only on the trailing `grounded`
+ * event. A hook that reads `done` alone renders none of the disclosure on such a server.
+ */
+describe('useChartSearchAi answer-limit measurements', () => {
+  const disclosure = {
+    misattributedOrderCitations: [177, 166, 155],
+    unstatedFindingSeverities: [350, 351],
+    conditionRuleCoverage: 'absent',
+    interactionPairs: { found: 18, reported: 10 },
+  };
+
+  it('starts a message with no measurement stated', () => {
+    mockSearchPatientChart.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Safe to start clarithromycin?');
+    });
+
+    // null is "no measurement stated" — never an empty array, which would say a check ran.
+    const msg = result.current.messages[0];
+    expect(msg.misattributedOrderCitations).toBeNull();
+    expect(msg.unstatedFindingSeverities).toBeNull();
+    expect(msg.conditionRuleCoverage).toBeNull();
+    expect(msg.interactionPairs).toBeNull();
+  });
+
+  it('carries the measurements from a sync response onto the message', async () => {
+    mockSearchPatientChart.mockResolvedValue({
+      answer: 'No — Clarithromycin should not be started [350].',
+      references: [],
+      safetyWarnings: [{ type: 'interaction', drug: 'Clarithromycin', detail: 'x', severity: 'Major' }],
+      questionId: 'q-1',
+      ...disclosure,
+    });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    await act(async () => {
+      result.current.submitQuestion('patient-uuid', 'Safe to start clarithromycin?');
+    });
+
+    expect(result.current.messages[0]).toMatchObject(disclosure);
+  });
+
+  it('carries measurements that arrive only on the trailing grounded event (async grounding)', () => {
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Safe to start clarithromycin?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+
+    // Async grounding: `done` arrives before validation ran, so it states nulls and no chips.
+    act(() => {
+      callbacks.onDone({
+        answer: 'No — Clarithromycin should not be started [350].',
+        references: [],
+        safetyWarnings: [],
+        misattributedOrderCitations: null,
+        unstatedFindingSeverities: null,
+        conditionRuleCoverage: 'absent',
+        interactionPairs: null,
+        questionId: 'q-1',
+      });
+    });
+    expect(result.current.messages[0].interactionPairs).toBeNull();
+    expect(result.current.messages[0].misattributedOrderCitations).toBeNull();
+    // conditionRuleCoverage is known before the model is called, so `done` already has it.
+    expect(result.current.messages[0].conditionRuleCoverage).toBe('absent');
+
+    // ...then the trailing event supplies the rest, and they must land on the SAME message.
+    act(() => {
+      callbacks.onGrounded({
+        references: [],
+        safetyWarnings: [{ type: 'interaction', drug: 'Clarithromycin', detail: 'x', severity: 'Major' }],
+        ...disclosure,
+      });
+    });
+    expect(result.current.messages[0]).toMatchObject(disclosure);
+    expect(result.current.messages[0].safetyWarnings).toHaveLength(1);
+  });
+
+  it('does not let a later event erase a measurement an earlier one stated', () => {
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Safe to start clarithromycin?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+
+    // Sync grounding: `done` carries everything, and the trailing event (if the server sends
+    // one at all) re-sends verdicts without repeating the measurements.
+    act(() => {
+      callbacks.onDone({
+        answer: 'a [350]',
+        references: [],
+        safetyWarnings: [{ type: 'x', drug: 'y', detail: 'z' }],
+        questionId: 'q-1',
+        ...disclosure,
+      });
+    });
+    act(() => {
+      callbacks.onGrounded({
+        references: [{ index: 1, resourceType: 'obs', resourceUuid: 'u', date: '2025-01-01', grounded: true }],
+      });
+    });
+
+    expect(result.current.messages[0]).toMatchObject(disclosure);
+    expect(result.current.messages[0].safetyWarnings).toHaveLength(1);
+    expect(result.current.messages[0].references[0].grounded).toBe(true);
+  });
+
+  it('keeps an empty measurement distinct from an absent one', () => {
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Safe to start clarithromycin?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+
+    // [] says the check ran and named none; it must overwrite a null rather than be treated as
+    // nothing-stated, or a client can never tell the two apart.
+    act(() => {
+      callbacks.onDone({
+        answer: 'a',
+        references: [],
+        misattributedOrderCitations: [],
+        unstatedFindingSeverities: [],
+        questionId: 'q-1',
+      });
+    });
+    expect(result.current.messages[0].misattributedOrderCitations).toEqual([]);
+    expect(result.current.messages[0].unstatedFindingSeverities).toEqual([]);
+  });
+});

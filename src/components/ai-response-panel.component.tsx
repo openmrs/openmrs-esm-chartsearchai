@@ -322,7 +322,10 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   // Not derived from the number of chips: this counts drug PAIRS, and the chip list also
   // carries contraindication and class findings that were never pairs.
   const pairsSentence = useMemo(() => {
-    if (!interactionPairs || typeof interactionPairs.found !== 'number') return null;
+    // Both halves must be numbers, not just `found`: a payload carrying only one of them would
+    // otherwise render "Interactions: undefined of 5 drug pairs shown." to a clinician, and
+    // `reported < found` would be false so the bounded warning would not fire either.
+    if (typeof interactionPairs?.found !== 'number' || typeof interactionPairs?.reported !== 'number') return null;
     const { found, reported } = interactionPairs;
     return {
       bounded: reported < found,

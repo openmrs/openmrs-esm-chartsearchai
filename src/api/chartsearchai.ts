@@ -21,9 +21,15 @@ export interface AiReference {
   date: string;
   /**
    * Citation grounding verdict from the backend: true = the cited record
-   * supports the claim, false = it does not, null/absent = unverified
-   * (grounding disabled or could not run). Render null as "unverified",
-   * never as "verified".
+   * supports the claim, false = it does not, null/absent = unverified.
+   * Render null as "unverified", never as "verified".
+   *
+   * `null` does not mean one thing, and two of its causes are not "verification was tried
+   * and failed": a {@link group} of `reference` is always null (there is no way to vouch for
+   * an answer that recites reference prose), and so is a citation the module attached
+   * ({@link attachedByTheModule}), where the module attached no claim for grounding to ask
+   * about. The rest are: grounding disabled, this citation not checked, or checked and not
+   * certifiable. So do not render any null as evidence that the module tried.
    */
   grounded?: boolean | null;
   /**
