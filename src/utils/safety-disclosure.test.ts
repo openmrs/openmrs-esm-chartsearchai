@@ -474,6 +474,22 @@ describe('resolveFindingSeverities', () => {
     expect(resolved.size).toBe(0);
   });
 
+  it('counts an uncited index toward injectivity even though it renders nothing', () => {
+    // An uncited index still CONSUMES a candidate. Excluding it from the check entirely let one
+    // rated finding be elected by two citations while only the cited one showed a badge — which
+    // is a guess, since either citation could be that finding.
+    const refs: AiReference[] = [safetyFindingRef(350), safetyFindingRef(351)];
+    const warnings = [SAFETY_WARNINGS[0], interaction('Methylprednisolone', 'Major', 'Solu-Medrol 125mg/5ml')];
+    // 350 is cited, 351 is not — the shape the live `[37]`-for-`367` mistype produces.
+    const resolved = resolveFindingSeverities(
+      'Clarithromycin interacts with active order Methylprednisolone [350].',
+      refs,
+      warnings,
+      [350, 351],
+    );
+    expect(resolved.size).toBe(0);
+  });
+
   it('refuses where the badged sentence names two candidates', () => {
     // The one-candidate requirement is what keeps a resolved rating honest: where the sentence
     // the badge will be drawn against reproduces two candidates' own statements, nothing is

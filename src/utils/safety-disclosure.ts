@@ -392,6 +392,9 @@ export function resolveFindingSeverities(
   // braces rather than load-bearing", so deriving both numbers from one map is what keeps this
   // from depending on that.
   const setOfIndex = new Map<number, string>();
+  // Those whose marker the prose actually carries. Completeness is judged over these only; the
+  // injectivity check below deliberately spans the whole set, including the uncited ones.
+  const citedIndices = new Set<number>();
   // Which candidate each index elected, so the sweep can check the elections are INJECTIVE.
   const electedOf = new Map<number, AiSafetyWarning>();
 
@@ -424,7 +427,8 @@ export function resolveFindingSeverities(
     // live: the model wrote `[37]` where reference `367` was published, and counting the
     // uncited `367` as a failed member withdrew every correct rating in its set.
     const setKey = `${finding.type.toLowerCase()}:${finding.drug.toLowerCase()}`;
-    if (claims.has(index)) setOfIndex.set(index, setKey);
+    setOfIndex.set(index, setKey);
+    if (claims.has(index)) citedIndices.add(index);
 
     if (candidates.length === 1) {
       resolved.set(index, candidates[0].severity!.trim());
@@ -463,13 +467,18 @@ export function resolveFindingSeverities(
     indicesBySet.set(setKey, [...(indicesBySet.get(setKey) ?? []), index]);
   }
   for (const indices of indicesBySet.values()) {
-    const complete = indices.every((index) => resolved.has(index));
+    // Completeness over the CITED members only: an index the prose never carries renders nothing
+    // either way, so it cannot be a member the set fails on.
+    const complete = indices.filter((index) => citedIndices.has(index)).every((index) => resolved.has(index));
     // And INJECTIVE. Two distinct citations of one set electing the same finding cannot both be
     // right, so at most one badge is correct and there is no way to tell which. Measured live:
     // the model put every marker on one line — "Solu-Medrol 125mg/5ml [350] [177] [179] [352]
     // [353] [354]" — so the run-merge handed all of them that one claim, four indices elected
     // the Methylprednisolone finding, and three Moderate ratings rendered as Major. The answer
     // cache then replayed it byte-for-byte on every retry.
+    // Injectivity over EVERY member, cited or not. An uncited index still consumes a candidate,
+    // and excluding it here let one rated finding be elected by two citations while only the
+    // cited one showed a badge — a guess dressed as a resolution.
     const elected = indices.map((index) => electedOf.get(index)).filter(Boolean);
     const injective = new Set(elected).size === elected.length;
     if (!complete || !injective) {
