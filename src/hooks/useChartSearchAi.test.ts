@@ -763,3 +763,34 @@ describe('useChartSearchAi late events', () => {
     expect(result.current.messages[0].answer).toBe('Partial answer');
   });
 });
+
+describe('useChartSearchAi trailing grounded event', () => {
+  it('does not blank the citation list when the event carries no references', () => {
+    // The API layer coerces a missing/null `references` to `[]` before calling back, so an
+    // event that parses without the key arrives as an empty array — and assigning it would
+    // strip a completed answer of its whole References section and degrade every inline [N] to
+    // plain text, the opposite of the documented "leaves citations rendered as unverified".
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Any allergies?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+    act(() => {
+      callbacks.onDone({
+        answer: 'Has it [1].',
+        references: [{ index: 1, resourceType: 'condition', resourceUuid: 'uuid-7', date: '2022-11-13' }],
+        questionId: 'q-1',
+      });
+    });
+    expect(result.current.messages[0].references).toHaveLength(1);
+
+    act(() => {
+      callbacks.onGrounded({ references: [], interactionPairs: { found: 3, reported: 2 } });
+    });
+    expect(result.current.messages[0].references).toHaveLength(1);
+    // ...while the measurement the event DID carry still lands.
+    expect(result.current.messages[0].interactionPairs).toEqual({ found: 3, reported: 2 });
+  });
+});
