@@ -681,6 +681,15 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     expect(screen.queryByText('What this check covered')).not.toBeInTheDocument();
   });
 
+  it('states nothing rather than "undefined of 5" where one half of the measurement is missing', () => {
+    // Silent wrong output, not a crash: the interpolation would stringify the missing half, and
+    // `reported < found` would be false so the bounded warning would not fire to contradict it.
+    renderPanel({ interactionPairs: { found: 5 }, conditionRuleCoverage: null });
+    expect(screen.queryByText(/drug pairs shown/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/undefined/)).not.toBeInTheDocument();
+    expect(screen.queryByText('What this check covered')).not.toBeInTheDocument();
+  });
+
   it('says conditions were not screened, and why, on "absent"', () => {
     renderPanel();
     expect(screen.getByText(/publishes no condition rules/)).toBeInTheDocument();
