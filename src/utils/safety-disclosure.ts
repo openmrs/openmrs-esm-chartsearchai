@@ -191,6 +191,13 @@ function leadClause(detail: string): string {
 }
 
 /**
+ * The three groups of leads, as a fixed tuple. Fixed is what lets the caller take the group
+ * count from any one candidate: a conditionally-present group would have to change this type,
+ * so the compiler carries the invariant rather than a runtime guard nothing could discriminate.
+ */
+type LeadGroups = [bridges: string[], partner: string[], leadClause: string[]];
+
+/**
  * The groups of strings that can identify a warning in the answer's own words.
  *
  * Three groups, and their ORDER carries no precedence — {@link electCandidate} is deliberately
@@ -210,7 +217,7 @@ function leadClause(detail: string): string {
  * Every lead is passed through {@link discriminatingLeads} first, because a bare name is far
  * easier to confuse than the anchored sentence.
  */
-function candidateLeadTiers(warning: AiSafetyWarning): string[][] {
+function candidateLeadTiers(warning: AiSafetyWarning): LeadGroups {
   // Array.isArray, not `?? []`: a non-array here would reach `flatMap` and throw.
   const bridges = Array.isArray(warning.chartOrderBridges) ? warning.chartOrderBridges : [];
   const lead = leadClause(warning.detail);
@@ -294,15 +301,15 @@ function namesLead(claim: string, lead: string): boolean {
  *   rejected the candidate another group elected, so an ambiguous group narrows the field rather
  *   than being discarded.
  */
-function electCandidate(perTierMatches: AiSafetyWarning[][]): AiSafetyWarning | null {
+function electCandidate(perGroupMatches: AiSafetyWarning[][]): AiSafetyWarning | null {
   let winner: AiSafetyWarning | null = null;
-  for (const matches of perTierMatches) {
+  for (const matches of perGroupMatches) {
     if (matches.length !== 1) continue;
     if (winner && winner !== matches[0]) return null;
     winner = matches[0];
   }
   if (!winner) return null;
-  for (const matches of perTierMatches) {
+  for (const matches of perGroupMatches) {
     if (matches.length > 1 && !matches.includes(winner)) return null;
   }
   return winner;
@@ -392,13 +399,15 @@ export function resolveFindingSeverities(
     // out. Each lead group is asked of the whole candidate list and the verdicts are reconciled
     // by `electCandidate`, which refuses on every disagreement — group order decides nothing.
     const claim = normalize(claims.get(index) ?? '');
-    const tiersPerCandidate = candidates.map(candidateLeadTiers);
-    const perTierMatches = tiersPerCandidate[0].map((_, tier) =>
+    const leadsPerCandidate = candidates.map(candidateLeadTiers);
+    // Every candidate yields the same three groups — `LeadGroups` is a fixed tuple, so the
+    // compiler holds that rather than a runtime guard the suite could not discriminate.
+    const perGroupMatches = leadsPerCandidate[0].map((_unused, group) =>
       candidates.filter((candidate, i) =>
-        discriminatingLeads(tiersPerCandidate[i][tier], candidate.drug).some((lead) => namesLead(claim, lead)),
+        discriminatingLeads(leadsPerCandidate[i][group], candidate.drug).some((lead) => namesLead(claim, lead)),
       ),
     );
-    const winner = electCandidate(perTierMatches);
+    const winner = electCandidate(perGroupMatches);
     if (winner) resolved.set(index, winner.severity!.trim());
   }
 
