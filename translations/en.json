@@ -24,7 +24,7 @@
   "interactionPairsShown": "Interactions: {{reported}} of {{found}} drug pairs shown.",
   "interactionPairsWithheld": "The least severe were withheld.",
   "microphonePermissionDenied": "Microphone access was denied. Please allow microphone permissions.",
-  "misattributedCitationTitle": "This citation cannot be the medication order this sentence names — following it lands on an unrelated record. The safety finding itself is unaffected.",
+  "misattributedCitationTitle": "The module reports that this citation may not be the medication order this sentence names, so it is not offered as a link. The safety finding itself is unaffected.",
   "noPatientSelected": "No patient selected",
   "notGrounded": "Unsupported",
   "notGroundedTitle": "The cited record may not support this statement — verify against the chart.",

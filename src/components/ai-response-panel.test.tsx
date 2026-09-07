@@ -558,6 +558,14 @@ describe('AiResponsePanel answer-limit disclosure', () => {
       screen.getByText((_content, element) => Boolean(element?.className?.includes?.('answerText'))).textContent ?? ''
     ).replace(/\s+/g, ' ');
 
+  /**
+   * The limits block, or null. Queried by class rather than by its heading text: four
+   * assertions in this file used to name the heading and went dead the moment it was reworded,
+   * passing while examining nothing.
+   */
+  const limitsSection = () =>
+    screen.queryByText((_content, element) => Boolean(element?.className?.includes?.('limitsLabel')));
+
   it('renders each unstated rating immediately after the marker of the finding it rates', () => {
     renderPanel();
     // Adjacency, not merely sequence: an earlier version of this test asserted the list of
@@ -653,7 +661,7 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     for (const index of ['177', '166', '155']) {
       const marker = screen.getByText(index, { selector: 'span' });
       expect(marker.tagName).toBe('SPAN');
-      expect(marker).toHaveAttribute('title', expect.stringContaining('cannot be the medication order'));
+      expect(marker).toHaveAttribute('title', expect.stringContaining('may not be the medication order'));
     }
     const chip = screen.getByText('[177] condition — 2024-05-13');
     expect(chip.tagName).toBe('SPAN');
@@ -721,7 +729,7 @@ describe('AiResponsePanel answer-limit disclosure', () => {
   it('states no interaction extent where the response stated no measurement', () => {
     renderPanel({ interactionPairs: null, conditionRuleCoverage: null });
     expect(screen.queryByText(/drug pairs shown/)).not.toBeInTheDocument();
-    expect(screen.queryByText('What this check covered')).not.toBeInTheDocument();
+    expect(limitsSection()).toBeNull();
   });
 
   it('states nothing rather than "undefined of 5" where one half of the measurement is missing', () => {
@@ -730,7 +738,7 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     renderPanel({ interactionPairs: { found: 5 }, conditionRuleCoverage: null });
     expect(screen.queryByText(/drug pairs shown/)).not.toBeInTheDocument();
     expect(screen.queryByText(/undefined/)).not.toBeInTheDocument();
-    expect(screen.queryByText('What this check covered')).not.toBeInTheDocument();
+    expect(limitsSection()).toBeNull();
   });
 
   it('states no coverage note on an answer no safety screen produced anything for', () => {
@@ -738,9 +746,26 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     // conditionRuleCoverage "absent" with no warnings and no pair measurement — "absent" is the
     // verdict the shipped knowledge base yields, so an ungated note would sit under every
     // answer on every install and imply a contraindication screen fell short where none ran.
-    renderPanel({ safetyWarnings: [], interactionPairs: null, conditionRuleCoverage: 'absent' });
-    expect(screen.queryByText('What this check covered')).not.toBeInTheDocument();
+    renderPanel({
+      safetyWarnings: [],
+      interactionPairs: null,
+      conditionRuleCoverage: 'absent',
+      // The real payload: 22 obs citations and not one reference-group record, so nothing says a
+      // drug-safety screen produced anything.
+      references: [{ index: 1, resourceType: 'obs', resourceUuid: 'o-1', date: '2026-01-01', group: 'chart' }],
+      misattributedOrderCitations: [],
+      unstatedFindingSeverities: [],
+    });
+    expect(limitsSection()).toBeNull();
     expect(screen.queryByText(/were not screened/)).not.toBeInTheDocument();
+  });
+
+  it('states the coverage note where a screen cited a reference record but raised no chip', () => {
+    // The load-bearing case: a prescribing question against a chart with conditions and no
+    // active orders runs the contraindication screen, raises no chip and states no pair extent.
+    // The backend says of exactly that — "Render it. That is what the key is for."
+    renderPanel({ safetyWarnings: [], interactionPairs: null, conditionRuleCoverage: 'absent' });
+    expect(screen.getByText(/publishes no condition rules/)).toBeInTheDocument();
   });
 
   it('states the coverage note where an interaction screen ran but raised no chip', () => {
@@ -758,7 +783,7 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     const refs = FIXTURE_REFERENCES.map((ref) => (ref.index === 177 ? { ...ref, grounded: false } : ref));
     renderPanel({ references: refs });
     const marker = screen.getByText('177 ⚠', { selector: 'span' });
-    expect(marker).toHaveAttribute('title', expect.stringContaining('cannot be the medication order'));
+    expect(marker).toHaveAttribute('title', expect.stringContaining('may not be the medication order'));
     expect(marker).toHaveAttribute('title', expect.stringContaining('may not support this statement'));
     // ...and the chip's own verdict is still published.
     expect(screen.getByText('Unsupported')).toBeInTheDocument();
@@ -781,7 +806,7 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     ]) {
       const { unmount } = renderPanel({ interactionPairs, conditionRuleCoverage: null });
       expect(screen.queryByText(/drug pairs/)).not.toBeInTheDocument();
-      expect(screen.queryByText('What the safety checks covered')).not.toBeInTheDocument();
+      expect(limitsSection()).toBeNull();
       unmount();
     }
   });
@@ -791,7 +816,7 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     // annotations the reader cannot see — and closing the panel mid-stream leaves the message
     // loading forever while a trailing grounded event still lands its measurements.
     renderPanel({ isLoading: true });
-    expect(screen.queryByText('What the safety checks covered')).not.toBeInTheDocument();
+    expect(limitsSection()).toBeNull();
   });
 
   it('labels each kind of reference material, and never guesses at one it does not know', () => {
@@ -849,7 +874,7 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     // `published` says the DATASET can run the arm, never that any recorded condition was
     // screened — so it must not produce a "conditions screened" affordance.
     renderPanel({ conditionRuleCoverage: 'published', interactionPairs: null });
-    expect(screen.queryByText('What this check covered')).not.toBeInTheDocument();
+    expect(limitsSection()).toBeNull();
     expect(screen.queryByText(/conditions/i)).not.toBeInTheDocument();
   });
 });

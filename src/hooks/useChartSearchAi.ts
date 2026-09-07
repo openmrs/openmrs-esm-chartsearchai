@@ -10,6 +10,7 @@ import {
 } from '../api/chartsearchai';
 import { type ChartSearchAiConfig } from '../config-schema';
 import { chatSessionStore } from '../store/chat-session.store';
+import { citationStripPattern } from '../utils/safety-disclosure';
 
 /**
  * The four answer-limit measurements, required on a message and null until stated. Their
@@ -57,7 +58,7 @@ function generateId(): string {
  *  the citation regex in ai-response-panel's stripCitations, but WITHOUT trimming, since the preview
  *  is accumulated chunk-by-chunk and the trailing space must survive between chunks. */
 function stripPreviewCitations(text: string): string {
-  return text.replace(/\s?\[\d+(?:\s*,\s*\d+)*\]/g, '');
+  return text.replace(citationStripPattern(), '');
 }
 
 /**
@@ -169,7 +170,11 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       inFlightMessageIdRef.current = messageId;
 
       const done = (response: AiSearchResponse) => {
-        if (!isMountedRef.current) return;
+        // Deliberately NOT gated on isMountedRef, for the same reason onGrounded is not: this
+        // only writes to the chat store, which outlives the panel. Gating it meant closing the
+        // floating panel mid-answer dropped `done` entirely, leaving that message `isLoading`
+        // forever — with the input disabled on reopen, and a trailing `grounded` event still
+        // landing final measurements on a message nothing would ever complete.
         if (abortControllerRef.current === abortController) {
           abortControllerRef.current = null;
         }
@@ -197,7 +202,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       };
 
       const fail = (errMessage: string) => {
-        if (!isMountedRef.current) return;
+        // Ungated for the same reason as `done`: a message whose error is dropped stays loading.
         if (abortControllerRef.current === abortController) {
           abortControllerRef.current = null;
         }

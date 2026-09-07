@@ -10,6 +10,7 @@ import {
 } from './safety-disclosure';
 
 import {
+  ANSWER_BARE_LIST,
   ANSWER_BY_ORDER_DISPLAY,
   ANSWER_BY_SUBSTANCE,
   interaction,
@@ -129,6 +130,216 @@ describe('resolveFindingSeverities', () => {
       interaction('Budesonide', 'Moderate'),
     ];
     const resolved = resolveFindingSeverities('Some claim with no marker text [351].', REFERENCES, warnings, [351]);
+    expect(resolved.size).toBe(0);
+  });
+
+  it('ignores a bridge that names the finding’s own drug, which cannot discriminate', () => {
+    // Candidates are selected on the finding's (type, drug), so every candidate is about that
+    // drug and every claim naming the finding names it too. Measured before this guard: one
+    // chip bridging its own subject drug took four of five ratings and reported them all as its
+    // own Major — a wrong rating shown confidently, in the dangerous direction.
+    const warnings: AiSafetyWarning[] = [
+      {
+        ...interaction('Cortisone', 'Minor'),
+        chartOrderBridges: [{ substance: 'Clarithromycin', orderDisplay: 'Biaxin 500mg' }],
+      },
+      interaction('Hydrocortisone', 'Major'),
+    ];
+    const refs: AiReference[] = [
+      {
+        index: 351,
+        resourceType: 'safety_finding',
+        resourceUuid: 'interaction:Clarithromycin',
+        date: '',
+        group: 'reference',
+      },
+    ];
+    const resolved = resolveFindingSeverities(
+      'Clarithromycin interacts with active order Hydrocortisone [351].',
+      refs,
+      warnings,
+      [351],
+    );
+    expect(resolved.get(351)).toBe('Major');
+  });
+
+  it('does not match a bridge inside a longer drug name', () => {
+    // "Cortisone" occurs inside "Hydrocortisone". A bare substring test resolved the sentence
+    // about the second to the chip bridged to the first, while the anchored prose tier got the
+    // same case right — so the bridge tier must be anchored too.
+    const warnings: AiSafetyWarning[] = [
+      {
+        ...interaction('Cortisone', 'Minor'),
+        chartOrderBridges: [{ substance: 'Cortisone', orderDisplay: 'Cortone 25mg' }],
+      },
+      interaction('Hydrocortisone', 'Major'),
+    ];
+    const refs: AiReference[] = [
+      {
+        index: 351,
+        resourceType: 'safety_finding',
+        resourceUuid: 'interaction:Clarithromycin',
+        date: '',
+        group: 'reference',
+      },
+    ];
+    const resolved = resolveFindingSeverities(
+      'Clarithromycin interacts with active order Hydrocortisone [351].',
+      refs,
+      warnings,
+      [351],
+    );
+    expect(resolved.get(351)).toBe('Major');
+  });
+
+  it('does not match a bridge against half of a combination product', () => {
+    const warnings: AiSafetyWarning[] = [
+      {
+        ...interaction('Aspirin', 'Minor'),
+        chartOrderBridges: [{ substance: 'Aspirin', orderDisplay: 'Aspirin 75mg' }],
+      },
+      interaction('Aspirin/Dipyridamole', 'Major'),
+    ];
+    const refs: AiReference[] = [
+      {
+        index: 351,
+        resourceType: 'safety_finding',
+        resourceUuid: 'interaction:Clarithromycin',
+        date: '',
+        group: 'reference',
+      },
+    ];
+    const resolved = resolveFindingSeverities(
+      'Clarithromycin interacts with active order Aspirin/Dipyridamole [351].',
+      refs,
+      warnings,
+      [351],
+    );
+    expect(resolved.get(351)).toBe('Major');
+  });
+
+  it('refuses where the bridge and the prose each name a different candidate', () => {
+    // Two tiers disagreeing is the strongest available evidence that the sentence identifies no
+    // one candidate, so tier order must not be allowed to pick a winner.
+    const warnings: AiSafetyWarning[] = [
+      {
+        ...interaction('Budesonide', 'Minor'),
+        chartOrderBridges: [{ substance: 'Budesonide', orderDisplay: 'Pulmicort 90mcg' }],
+      },
+      interaction('Prednisone', 'Major'),
+    ];
+    const refs: AiReference[] = [
+      {
+        index: 351,
+        resourceType: 'safety_finding',
+        resourceUuid: 'interaction:Clarithromycin',
+        date: '',
+        group: 'reference',
+      },
+    ];
+    const resolved = resolveFindingSeverities(
+      'Clarithromycin interacts with active order Prednisone, taken with Pulmicort 90mcg [351].',
+      refs,
+      warnings,
+      [351],
+    );
+    expect(resolved.size).toBe(0);
+  });
+
+  it('refuses a lead the note truncated down to the shared drug name', () => {
+    // Truncation is not automatically fail-safe: a note breaking early can shorten the lead to
+    // the subject drug, which every claim about the finding names — a false SINGLE match
+    // wherever the siblings' longer leads fail.
+    const warnings: AiSafetyWarning[] = [
+      {
+        type: 'interaction',
+        drug: 'Clarithromycin',
+        detail: 'Clarithromycin — Major. Avoid with strong CYP3A4 substrates.',
+        severity: 'Major',
+        chartOrderBridges: [],
+      },
+      interaction('Hydrocortisone', 'Moderate'),
+    ];
+    const refs: AiReference[] = [
+      {
+        index: 354,
+        resourceType: 'safety_finding',
+        resourceUuid: 'interaction:Clarithromycin',
+        date: '',
+        group: 'reference',
+      },
+    ];
+    const resolved = resolveFindingSeverities(
+      'Clarithromycin interacts with active order Cortef 100mg [354].',
+      refs,
+      warnings,
+      [354],
+    );
+    expect(resolved.size).toBe(0);
+  });
+
+  it('resolves a bare list that quotes none of the module’s phrasing', () => {
+    // Live: "list every interaction, one short line each, name the order only". Only two of the
+    // five findings carry a chart-order bridge, so before the partner tier this resolved two of
+    // five and the list rendered half-badged.
+    const resolved = resolveFindingSeverities(ANSWER_BARE_LIST, REFERENCES, SAFETY_WARNINGS, UNSTATED);
+    expect(Object.fromEntries(resolved)).toEqual({
+      350: 'Major',
+      351: 'Major',
+      352: 'Moderate',
+      353: 'Moderate',
+      354: 'Moderate',
+    });
+  });
+
+  it('withdraws a candidate set it could only partly resolve', () => {
+    // The backend requires a shared-(type, drug) set to be rendered together or not at all: a
+    // bare item beside a badged one reads as "no rating exists", not "we declined", so a
+    // clinician infers a ranking the module never stated.
+    const answer = 'Clarithromycin interacts with active order Methylprednisolone [350], and there are others [352].';
+    const resolved = resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 352]);
+    expect(resolved.size).toBe(0);
+  });
+
+  it('treats a comma between adjacent markers as one attachment point', () => {
+    // Live: "…possible cross-reactivity [356], [357]." The second marker used to get a claim
+    // text of ", " and could never resolve.
+    const claims = claimTextByCitation('Clarithromycin interacts with active order Prednisone [350], [352].');
+    expect(claims.get(352)).toBe(claims.get(350));
+    expect(claims.get(352)).toContain('Prednisone');
+  });
+
+  it('refuses a candidate an ambiguous stronger tier rejected', () => {
+    // An ambiguous tier must narrow the field, not be discarded: otherwise a weaker tier elects
+    // a candidate the stronger tier positively excluded.
+    const warnings: AiSafetyWarning[] = [
+      {
+        ...interaction('Budesonide', 'Major'),
+        chartOrderBridges: [{ substance: 'Budesonide', orderDisplay: 'Inhaler' }],
+      },
+      {
+        ...interaction('Prednisone', 'Minor'),
+        chartOrderBridges: [{ substance: 'Prednisone', orderDisplay: 'Inhaler' }],
+      },
+      interaction('Hydrocortisone', 'Unknown'),
+    ];
+    const refs: AiReference[] = [
+      {
+        index: 351,
+        resourceType: 'safety_finding',
+        resourceUuid: 'interaction:Clarithromycin',
+        date: '',
+        group: 'reference',
+      },
+    ];
+    // "Inhaler" matches both bridged candidates (ambiguous); the prose tier singles out the
+    // third, which the bridge tier's matches do not include.
+    const resolved = resolveFindingSeverities(
+      'Clarithromycin interacts with active order Hydrocortisone via the Inhaler [351].',
+      refs,
+      warnings,
+      [351],
+    );
     expect(resolved.size).toBe(0);
   });
 

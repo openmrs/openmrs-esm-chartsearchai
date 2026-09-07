@@ -8,11 +8,12 @@ import type { AiReference, AiSafetyWarning } from '../api/chartsearchai';
  * knowledge base, patient `dc8560c9-6d2b-45bf-861c-8fcf562ec9b1` asked *"Is it safe to start
  * her on clarithromycin?"*.
  *
- * Two answer shapes are exported because the model produces both for the same question, and
- * they exercise different halves of the resolver. Keeping them together is the point: the
- * panel test's expected ratings are the resolver's OUTPUT over prose × warnings, so it depends
- * on dataset-format details (the ` — ` separator, the substance-vs-order-display vocabulary)
- * that only these fixtures state. Two copies of that drifted silently once already.
+ * THREE answer shapes are exported, because the model produces all three for this one question
+ * and each defeats a different part of the resolver. Keeping them together is the point: the
+ * panel test's expected ratings are the resolver's OUTPUT over prose × warnings, so they depend
+ * on dataset-format details (the ` — ` separator, the substance-vs-order-display vocabulary,
+ * which findings carry a bridge) that only these fixtures state. Two copies of that drifted
+ * silently once already.
  */
 
 /**
@@ -126,6 +127,18 @@ export const SAFETY_WARNINGS: AiSafetyWarning[] = [
   interaction('Dexamethasone', 'Moderate'),
   interaction('Hydrocortisone', 'Moderate'),
 ];
+
+/**
+ * Shape C, verbatim from a live answer: asked to list the interactions one line each naming
+ * only the order, the model wrote a bare list — no module phrasing to quote at all, and only
+ * the chart's order displays.
+ *
+ * Two of the five findings carry a bridge and three do not, so before the partner tier existed
+ * this resolved exactly two of five and the list rendered half-badged.
+ */
+export const ANSWER_BARE_LIST =
+  'Solu-Medrol 125mg/5ml [350]\nPulmicort 90mcg [351]\nPrednisone Co 5mg [352]\n' +
+  'Dexamethasone Injection vial 8mg [353]\nHydrocortisone Injection vial 100mg [354]';
 
 /** The citations the backend reported as unable to be the drug order their sentence names. */
 export const MISATTRIBUTED = [177, 166, 155];

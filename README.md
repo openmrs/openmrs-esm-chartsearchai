@@ -85,17 +85,19 @@ Response:
 
 ### Fields that state the answer's limits
 
-Four response fields, plus one per-reference field, say what a bounded safety answer did **not** cover. The panel renders each; the backend README is authoritative for what each does and does not assert.
+Four response fields, plus one per-reference field, say what a bounded safety answer did **not** cover. The panel renders these five; the backend publishes more that this app does not yet consume — see *Not consumed* below. The backend README is authoritative for what each does and does not assert.
 
 | Field | Rendered as |
 |---|---|
-| `unstatedFindingSeverities` | The rating for that finding, beside the sentence whose finding the answer left unrated — as a **caveat**, since the backend documents cells where this key over-reports. The rating is not on the key and cannot be joined to a chip by `(type, drug)`, so the panel narrows to the candidates sharing it and requires the sentence to single one out, declining where it cannot |
+| `unstatedFindingSeverities` | The rating for that finding, beside the sentence whose finding the answer left unrated — as a **caveat**, since the backend documents cells where this key over-reports. The rating is not on the key and cannot be joined to a chip by `(type, drug)`, so the panel narrows to the candidates sharing it and requires the answer's own sentence to single one out — preferring `chartOrderBridges` (typed, and carrying both the substance and the chart's order display) over the finding's prose. Findings sharing one `(type, drug)` are a candidate **set**: they are badged together or not at all, because a bare item beside a badged one reads as "no rating exists" rather than "we declined" |
 | `misattributedOrderCitations` | Those citations struck through and non-navigating, marked *Not the order named* — bad **evidence** for a sound finding, never an unsupported claim |
 | `conditionRuleCoverage` | A neutral note on `absent`/`unloaded`, each with its own wording; nothing on `published`, which says the dataset *can* run the condition arm and never that a condition was screened. Shown only where a safety check produced something — the backend states this on every answer, so an ungated note would sit under questions that never asked for a contraindication screen |
 | `interactionPairs` | "N of M drug pairs shown", calling out the withholding where `reported < found`. `found: 0` gets its own sentence, because the count speaks for the check that reported it and not for the findings beside it |
 | `references[].attachedByTheModule` | A chip tagged *Added by the module* — the prose carries no `[N]` marker for such a citation, so this is the only place it appears |
 
 Two readings the panel deliberately does not offer. An empty `misattributedOrderCitations` renders **nothing** — the check reads only answers reproducing the module's own phrasing, so `[]` is not a certificate that the other citations are sound. And a `null` measurement renders nothing rather than a completeness claim.
+
+**Not consumed.** The backend also publishes `unfaithfullyRenderedCitations` (citations whose rendering *in the answer* the module found unfaithful to the record they point at) and, per reference, `withheldInteractions` (how many of a cited record's interaction partners the record does not show, so a client can say the citation shows a subset). Both are always present on the wire and neither is rendered here — a deliberate gap, not a claim that the contract has only the fields above.
 
 Under `chartsearchai.grounding.async=true` the SSE `done` event is emitted before validation runs, so `safetyWarnings` and every measurement taken *after* the answer — `interactionPairs`, `misattributedOrderCitations`, `unstatedFindingSeverities` — arrive on the trailing `grounded` event instead. That is why the stream's `onGrounded` callback hands over the whole payload rather than the references alone. Two exceptions not to gate on that event: `conditionRuleCoverage` is read off the dataset load before the model is called and so is already final on `done`, and on an answer-cache hit no early `done` is emitted at all.
 

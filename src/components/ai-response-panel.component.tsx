@@ -12,6 +12,7 @@ import {
 import { highlightReference } from '../utils/highlight-reference';
 import {
   citationGroupPattern,
+  citationStripPattern,
   isReferenceData,
   parseCitationIndices,
   referenceKind,
@@ -61,9 +62,14 @@ const RESOURCE_TYPE_TO_CHART_PAGE: Record<string, string> = {
  *
  * Two kinds of citation get no link. Reference data (a drug-reference entry, a safety finding,
  * a drug-class note) has no chart page at all. And a MISATTRIBUTED citation has one that would
- * mislead: the record exists, but it is not the medication order the sentence names, so
- * following the link lands the clinician on an unrelated row and invites them to read it as
- * the evidence for the claim.
+ * usually mislead: the record exists but is typically not the medication order the sentence
+ * names, so offering it invites the clinician to read an unrelated row as the evidence.
+ *
+ * "Typically", not "always" — the backend documents arrangements where such a citation "is
+ * correct where it sits" (one captured by a bare *and* from a neighbouring clause), which is
+ * why the marker and the tag are worded as a report rather than a verdict. Suppressing only the
+ * link is deliberate and is what issue #26 asks for; the grounding verdict is left untouched
+ * beside it, because this key must not override the other statements about a citation.
  */
 function buildReferenceUrl(ref: AiReference, patientUuid: string, misattributed: boolean): string | null {
   if (!patientUuid || misattributed || isReferenceData(ref)) {
@@ -130,7 +136,7 @@ function drugReferenceTitle(t: Translate): string {
 function misattributedTitle(t: Translate): string {
   return t(
     'misattributedCitationTitle',
-    'This citation cannot be the medication order this sentence names — following it lands on an unrelated record. The safety finding itself is unaffected.',
+    'The module reports that this citation may not be the medication order this sentence names, so it is not offered as a link. The safety finding itself is unaffected.',
   );
 }
 
@@ -201,7 +207,7 @@ const SEVERITY_TONE_CLASS: Record<SeverityTone, string> = {
 };
 
 function stripCitations(answer: string): string {
-  return answer.replace(/\s?\[\d+(?:\s*,\s*\d+)*\]/g, '').trim();
+  return answer.replace(citationStripPattern(), '').trim();
 }
 
 interface CitationContext {
@@ -387,7 +393,9 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     if (!Number.isInteger(found) || !Number.isInteger(reported)) return null;
     if (found < 0 || reported < 0 || reported > found) return null;
 
-    // `found: 0` is a real measurement — a check that ran and related no pairs — but it is a
+    // `found: 0` is MEANT as a real measurement — a check that ran and related no pairs —
+    // though the backend notes it is not always that (a chart whose only medication the
+    // reference data cannot resolve was never a population to screen). Either way it is a
     // statement about the check that reported it and NOT about the findings listed beside it,
     // which may come from another check entirely. "0 of 0 drug pairs shown" above a Major
     // interaction chip reads as "no interactions found", so that cell gets its own sentence.
@@ -441,9 +449,17 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
    * pressure trend?" comes back `absent` with no warnings and no pair measurement.
    *
    * A pair extent counts on its own: it is stated by a check that RAN, whatever it related, so
-   * it is safety output even where that check raised no chip.
+   * it is safety output even where that check raised no chip. So does a cited reference record,
+   * which is what reaches the one answer type this note is most load-bearing for: a prescribing
+   * question against a chart with conditions and no active orders runs the contraindication
+   * screen, raises no chip and states no pair extent, and the backend says of exactly that case
+   * "Render it. That is what the key is for — a screen that cannot ask reads exactly like one
+   * that asked and found nothing." Measured: the blood-pressure answer that motivated this gate
+   * cites 22 records and not one is reference-group, so widening it this far does not reopen the
+   * case it was added for.
    */
-  const hasSafetyOutput = (safetyWarnings?.length ?? 0) > 0 || pairsSentence !== null;
+  const hasSafetyOutput =
+    (safetyWarnings?.length ?? 0) > 0 || pairsSentence !== null || references.some(isReferenceData);
   const coverageNote = hasSafetyOutput ? coverageSentence : null;
 
   // While the answer is still streaming its citations are not annotated at all (see
