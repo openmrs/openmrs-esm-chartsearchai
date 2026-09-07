@@ -4,6 +4,15 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import AiResponsePanel from './ai-response-panel.component';
 import { highlightReference } from '../utils/highlight-reference';
 import { SESSION_EXPIRED_ERROR_CODE } from '../api/chartsearchai';
+import {
+  ANSWER_BY_ORDER_DISPLAY,
+  ANSWER_BY_SUBSTANCE,
+  interaction,
+  MISATTRIBUTED,
+  REFERENCES as FIXTURE_REFERENCES,
+  SAFETY_WARNINGS,
+  UNSTATED,
+} from '../__fixtures__/clarithromycin-response';
 
 vi.mock('../utils/highlight-reference', () => ({ highlightReference: vi.fn() }));
 const mockHighlightReference = highlightReference as Mock;
@@ -514,71 +523,20 @@ describe('AiResponsePanel copy-to-clipboard', () => {
 
 /**
  * The five backend fields that state a bounded safety answer's limits (issue #26), rendered
- * against the response they were measured on: RefApp 3.7.1 standalone, backend `main` @
- * 4dd1fea4, patient dc8560c9-6d2b-45bf-861c-8fcf562ec9b1 asked "Is it safe to start her on
- * clarithromycin?".
+ * against the measured response in `src/__fixtures__/clarithromycin-response.ts` — shared with
+ * the resolver's own tests, because the ratings asserted here are that resolver's OUTPUT over
+ * the fixture's prose and warnings and so depend on dataset-format details only the fixture
+ * states.
  */
 describe('AiResponsePanel answer-limit disclosure', () => {
-  const answer =
-    'No — Clarithromycin should not be started: The patient has a recorded allergy to Clarithromycin [349]. ' +
-    'Furthermore, Clarithromycin interacts with active order Methylprednisolone [177] [350], ' +
-    'Clarithromycin interacts with active order Budesonide [166] [351], ' +
-    'Clarithromycin interacts with active order Prednisone [155] [352], ' +
-    'Clarithromycin interacts with active order Dexamethasone [12] [353], and ' +
-    'Clarithromycin interacts with active order Hydrocortisone [14] [354].';
-
-  const references = [
-    { index: 12, resourceType: 'drug_order', resourceUuid: 'h144-109', date: '2026-08-05', group: 'chart' },
-    { index: 14, resourceType: 'drug_order', resourceUuid: 'h144-173', date: '2026-08-05', group: 'chart' },
-    { index: 166, resourceType: 'visit', resourceUuid: 'uuid-visit', date: '2024-09-09', group: 'chart' },
-    { index: 155, resourceType: 'encounter', resourceUuid: 'uuid-enc', date: '2024-09-09', group: 'chart' },
-    { index: 177, resourceType: 'condition', resourceUuid: 'uuid-cond', date: '2024-05-13', group: 'chart' },
-    {
-      index: 3,
-      resourceType: 'allergy',
-      resourceUuid: 'uuid-allergy',
-      date: null as unknown as string,
-      group: 'chart',
-      attachedByTheModule: true,
-    },
-    ...[349, 350, 351, 352, 353, 354].map((index) => ({
-      index,
-      resourceType: 'safety_finding',
-      resourceUuid: index === 349 ? 'contraindication:Clarithromycin' : 'interaction:Clarithromycin',
-      date: null as unknown as string,
-      group: 'reference',
-    })),
-  ];
-
-  const interaction = (partner: string, severity: string) => ({
-    type: 'interaction',
-    drug: 'Clarithromycin',
-    detail: `Clarithromycin interacts with active order ${partner} — ${severity}. Coadministration …`,
-    severity,
-  });
-
-  const safetyWarnings = [
-    {
-      type: 'contraindication',
-      drug: 'Clarithromycin',
-      detail: 'The patient has a recorded allergy to Clarithromycin.',
-      severity: null,
-    },
-    interaction('Methylprednisolone', 'Major'),
-    interaction('Budesonide', 'Major'),
-    interaction('Prednisone', 'Moderate'),
-    interaction('Dexamethasone', 'Moderate'),
-    interaction('Hydrocortisone', 'Moderate'),
-  ];
-
   function renderPanel(overrides: Record<string, unknown> = {}) {
     return render(
       <AiResponsePanel
-        answer={answer}
-        references={references}
-        safetyWarnings={safetyWarnings}
-        misattributedOrderCitations={[177, 166, 155]}
-        unstatedFindingSeverities={[350, 351, 352, 353, 354]}
+        answer={ANSWER_BY_SUBSTANCE}
+        references={FIXTURE_REFERENCES}
+        safetyWarnings={SAFETY_WARNINGS}
+        misattributedOrderCitations={MISATTRIBUTED}
+        unstatedFindingSeverities={UNSTATED}
         conditionRuleCoverage="absent"
         interactionPairs={{ found: 5, reported: 5 }}
         questionId="q-26"
@@ -590,17 +548,102 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     );
   }
 
-  it('renders each unstated rating beside the sentence that dropped it', () => {
+  /**
+   * The rendered sentence text, markers and severity badges included, with whitespace collapsed.
+   * Found by class rather than by a text fragment so it works across the fixture's two answer
+   * shapes; `identity-obj-proxy` maps the CSS-module class to its own name in tests.
+   */
+  const answerText = () =>
+    (
+      screen.getByText((_content, element) => Boolean(element?.className?.includes?.('answerText'))).textContent ?? ''
+    ).replace(/\s+/g, ' ');
+
+  it('renders each unstated rating immediately after the marker of the finding it rates', () => {
     renderPanel();
-    // Two Major and three Moderate, in the order the answer states the findings — the whole
-    // point of the field: a flat list of five equals becomes rankable.
-    const ratings = screen.getAllByTitle(/does not state the rating/i).map((el) => el.textContent);
-    expect(ratings).toEqual(['Major', 'Major', 'Moderate', 'Moderate', 'Moderate']);
+    // Adjacency, not merely sequence: an earlier version of this test asserted the list of
+    // badge texts, which would have passed with every badge appended at the end of the answer.
+    const text = answerText();
+    expect(text).toContain('active order Methylprednisolone [177] [350] Major');
+    expect(text).toContain('active order Budesonide [166] [351] Major');
+    expect(text).toContain('active order Prednisone [155] [352] Moderate');
+    expect(text).toContain('active order Dexamethasone [12] [353] Moderate');
+    expect(text).toContain('active order Hydrocortisone [14] [354] Moderate');
+  });
+
+  it('pairs each rating with its own finding rather than the right multiset of ratings', () => {
+    // Two Majors then three Moderates cannot see a permutation within either run, so give the
+    // five findings five distinct ratings and assert each lands on its own sentence.
+    const distinct = [
+      SAFETY_WARNINGS[0],
+      interaction('Methylprednisolone', 'Major', 'Solu-Medrol 125mg/5ml'),
+      interaction('Budesonide', 'Minor', 'Pulmicort 90mcg'),
+      interaction('Prednisone', 'Moderate'),
+      interaction('Dexamethasone', 'Unknown'),
+      interaction('Hydrocortisone', 'Catastrophic'),
+    ];
+    renderPanel({ safetyWarnings: distinct });
+    const text = answerText();
+    expect(text).toContain('Methylprednisolone [177] [350] Major');
+    expect(text).toContain('Budesonide [166] [351] Minor');
+    expect(text).toContain('Prednisone [155] [352] Moderate');
+    expect(text).toContain('Dexamethasone [12] [353] Unknown');
+    expect(text).toContain('Hydrocortisone [14] [354] Catastrophic');
+  });
+
+  it('resolves ratings on an answer that names the chart’s order display', () => {
+    // The other live answer shape: the answer says "Solu-Medrol 125mg/5ml" where the chip says
+    // "Methylprednisolone", and repeats every marker inside its own statement.
+    renderPanel({ answer: ANSWER_BY_ORDER_DISPLAY, misattributedOrderCitations: [] });
+    const text = answerText();
+    expect(text).toContain('active order Solu-Medrol 125mg/5ml [350] Major');
+    expect(text).toContain('active order Pulmicort 90mcg [351] Major');
+    expect(text).toContain('active order Prednisone Co 5mg [352] Moderate');
+  });
+
+  it('badges a repeated marker once, not once per occurrence', () => {
+    renderPanel({ answer: ANSWER_BY_ORDER_DISPLAY, misattributedOrderCitations: [] });
+    // [350] is cited twice in its own statement; the rating belongs to the finding, not the marker.
+    expect(answerText().match(/Major/g) ?? []).toHaveLength(2);
+  });
+
+  it('renders one rating for a comma-grouped pair that resolves to one finding', () => {
+    // "[350, 351] Major Major" would read as two findings where there is one.
+    renderPanel({
+      answer: 'Clarithromycin interacts with active order Methylprednisolone [350, 351].',
+      misattributedOrderCitations: [],
+      unstatedFindingSeverities: [350, 351],
+      safetyWarnings: [SAFETY_WARNINGS[0], interaction('Methylprednisolone', 'Major', 'Solu-Medrol 125mg/5ml')],
+    });
+    expect(answerText().match(/Major/g) ?? []).toHaveLength(1);
+  });
+
+  it('gives an unrecognised rating a treatment distinct from the module’s lowest tier', () => {
+    // `Unknown` is the lowest of the four recognised ratings; unrated sorts ABOVE all four, so
+    // one grey for both would tell a clinician they rank equally.
+    renderPanel({
+      unstatedFindingSeverities: [350, 351],
+      safetyWarnings: [
+        SAFETY_WARNINGS[0],
+        interaction('Methylprednisolone', 'Unknown', 'Solu-Medrol 125mg/5ml'),
+        interaction('Budesonide', 'Catastrophic', 'Pulmicort 90mcg'),
+      ],
+    });
+    const unknown = screen.getByText('Unknown').className;
+    const unrated = screen.getByText('Catastrophic').className;
+    expect(unknown).not.toEqual(unrated);
   });
 
   it('states no rating where the answer already states them', () => {
     renderPanel({ unstatedFindingSeverities: [] });
-    expect(screen.queryAllByTitle(/does not state the rating/i)).toHaveLength(0);
+    expect(screen.queryAllByTitle(/may not state the rating/i)).toHaveLength(0);
+    expect(answerText()).not.toContain('Major');
+  });
+
+  it('renders the rating as a caveat, not a verdict', () => {
+    // The backend documents three measured cells where this key over-reports — a rating stated
+    // by synonym among them — so the wording must not assert that the answer omitted it.
+    renderPanel();
+    expect(screen.getAllByTitle(/may not state the rating/i).length).toBeGreaterThan(0);
   });
 
   it('does not make a misattributed citation navigate, in the prose or on its chip', () => {
@@ -644,7 +687,7 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     // The trap: this citation has NO [N] marker in the prose, so a reference list built by
     // scanning the answer text drops it silently — here it is the recorded-allergy record
     // behind the answer's load-bearing claim.
-    expect(answer).not.toContain('[3]');
+    expect(ANSWER_BY_SUBSTANCE).not.toContain('[3]');
     expect(screen.getByText('[3] allergy')).toBeInTheDocument();
     expect(screen.getByText('Added by the module')).toBeInTheDocument();
   });
@@ -705,6 +748,89 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     // warnings beside it.
     renderPanel({ safetyWarnings: [], interactionPairs: { found: 0, reported: 0 } });
     expect(screen.getByText(/publishes no condition rules/)).toBeInTheDocument();
+  });
+
+  it('keeps the ungrounded warning on a citation that is also misattributed', () => {
+    // The two checks are independent and both can fire on one citation. The backend is explicit
+    // that this key must render BESIDE the other statements about a citation, never over them:
+    // a marker that hid the verdict would disagree with the chip below, which shows the red
+    // "Unsupported" badge either way.
+    const refs = FIXTURE_REFERENCES.map((ref) => (ref.index === 177 ? { ...ref, grounded: false } : ref));
+    renderPanel({ references: refs });
+    const marker = screen.getByText('177 ⚠', { selector: 'span' });
+    expect(marker).toHaveAttribute('title', expect.stringContaining('cannot be the medication order'));
+    expect(marker).toHaveAttribute('title', expect.stringContaining('may not support this statement'));
+    // ...and the chip's own verdict is still published.
+    expect(screen.getByText('Unsupported')).toBeInTheDocument();
+  });
+
+  it('does not state a pair ratio where the screen related no pairs', () => {
+    // `found: 0` is a real measurement, but it is about the check that reported it and NOT about
+    // the findings beside it — which may come from another check. "0 of 0 drug pairs shown"
+    // above a Major interaction chip reads as "no interactions found".
+    renderPanel({ interactionPairs: { found: 0, reported: 0 } });
+    expect(screen.queryByText(/0 of 0/)).not.toBeInTheDocument();
+    expect(screen.getByText(/related no drug pairs/)).toBeInTheDocument();
+  });
+
+  it('states nothing where the measurement is not a sane pair of counts', () => {
+    for (const interactionPairs of [
+      { found: 5, reported: 8 },
+      { found: -1, reported: 0 },
+      { found: 5.5, reported: 1 },
+    ]) {
+      const { unmount } = renderPanel({ interactionPairs, conditionRuleCoverage: null });
+      expect(screen.queryByText(/drug pairs/)).not.toBeInTheDocument();
+      expect(screen.queryByText('What the safety checks covered')).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('states no limits while the answer is still streaming', () => {
+    // The citations are not annotated at all during streaming, so a limits block would describe
+    // annotations the reader cannot see — and closing the panel mid-stream leaves the message
+    // loading forever while a trailing grounded event still lands its measurements.
+    renderPanel({ isLoading: true });
+    expect(screen.queryByText('What the safety checks covered')).not.toBeInTheDocument();
+  });
+
+  it('labels each kind of reference material, and never guesses at one it does not know', () => {
+    renderPanel({
+      references: [
+        { index: 8, resourceType: 'drug_class_note', resourceUuid: 'class:H02AB', date: null, group: 'reference' },
+        { index: 9, resourceType: 'some_future_type', resourceUuid: 'x', date: null, group: 'reference' },
+      ],
+      misattributedOrderCitations: [],
+      unstatedFindingSeverities: [],
+    });
+    // Calling a class note a "Drug reference" would tell a clinician it came from a drug's
+    // reference entry when it came from an ATC-class or cross-reactivity join.
+    expect(screen.getByText('[8] Drug class note')).toBeInTheDocument();
+    expect(screen.getByText('[9] Reference material')).toBeInTheDocument();
+  });
+
+  it('navigates a drug order to Orders rather than the default tab', () => {
+    renderPanel();
+    expect(screen.getByText('[12] drug_order — 2026-08-05')).toHaveAttribute(
+      'href',
+      `/openmrs/spa/patient/${patientUuid}/chart/Orders`,
+    );
+  });
+
+  it('navigates a module-injected active order like any other chart citation', () => {
+    // It is injected but is the patient's own order with a real Order uuid, so it groups as
+    // chart and must not land on the default tab under its raw wire type.
+    renderPanel({
+      references: [
+        { index: 20, resourceType: 'active_drug_order', resourceUuid: 'o-1', date: '2026-01-01', group: 'chart' },
+      ],
+      misattributedOrderCitations: [],
+      unstatedFindingSeverities: [],
+    });
+    expect(screen.getByText('[20] active_drug_order — 2026-01-01')).toHaveAttribute(
+      'href',
+      `/openmrs/spa/patient/${patientUuid}/chart/Orders`,
+    );
   });
 
   it('says conditions were not screened, and why, on "absent"', () => {

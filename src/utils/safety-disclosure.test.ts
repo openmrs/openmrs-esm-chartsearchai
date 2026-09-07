@@ -1,76 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import type { AiReference, AiSafetyWarning } from '../api/chartsearchai';
-import { claimTextByCitation, isReferenceData, resolveFindingSeverities, severityTone } from './safety-disclosure';
+import {
+  claimTextByCitation,
+  isReferenceData,
+  parseCitationIndices,
+  referenceKind,
+  resolveFindingSeverities,
+  severityTone,
+} from './safety-disclosure';
 
-/**
- * The live response this feature was designed against — RefApp 3.7.1 standalone, backend
- * `main` @ 4dd1fea4 with the bundled DDInter knowledge base, patient
- * dc8560c9-6d2b-45bf-861c-8fcf562ec9b1 asked "Is it safe to start her on clarithromycin?".
- *
- * Trimmed to the fields these helpers read. The five interaction findings all share one
- * `resourceUuid` (`interaction:Clarithromycin`), which is exactly why the uuid alone cannot
- * resolve a rating and the answer's own prose has to break the tie.
- */
-const ANSWER =
-  'No — Clarithromycin should not be started: The patient has a recorded allergy to Clarithromycin [349]. ' +
-  'Furthermore, Clarithromycin interacts with active order Methylprednisolone [177] [350], ' +
-  'Clarithromycin interacts with active order Budesonide [166] [351], ' +
-  'Clarithromycin interacts with active order Prednisone [155] [352], ' +
-  'Clarithromycin interacts with active order Dexamethasone [12] [353], and ' +
-  'Clarithromycin interacts with active order Hydrocortisone [14] [354].';
+import {
+  ANSWER_BY_ORDER_DISPLAY,
+  ANSWER_BY_SUBSTANCE,
+  interaction,
+  REFERENCES,
+  SAFETY_WARNINGS,
+  UNSTATED,
+} from '../__fixtures__/clarithromycin-response';
 
-const REFERENCES: AiReference[] = [
-  { index: 12, resourceType: 'drug_order', resourceUuid: 'h144-109', date: '2026-08-05', group: 'chart' },
-  { index: 14, resourceType: 'drug_order', resourceUuid: 'h144-173', date: '2026-08-05', group: 'chart' },
-  { index: 166, resourceType: 'visit', resourceUuid: 'uuid-visit', date: '2024-09-09', group: 'chart' },
-  { index: 155, resourceType: 'encounter', resourceUuid: 'uuid-enc', date: '2024-09-09', group: 'chart' },
-  { index: 177, resourceType: 'condition', resourceUuid: 'uuid-cond', date: '2024-05-13', group: 'chart' },
-  {
-    index: 3,
-    resourceType: 'allergy',
-    resourceUuid: 'a172c001-0000-4000-8000-000000000013',
-    date: null as unknown as string,
-    group: 'chart',
-    attachedByTheModule: true,
-  },
-  {
-    index: 349,
-    resourceType: 'safety_finding',
-    resourceUuid: 'contraindication:Clarithromycin',
-    date: null as unknown as string,
-    group: 'reference',
-  },
-  ...[350, 351, 352, 353, 354].map((index) => ({
-    index,
-    resourceType: 'safety_finding',
-    resourceUuid: 'interaction:Clarithromycin',
-    date: null as unknown as string,
-    group: 'reference',
-  })),
-];
-
-const interaction = (partner: string, severity: string): AiSafetyWarning => ({
-  type: 'interaction',
-  drug: 'Clarithromycin',
-  detail: `Clarithromycin interacts with active order ${partner} — ${severity}. Coadministration with potent inhibitors of CYP450 3A4 …`,
-  severity,
-});
-
-const SAFETY_WARNINGS: AiSafetyWarning[] = [
-  {
-    type: 'contraindication',
-    drug: 'Clarithromycin',
-    detail: 'The patient has a recorded allergy to Clarithromycin.',
-    severity: null,
-  },
-  interaction('Methylprednisolone', 'Major'),
-  interaction('Budesonide', 'Major'),
-  interaction('Prednisone', 'Moderate'),
-  interaction('Dexamethasone', 'Moderate'),
-  interaction('Hydrocortisone', 'Moderate'),
-];
-
-const UNSTATED = [350, 351, 352, 353, 354];
+const ANSWER = ANSWER_BY_SUBSTANCE;
 
 describe('isReferenceData', () => {
   it('recognises every reference resource type, not just drug_reference', () => {
@@ -127,9 +75,12 @@ describe('claimTextByCitation', () => {
     expect(claims.get(8)).toBe(claims.get(7));
   });
 
-  it('blanks an index cited from two different claims rather than letting the last win', () => {
+  it('keeps the first claim of an index cited more than once', () => {
+    // Measured live: the model repeats a finding's marker inside its own statement, so blanking
+    // such an index discarded the only evidence there was for it. The first occurrence is the
+    // one the renderer badges, so it is the one whose text must justify the badge.
     const claims = claimTextByCitation('First claim [5]. Second, unrelated claim [5].');
-    expect(claims.get(5)).toBe('');
+    expect(claims.get(5)).toBe('First claim ');
   });
 });
 
@@ -181,15 +132,48 @@ describe('resolveFindingSeverities', () => {
     expect(resolved.size).toBe(0);
   });
 
-  it('refuses every candidate when the marker has no claim text of its own', () => {
-    // The blanked duplicate-index case: no claim means nothing can single a candidate out.
+  it('refuses where the badged sentence names two candidates', () => {
+    // The one-candidate requirement is what keeps a resolved rating honest: where the sentence
+    // the badge will be drawn against reproduces two candidates' own statements, nothing is
+    // singled out and no rating renders.
     const resolved = resolveFindingSeverities(
-      'Methylprednisolone [350]. Later, unrelated sentence [350].',
+      'Clarithromycin interacts with active order Prednisone and Clarithromycin interacts with active order Dexamethasone [350].',
       REFERENCES,
       SAFETY_WARNINGS,
       [350],
     );
     expect(resolved.size).toBe(0);
+  });
+
+  it('resolves an answer that names the chart’s order display instead of the substance', () => {
+    // The vocabulary the answer uses is not the vocabulary the chip uses: `detail` says
+    // "Methylprednisolone", the answer says "Solu-Medrol 125mg/5ml". Both spellings are observed
+    // live in the same position, and `chartOrderBridges` is what reconciles them — so this is
+    // the case the typed field exists for, and the case detail-parsing alone cannot serve.
+    const resolved = resolveFindingSeverities(ANSWER_BY_ORDER_DISPLAY, REFERENCES, SAFETY_WARNINGS, UNSTATED);
+    expect(Object.fromEntries(resolved)).toEqual({
+      350: 'Major',
+      351: 'Major',
+      352: 'Moderate',
+      353: 'Moderate',
+      354: 'Moderate',
+    });
+  });
+
+  it('prefers the bridge over the detail lead where they would disagree', () => {
+    // Tier order matters, not just tier presence: the bridged candidate is identified by a
+    // string the backend publishes as a field, and it wins before any prose is parsed.
+    const warnings: AiSafetyWarning[] = [
+      interaction('Methylprednisolone', 'Major', 'Solu-Medrol 125mg/5ml'),
+      interaction('Budesonide', 'Minor', 'Pulmicort 90mcg'),
+    ];
+    const resolved = resolveFindingSeverities(
+      'Clarithromycin interacts with active order Pulmicort 90mcg [351].',
+      REFERENCES,
+      warnings,
+      [351],
+    );
+    expect(resolved.get(351)).toBe('Minor');
   });
 
   it('renders no rating for a finding the answer already rates', () => {
@@ -290,5 +274,29 @@ describe('resolveFindingSeverities', () => {
       [1],
     );
     expect(resolved.get(1)).toBe('Contraindicated');
+  });
+});
+
+describe('referenceKind', () => {
+  it('names each reference type the predicate admits', () => {
+    for (const resourceType of ['drug_reference', 'safety_finding', 'drug_class_note']) {
+      expect(referenceKind({ index: 1, resourceType, resourceUuid: 'x', date: '' })).toBe(resourceType);
+    }
+  });
+
+  it('reports a reference-group type it does not know as "other" rather than guessing one', () => {
+    // isReferenceData admits any reference-group citation, so labelling the leftovers
+    // "Drug reference" would tell a clinician the chip came from a drug's reference entry.
+    expect(
+      referenceKind({ index: 1, resourceType: 'some_future_type', resourceUuid: 'x', date: '', group: 'reference' }),
+    ).toBe('other');
+  });
+});
+
+describe('parseCitationIndices', () => {
+  it('splits a marker group’s index list however it is spaced', () => {
+    expect(parseCitationIndices('7')).toEqual([7]);
+    expect(parseCitationIndices('7, 8')).toEqual([7, 8]);
+    expect(parseCitationIndices('7,8')).toEqual([7, 8]);
   });
 });

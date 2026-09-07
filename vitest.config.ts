@@ -12,7 +12,10 @@ export default defineConfig({
     globals: true,
     clearMocks: true,
     setupFiles: ['./tools/setup-tests.ts'],
-    exclude: ['**/node_modules/**', '**/e2e/**', '**/dist/**'],
+    // .claude/worktrees holds agent worktrees, which are full copies of this repo — without
+    // this the suite runs once per leftover worktree, and a stale one runs stale tests as if
+    // they were this branch's.
+    exclude: ['**/node_modules/**', '**/e2e/**', '**/dist/**', '**/.claude/**'],
     server: {
       deps: {
         inline: [/@openmrs/],

@@ -36,8 +36,8 @@ export interface AiReference {
    * Which corpus the cited record came from: `chart` = the patient's own record,
    * `reference` = module-supplied reference material (a drug-reference entry, a
    * safety finding, a drug-class note), which has no chart page to navigate to.
-   * Optional so a response predating the field still parses — {@link isReferenceData}
-   * falls back to `resourceType`.
+   * Optional so a response predating the field still parses — {@link isReferenceData} accepts
+   * either signal, so a `reference` type this client predates is still recognised by its group.
    */
   group?: string | null;
   /**
@@ -72,14 +72,38 @@ export interface AiSafetyWarning {
    * verbatim and unnormalized — the dataset's rating, NOT the module's advice, and never a
    * statement about what the rating licenses clinically.
    *
-   * null where the finding carries no rating (a contraindication, an overdose and an
-   * ATC-class or cross-reactivity join carry none by construction). Not a closed
-   * vocabulary: the bundled knowledge base publishes Major/Moderate/Minor/Unknown but an
-   * operator's dataset supplies its own words, so compare case-insensitively after
+   * null where the finding carries no rating: a contraindication, an overdose and an
+   * ATC-class or cross-reactivity join carry none by construction, AND a hand-authored rule
+   * usually omits it — every interaction rule in the module's own bundled curated seed does.
+   * So `severity: null` on an `interaction` chip is a statement, not a missing field.
+   *
+   * Not a closed vocabulary: the bundled knowledge base publishes Major/Moderate/Minor/Unknown
+   * but an operator's dataset supplies its own words, so compare case-insensitively after
    * trimming and treat an unrecognised value as unrated rather than as a floor. Read this
    * field; never parse the rating back out of {@link detail}.
    */
   severity?: string | null;
+  /**
+   * Which of this patient's own active orders each substance the chip names was resolved from,
+   * where that order's displayed name does not reach the substance. Empty means nothing on
+   * this chip was attributed — common, and not an error.
+   *
+   * Published as typed fields rather than left inside {@link detail} so a client is handed two
+   * strings instead of a sentence to parse. It is the reason a chip can name `Methylprednisolone`
+   * while the answer names the same prescription `Solu-Medrol 125mg/5ml`, and it is what lets
+   * {@link resolveFindingSeverities} recognise a finding in the answer's own words whichever
+   * vocabulary the answer used.
+   *
+   * It is a resolution the MODULE performed — say "resolved from", never that the prescription
+   * *is* that substance, and never that the chart records those substances.
+   */
+  chartOrderBridges?: AiChartOrderBridge[] | null;
+}
+
+/** One `(substance, orderDisplay)` correspondence on a safety warning. Render, do not parse apart. */
+export interface AiChartOrderBridge {
+  substance: string;
+  orderDisplay: string;
 }
 
 /**
@@ -132,8 +156,18 @@ export interface AiSearchResponse {
   misattributedOrderCitations?: number[] | null;
   /**
    * Citation indices of safety findings whose rating the answer states NOWHERE, leaving a
-   * clinician no way to rank a flat list of findings. The rating itself is on the
-   * corresponding {@link AiSafetyWarning.severity}; render it beside the sentence.
+   * clinician no way to rank a flat list of findings.
+   *
+   * The rating is NOT on this key, and the backend is explicit that it "cannot be joined to a
+   * chip: chips carry no citation index, and `(type, drug)` does not identify one — a screening
+   * question raises several findings sharing it". {@link resolveFindingSeverities} therefore
+   * narrows to that candidate set and requires the answer's own sentence to single one out,
+   * declining where it cannot.
+   *
+   * Render whatever it yields as a CAVEAT, never as a verdict: the backend documents three
+   * measured cells where this key over-reports — a rating stated by synonym, a `minor` caution
+   * the prompt never asked to be rated, and an operator dataset whose mechanism text happens to
+   * contain the rating word.
    *
    * The check asks of the whole answer rather than of the citing sentence, so an answer that
    * states the rating anywhere is silent here — which is why rendering is gated on this list
@@ -141,27 +175,38 @@ export interface AiSearchResponse {
    */
   unstatedFindingSeverities?: number[] | null;
   /** @see ConditionRuleCoverage */
-  conditionRuleCoverage?: ConditionRuleCoverage | string | null;
+  // `string & {}` rather than a bare `string`, which would collapse the union and discard the
+  // literals — keeping them is what makes the renderer's switch checkable while still accepting
+  // a verdict word this client predates.
+  conditionRuleCoverage?: ConditionRuleCoverage | (string & {}) | null;
   /** @see AiInteractionPairs */
   interactionPairs?: AiInteractionPairs | null;
   questionId?: string;
 }
 
 /**
- * The measurements the backend re-sends on the trailing `grounded` SSE event. Under
- * `chartsearchai.grounding.async=true` the `done` event is emitted before validation runs, so
- * it carries `safetyWarnings: []` and a null for each of these — they arrive only here. A
- * client that reads `done` alone renders none of the disclosure on such a server.
+ * The four response fields that state what a bounded safety answer did not cover. Declared once
+ * here, on the wire type, and referenced by the chat message and the panel props so the three
+ * cannot drift — in particular the reading that an empty array is not a certificate.
  */
-export type AiGroundedUpdate = Pick<
+export type AiAnswerLimits = Pick<
   AiSearchResponse,
-  | 'references'
-  | 'safetyWarnings'
-  | 'misattributedOrderCitations'
-  | 'unstatedFindingSeverities'
-  | 'conditionRuleCoverage'
-  | 'interactionPairs'
+  'misattributedOrderCitations' | 'unstatedFindingSeverities' | 'conditionRuleCoverage' | 'interactionPairs'
 >;
+
+/**
+ * What the trailing `grounded` SSE event re-sends. Under `chartsearchai.grounding.async=true`
+ * the `done` event is emitted before validation runs, so it carries `safetyWarnings: []` and a
+ * null for each measurement taken AFTER the answer — `interactionPairs`,
+ * `misattributedOrderCitations`, `unstatedFindingSeverities` — and those arrive only here.
+ *
+ * Two exceptions to that, both of which a client must not gate on this event.
+ * `conditionRuleCoverage` is read off the dataset load before the model is called, so it is
+ * already final on the early `done` and is merely re-sent here. And on an answer-cache hit no
+ * early `done` is emitted at all: the single `done` carries the replayed final answer, so every
+ * field reads as the original request measured it and no `grounded` event follows.
+ */
+export type AiGroundedUpdate = Pick<AiSearchResponse, 'references' | 'safetyWarnings'> & AiAnswerLimits;
 
 export type FeedbackRating = 'positive' | 'negative';
 

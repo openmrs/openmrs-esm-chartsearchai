@@ -89,15 +89,15 @@ Four response fields, plus one per-reference field, say what a bounded safety an
 
 | Field | Rendered as |
 |---|---|
-| `unstatedFindingSeverities` | The rating from the matching `safetyWarnings[].severity`, beside the sentence whose finding the answer left unrated |
+| `unstatedFindingSeverities` | The rating for that finding, beside the sentence whose finding the answer left unrated — as a **caveat**, since the backend documents cells where this key over-reports. The rating is not on the key and cannot be joined to a chip by `(type, drug)`, so the panel narrows to the candidates sharing it and requires the sentence to single one out, declining where it cannot |
 | `misattributedOrderCitations` | Those citations struck through and non-navigating, marked *Not the order named* — bad **evidence** for a sound finding, never an unsupported claim |
-| `conditionRuleCoverage` | A neutral note on `absent`/`unloaded`, each with its own wording; nothing on `published`, which says the dataset *can* run the condition arm and never that a condition was screened |
-| `interactionPairs` | "N of M drug pairs shown", calling out the withholding where `reported < found` |
+| `conditionRuleCoverage` | A neutral note on `absent`/`unloaded`, each with its own wording; nothing on `published`, which says the dataset *can* run the condition arm and never that a condition was screened. Shown only where a safety check produced something — the backend states this on every answer, so an ungated note would sit under questions that never asked for a contraindication screen |
+| `interactionPairs` | "N of M drug pairs shown", calling out the withholding where `reported < found`. `found: 0` gets its own sentence, because the count speaks for the check that reported it and not for the findings beside it |
 | `references[].attachedByTheModule` | A chip tagged *Added by the module* — the prose carries no `[N]` marker for such a citation, so this is the only place it appears |
 
 Two readings the panel deliberately does not offer. An empty `misattributedOrderCitations` renders **nothing** — the check reads only answers reproducing the module's own phrasing, so `[]` is not a certificate that the other citations are sound. And a `null` measurement renders nothing rather than a completeness claim.
 
-Under `chartsearchai.grounding.async=true` the SSE `done` event is emitted before validation runs, so `safetyWarnings` and every measurement above arrive on the trailing `grounded` event instead — which is why the stream's `onGrounded` callback hands over the whole payload rather than the references alone.
+Under `chartsearchai.grounding.async=true` the SSE `done` event is emitted before validation runs, so `safetyWarnings` and every measurement taken *after* the answer — `interactionPairs`, `misattributedOrderCitations`, `unstatedFindingSeverities` — arrive on the trailing `grounded` event instead. That is why the stream's `onGrounded` callback hands over the whole payload rather than the references alone. Two exceptions not to gate on that event: `conditionRuleCoverage` is read off the dataset load before the model is called and so is already final on `done`, and on an answer-cache hit no early `done` is emitted at all.
 
 The required privilege is **AI Query Patient Data**.
 

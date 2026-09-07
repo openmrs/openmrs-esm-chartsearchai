@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useConfig, useStore } from '@openmrs/esm-framework';
 import {
-  type AiInteractionPairs,
+  type AiAnswerLimits,
   type AiReference,
   type AiSafetyWarning,
   type AiSearchResponse,
@@ -11,22 +11,20 @@ import {
 import { type ChartSearchAiConfig } from '../config-schema';
 import { chatSessionStore } from '../store/chat-session.store';
 
-export interface ChatMessage {
+/**
+ * The four answer-limit measurements, required on a message and null until stated. Their
+ * semantics — in particular that an empty array is not a certificate — live once on
+ * {@link AiAnswerLimits}; `Required` only makes each key present so a message can never
+ * silently omit one.
+ */
+type MessageAnswerLimits = Required<AiAnswerLimits>;
+
+export interface ChatMessage extends MessageAnswerLimits {
   id: string;
   question: string;
   answer: string;
   references: AiReference[];
   safetyWarnings: AiSafetyWarning[];
-  /** Citations the answer offered as evidence of an active drug order that cannot be one.
-   *  null = the response stated no measurement; [] = the check ran and named none, which is
-   *  NOT a certificate that the remaining citations are sound. */
-  misattributedOrderCitations: number[] | null;
-  /** Citations of safety findings whose rating the answer states nowhere. */
-  unstatedFindingSeverities: number[] | null;
-  /** Whether the loaded dataset could run the condition arm of the contraindication screen. */
-  conditionRuleCoverage: string | null;
-  /** How bounded the interaction check that stated it was. null = no measurement stated. */
-  interactionPairs: AiInteractionPairs | null;
   questionId: string;
   isLoading: boolean;
   error: string | null;
@@ -62,11 +60,6 @@ function stripPreviewCitations(text: string): string {
   return text.replace(/\s?\[\d+(?:\s*,\s*\d+)*\]/g, '');
 }
 
-type Disclosure = Pick<
-  ChatMessage,
-  'misattributedOrderCitations' | 'unstatedFindingSeverities' | 'conditionRuleCoverage' | 'interactionPairs'
->;
-
 /**
  * Carries the answer-limit measurements from a response — or from the trailing `grounded`
  * event — onto the message.
@@ -74,10 +67,12 @@ type Disclosure = Pick<
  * Falls back to what the message already holds rather than assigning outright, because under
  * `chartsearchai.grounding.async=true` the early `done` event states nulls for every
  * measurement taken after the answer and the trailing `grounded` event supplies them, while
- * `conditionRuleCoverage` is already final on `done` and merely re-sent. So neither event can
- * erase the other's value, whichever order a given server states them in.
+ * `conditionRuleCoverage` is already final on `done` and merely re-sent. So a null or absent
+ * value never erases one already stated, whichever order a given server states them in. A
+ * stated value DOES replace an earlier one — including `[]` replacing null, which is the whole
+ * distinction between "the check ran and named none" and "no measurement stated".
  */
-function mergeDisclosure(previous: Disclosure, source: Partial<AiSearchResponse>): Disclosure {
+function mergeDisclosure(previous: MessageAnswerLimits, source: Partial<AiSearchResponse>): MessageAnswerLimits {
   return {
     misattributedOrderCitations: source.misattributedOrderCitations ?? previous.misattributedOrderCitations,
     unstatedFindingSeverities: source.unstatedFindingSeverities ?? previous.unstatedFindingSeverities,

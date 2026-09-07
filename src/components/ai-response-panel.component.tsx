@@ -4,39 +4,35 @@ import { IconButton, InlineLoading, Tag } from '@carbon/react';
 import { Copy, Information } from '@carbon/react/icons';
 import { navigate } from '@openmrs/esm-framework';
 import {
-  type AiInteractionPairs,
+  type AiAnswerLimits,
   type AiReference,
   type AiSafetyWarning,
   SESSION_EXPIRED_ERROR_CODE,
 } from '../api/chartsearchai';
 import { highlightReference } from '../utils/highlight-reference';
-import { isReferenceData, resolveFindingSeverities, type SeverityTone, severityTone } from '../utils/safety-disclosure';
+import {
+  citationGroupPattern,
+  isReferenceData,
+  parseCitationIndices,
+  referenceKind,
+  resolveFindingSeverities,
+  type SeverityTone,
+  severityTone,
+} from '../utils/safety-disclosure';
 import AiFeedback from './ai-feedback.component';
 import styles from './ai-response-panel.scss';
 
-interface AiResponsePanelProps {
+/**
+ * The four answer-limit measurements come in as {@link AiAnswerLimits}, so their semantics are
+ * stated once on the wire type rather than restated here. Two readings this panel implements
+ * and must keep: an empty array renders NOTHING (the check named none, which is not a
+ * certificate that the other citations are sound), and a null renders nothing either (no
+ * measurement was stated, which is not a completeness claim).
+ */
+interface AiResponsePanelProps extends AiAnswerLimits {
   answer: string;
   references: AiReference[];
   safetyWarnings?: AiSafetyWarning[];
-  /**
-   * Citations the answer offered as evidence of an active drug order that cannot be one.
-   *
-   * These are rendered as unreliable EVIDENCE, never as an unsupported CLAIM: the finding
-   * behind such a sentence is deterministic and typically correct, and a red "Unsupported"
-   * badge here would repeat a miscarriage the backend has already had to undo once.
-   *
-   * An empty array is deliberately not rendered as anything. The check sees only answers that
-   * reproduce the module's own phrasing and cannot spot a citation of the wrong in-force
-   * order, so `[]` means "the check named none", not "these citations are sound" — nothing in
-   * this panel may read as a clean bill of health for the rest.
-   */
-  misattributedOrderCitations?: number[] | null;
-  /** Citations of safety findings whose rating the answer states nowhere. */
-  unstatedFindingSeverities?: number[] | null;
-  /** Whether the loaded dataset could run the condition arm of the contraindication screen. */
-  conditionRuleCoverage?: string | null;
-  /** How bounded the interaction check that stated it was. */
-  interactionPairs?: AiInteractionPairs | null;
   questionId: string;
   error: string | null;
   isLoading: boolean;
@@ -47,6 +43,12 @@ interface AiResponsePanelProps {
 const RESOURCE_TYPE_TO_CHART_PAGE: Record<string, string> = {
   obs: 'Results',
   order: 'Orders',
+  drug_order: 'Orders',
+  // The module injects `active_drug_order` for an active order the retrieved chart carries no
+  // record of, but it is the patient's own order with a real Order uuid — chart group, and
+  // navigable. Without this row it lands on the default tab; the backend README names this
+  // client specifically as the one missing it.
+  active_drug_order: 'Orders',
   allergy: 'Allergies',
   condition: 'Conditions',
   diagnosis: 'Visits',
@@ -67,7 +69,9 @@ function buildReferenceUrl(ref: AiReference, patientUuid: string, misattributed:
   if (!patientUuid || misattributed || isReferenceData(ref)) {
     return null;
   }
-  const chartPage = RESOURCE_TYPE_TO_CHART_PAGE[ref.resourceType.toLowerCase()];
+  // Optional-chained to match `isReferenceData`, which guards the same field one call earlier:
+  // a reference missing it would otherwise throw here and unmount the whole answer panel.
+  const chartPage = RESOURCE_TYPE_TO_CHART_PAGE[ref.resourceType?.toLowerCase()];
   return `${window.spaBase}/patient/${patientUuid}/chart/${encodeURIComponent(chartPage ?? 'Patient Summary')}`;
 }
 
@@ -144,6 +148,25 @@ function referenceTag(t: Translate): GroundedTag {
 }
 
 /**
+ * The label for a reference-group citation, keyed on the same classification the predicate uses
+ * so the two cannot disagree. `other` is reachable and deliberately neutral: a citation whose
+ * `group` is `reference` but whose type this client predates must not be called a drug
+ * reference, which would tell a clinician it came from a drug's reference entry.
+ */
+function referenceLabel(ref: AiReference, t: Translate): string {
+  switch (referenceKind(ref)) {
+    case 'safety_finding':
+      return t('safetyFindingLabel', 'Safety finding');
+    case 'drug_reference':
+      return t('drugReferenceLabel', 'Drug reference');
+    case 'drug_class_note':
+      return t('drugClassNoteLabel', 'Drug class note');
+    default:
+      return t('referenceMaterialLabel', 'Reference material');
+  }
+}
+
+/**
  * Maps a safety-warning type to a Carbon Tag colour and a translated label.
  * Overdose and contraindication are the higher-severity reds; an interaction is
  * magenta. Unknown types fall back to a neutral red so a warning is never dropped.
@@ -169,7 +192,11 @@ const SEVERITY_TONE_CLASS: Record<SeverityTone, string> = {
   major: styles.severityMajor,
   moderate: styles.severityModerate,
   minor: styles.severityMinor,
-  unknown: styles.severityUnrated,
+  // `Unknown` is the LOWEST of the four ratings the module recognises; *unrated* it sorts ABOVE
+  // all four. They are opposite ends of one ranking, so they cannot share a treatment — one
+  // grey for both would tell a clinician an operator's unrated rule and a DDInter `Unknown`
+  // rank equally.
+  unknown: styles.severityUnknown,
   unrated: styles.severityUnrated,
 };
 
@@ -190,7 +217,10 @@ function renderAnswerWithCitations(answer: string, ctx: CitationContext): React.
   const { references, misattributed, severities, patientUuid, t } = ctx;
   const refByIndex = new Map(references.map((r) => [r.index, r]));
   const parts: React.ReactNode[] = [];
-  const pattern = /\[(\d+(?:\s*,\s*\d+)*)\]/g;
+  const pattern = citationGroupPattern();
+  // A rating belongs to a finding, not to a marker, and the model routinely repeats a finding's
+  // marker within one statement — so badge each index at most once per answer.
+  const badged = new Set<number>();
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
@@ -199,7 +229,7 @@ function renderAnswerWithCitations(answer: string, ctx: CitationContext): React.
       parts.push(answer.slice(lastIndex, match.index));
     }
     const matchIndex = match.index;
-    const citIndices = match[1].split(/\s*,\s*/).map(Number);
+    const citIndices = parseCitationIndices(match[1]);
     parts.push('[');
     citIndices.forEach((citIndex, i) => {
       const ref = refByIndex.get(citIndex);
@@ -213,12 +243,25 @@ function renderAnswerWithCitations(answer: string, ctx: CitationContext): React.
           // Struck through and NOT a link: the number stays readable so the chip below can be
           // found, but there is nowhere useful to go. Amber rather than red — this is unreliable
           // evidence, not a refuted claim.
+          //
+          // The two checks are independent and both can fire on one citation, so this must sit
+          // BESIDE the grounding verdict rather than over it: the ⚠ is kept for an ungrounded
+          // one, because the reference chip below shows its "Unsupported" badge either way and
+          // a marker that hid it would make the panel contradict itself.
           <span
             key={citKey}
-            className={`${styles.inlineCitation} ${styles.inlineCitationMisattributed}`}
-            title={misattributedTitle(t)}
+            className={
+              ungrounded
+                ? `${styles.inlineCitation} ${styles.inlineCitationMisattributed} ${styles.inlineCitationUngrounded}`
+                : `${styles.inlineCitation} ${styles.inlineCitationMisattributed}`
+            }
+            title={
+              ungrounded
+                ? `${misattributedTitle(t)} ${t('notGroundedTitle', 'The cited record may not support this statement — verify against the chart.')}`
+                : misattributedTitle(t)
+            }
           >
-            {citIndex}
+            {ungrounded ? `${citIndex} ⚠` : citIndex}
           </span>
         ) : url && ref ? (
           <a
@@ -257,16 +300,28 @@ function renderAnswerWithCitations(answer: string, ctx: CitationContext): React.
     // The rating for any finding cited here that the answer states nowhere, immediately after
     // the marker group — beside the sentence it belongs to, so a flat list of five findings can
     // be ranked in one pass instead of reading as five equals.
+    //
+    // Distinct ratings only: two indices of one group commonly resolve to the same finding, and
+    // "Major Major" would read as two findings where there is one. Where a group does yield two
+    // different ratings they render in the group's own index order.
+    const groupRatings: string[] = [];
     citIndices.forEach((citIndex) => {
       const severity = severities.get(citIndex);
-      if (!severity) return;
+      if (!severity || badged.has(citIndex)) return;
+      badged.add(citIndex);
+      if (!groupRatings.includes(severity)) groupRatings.push(severity);
+    });
+    groupRatings.forEach((severity) => {
+      // A real space, not just the tag's margin: without it the paragraph's text content reads
+      // "[350]Major", which is what a screen reader announces and what any text extraction gets.
+      parts.push(' ');
       parts.push(
         <span
-          key={`sev-${matchIndex}-${citIndex}`}
+          key={`sev-${matchIndex}-${severity}`}
           className={`${styles.severityTag} ${SEVERITY_TONE_CLASS[severityTone(severity)]}`}
           title={t(
             'unstatedSeverityTitle',
-            'Rated by the reference dataset. This answer does not state the rating — it is shown here so the findings can be ranked.',
+            'Rated by the reference dataset. This answer may not state the rating — it is shown here so the findings can be ranked.',
           )}
         >
           {severity}
@@ -322,11 +377,26 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   // Not derived from the number of chips: this counts drug PAIRS, and the chip list also
   // carries contraindication and class findings that were never pairs.
   const pairsSentence = useMemo(() => {
-    // Both halves must be numbers, not just `found`: a payload carrying only one of them would
-    // otherwise render "Interactions: undefined of 5 drug pairs shown." to a clinician, and
-    // `reported < found` would be false so the bounded warning would not fire either.
-    if (typeof interactionPairs?.found !== 'number' || typeof interactionPairs?.reported !== 'number') return null;
-    const { found, reported } = interactionPairs;
+    const found = interactionPairs?.found;
+    const reported = interactionPairs?.reported;
+    // Both halves must be sane, not just present. A payload carrying only one would render
+    // "Interactions: undefined of 5 drug pairs shown.", and `reported > found` would render
+    // "8 of 5" while leaving `bounded` false so nothing contradicted it — silent nonsense in
+    // both cases. The backend contract is non-negative integers with reported <= found.
+    if (typeof found !== 'number' || typeof reported !== 'number') return null;
+    if (!Number.isInteger(found) || !Number.isInteger(reported)) return null;
+    if (found < 0 || reported < 0 || reported > found) return null;
+
+    // `found: 0` is a real measurement — a check that ran and related no pairs — but it is a
+    // statement about the check that reported it and NOT about the findings listed beside it,
+    // which may come from another check entirely. "0 of 0 drug pairs shown" above a Major
+    // interaction chip reads as "no interactions found", so that cell gets its own sentence.
+    if (found === 0) {
+      return {
+        bounded: false,
+        text: t('interactionPairsNone', 'The interaction screen that reported here related no drug pairs.'),
+      };
+    }
     return {
       bounded: reported < found,
       text: t('interactionPairsShown', 'Interactions: {{reported}} of {{found}} drug pairs shown.', {
@@ -370,11 +440,17 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
    * implies a screen was attempted and fell short. Measured on this server: "What is her blood
    * pressure trend?" comes back `absent` with no warnings and no pair measurement.
    *
-   * A pair extent counts on its own: it is stated by a check that related pairs, so it is
-   * safety output even where the check raised no chip.
+   * A pair extent counts on its own: it is stated by a check that RAN, whatever it related, so
+   * it is safety output even where that check raised no chip.
    */
   const hasSafetyOutput = (safetyWarnings?.length ?? 0) > 0 || pairsSentence !== null;
   const coverageNote = hasSafetyOutput ? coverageSentence : null;
+
+  // While the answer is still streaming its citations are not annotated at all (see
+  // `renderedAnswer`), so a limits block here would describe annotations the reader cannot see.
+  // It also keeps a measurement off a message the hook never completed: closing the panel
+  // mid-stream leaves `isLoading` true forever, and a trailing `grounded` event still lands.
+  const showLimits = !isLoading && (pairsSentence !== null || coverageNote !== null);
 
   // The API layer emits a code (not display text) for session expiry so the wording can be localized
   // here; every other error is already a human-readable string from the server or browser.
@@ -416,11 +492,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
               const isMisattributed = misattributed.has(ref.index);
               const url = buildReferenceUrl(ref, patientUuid, isMisattributed);
               const referenceData = isReferenceData(ref);
-              const typeLabel = referenceData
-                ? ref.resourceType.toLowerCase() === 'safety_finding'
-                  ? t('safetyFindingLabel', 'Safety finding')
-                  : t('drugReferenceLabel', 'Drug reference')
-                : ref.resourceType;
+              const typeLabel = referenceData ? referenceLabel(ref, t) : ref.resourceType;
               // Only append the date when there is one — an allergy and a safety finding carry
               // none, and "— null" was reaching the screen.
               const label = `[${ref.index}] ${typeLabel}${ref.date ? ` — ${ref.date}` : ''}`;
@@ -461,7 +533,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                       className={styles.attachedTag}
                       title={t(
                         'attachedByTheModuleTitle',
-                        'The module supplied this citation from the safety finding it fired on, so the answer’s text carries no marker for it. Opening it scrolls to the record.',
+                        'The module supplied this citation from the safety finding it fired on, so the answer’s text carries no marker for it. Opening it goes to the record.',
                       )}
                     >
                       {t('attachedByTheModule', 'Added by the module')}
@@ -502,9 +574,9 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
       {/* What the safety screen did and did not cover. Deliberately neutral rather than a
           caution: an arm the loaded dataset cannot run is a limit of the dataset, not a finding
           about this patient, and styling it as a warning would read as the latter. */}
-      {(pairsSentence || coverageNote) && (
+      {showLimits && (
         <div className={styles.limitsSection}>
-          <span className={styles.limitsLabel}>{t('checkCoverage', 'What this check covered')}</span>
+          <span className={styles.limitsLabel}>{t('checkCoverage', 'What the safety checks covered')}</span>
           <ul className={styles.limitsList}>
             {pairsSentence && (
               <li className={pairsSentence.bounded ? styles.limitItemBounded : styles.limitItem}>

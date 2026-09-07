@@ -169,17 +169,13 @@
   color: colors.$gray-70;
 }
 
-// The rating the answer states nowhere, rendered beside the sentence that dropped it. Inline
-// (a span, not a Carbon Tag) so it flows inside the answer paragraph rather than breaking it.
+// The rating the answer states nowhere, rendered beside the sentence that dropped it.
+// `display: inline` (a span, not a Carbon Tag, which is a <div>) so it flows inside the answer
+// paragraph rather than breaking it — that override is the reason it cannot just be a Tag.
 .severityTag {
-  @include type.type-style('label-01');
+  @extend %disclosureTagBase;
   display: inline;
-  margin-left: 0.25rem;
-  padding: 0 layout.$spacing-02;
-  border-radius: 0.25rem;
   font-weight: 600;
-  cursor: help;
-  white-space: nowrap;
 }
 
 .severityMajor {
@@ -187,21 +183,34 @@
   color: colors.$red-70;
 }
 
+// Deliberately not the same amber as `.misattributedTag`: within one answer the two would mean
+// "Moderate rating" and "unreliable evidence", which must not look alike.
 .severityModerate {
-  background-color: colors.$orange-10;
-  color: colors.$orange-70;
-}
-
-.severityMinor {
-  background-color: colors.$yellow-10;
+  background-color: colors.$yellow-20;
   color: colors.$yellow-80;
 }
 
-// Any rating the module does not recognise, plus its own "Unknown" tier. Neutral, because
-// colouring an unrecognised word as a tier would assert a ranking no dataset stated.
-.severityUnrated {
+.severityMinor {
   background-color: colors.$gray-10;
-  color: colors.$gray-70;
+  color: colors.$gray-80;
+}
+
+// `Unknown` is the LOWEST of the four ratings the module recognises, so it is de-emphasised
+// rather than neutral — and it must not share a treatment with *unrated*, which the module
+// sorts ABOVE all four.
+.severityUnknown {
+  background-color: colors.$gray-10;
+  color: colors.$gray-60;
+  font-weight: 400;
+}
+
+// A rating word the module does not recognise. Outlined rather than filled: it carries no tier,
+// and tinting it as one would assert a ranking no dataset stated — while leaving it looking
+// like `Unknown` would put the module's above-Major case in its lowest tier's clothes.
+.severityUnrated {
+  background-color: transparent;
+  color: colors.$gray-80;
+  box-shadow: inset 0 0 0 1px colors.$gray-40;
 }
 
 // What the safety screen did and did not cover. Informational grey, NOT a caution: an arm the
