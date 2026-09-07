@@ -537,10 +537,37 @@ export function resolveFindingSeverities(
   const soundTrailing = soundSets(trailing);
   const soundLeading = soundSets(leading);
 
+  // Which findings the trailing reading claims for SOME citation of each set.
+  const claimedByTrailing = new Map<string, Set<AiSafetyWarning>>();
+  for (const [index, setKey] of trailing.setOfIndex) {
+    const elected = trailing.electedOf.get(index);
+    if (!elected) continue;
+    const claimed = claimedByTrailing.get(setKey) ?? new Set<AiSafetyWarning>();
+    claimed.add(elected);
+    claimedByTrailing.set(setKey, claimed);
+  }
+
   const contested = new Set<string>();
   for (const [index, setKey] of trailing.setOfIndex) {
-    if (!soundTrailing.has(setKey) || !soundLeading.has(setKey)) continue;
-    if (trailing.electedOf.get(index) !== leading.electedOf.get(index)) contested.add(setKey);
+    // Both readings identify the set and disagree — a permutation within the same findings.
+    if (soundTrailing.has(setKey) && soundLeading.has(setKey)) {
+      if (trailing.electedOf.get(index) !== leading.electedOf.get(index)) contested.add(setKey);
+    }
+
+    // Or the leading reading names a finding the trailing reading claims for NO citation of this
+    // set. That is not a shift artifact; it is a genuine alternative parse, so the layout does
+    // not determine the mapping.
+    //
+    // This is the check that survives a MULTI-LINE answer, and it is why the one above is not
+    // enough. Trailing claims are line-confined, so in any multi-line answer a trailing marker
+    // sits at end-of-line and its leading claim is empty — the leading reading is then never
+    // complete, never sound, and the disagreement rule above is structurally off. Live, a single
+    // marker-written-before-its-drug line among trailing ones was read backwards, uncontested:
+    // "Hydrocortisone aside, the order that matters most is [350] Solu-Medrol 125mg/5ml…" badged
+    // the MAJOR Methylprednisolone finding as Moderate, scavenging Hydrocortisone's rating from
+    // the lead-in, next to a correctly-badged Major.
+    const led = leading.electedOf.get(index);
+    if (led && !claimedByTrailing.get(setKey)?.has(led)) contested.add(setKey);
   }
 
   const resolved = new Map<number, string>();

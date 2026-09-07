@@ -673,6 +673,52 @@ describe('resolveFindingSeverities', () => {
     });
   });
 
+  it('refuses a multi-line answer with one marker written before its drug', () => {
+    // The rotation guard was structurally OFF here. Trailing claims are line-confined, so in any
+    // multi-line answer a trailing marker sits at end-of-line and its LEADING claim is empty —
+    // the leading reading is never complete, never sound, and the disagreement rule never fires.
+    // A single marker-before-drug line among trailing ones was then read backwards, uncontested,
+    // and the set still passed completeness and injectivity.
+    //
+    // Live: the Major Methylprednisolone finding badged Moderate, scavenging Hydrocortisone's
+    // rating from the lead-in clause, beside a correctly-badged Major.
+    const answer =
+      'Hydrocortisone aside, the order that matters most is [350] Solu-Medrol 125mg/5ml, where\n' +
+      'CYP450 3A4 inhibition raises exposure sharply.\n' +
+      'Pulmicort 90mcg is affected by the same mechanism [351].\n' +
+      'Prednisone is affected by the same mechanism [352].';
+    const resolved = resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 351, 352]);
+    expect(resolved.size).toBe(0);
+  });
+
+  it('refuses the same shape written the other way round', () => {
+    // Same mechanism, opposite direction — the fuzzer hit this class in both.
+    const answer =
+      'Unlike methylprednisolone, [354] hydrocortisone carries a lesser risk.\n' +
+      'Pulmicort 90mcg is affected by the same mechanism [351].';
+    const resolved = resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [354, 351]);
+    expect(resolved.size).toBe(0);
+  });
+
+  it('still resolves a multi-line answer whose markers all trail their drugs', () => {
+    // The control: the new rule must not fire where the leading reading names nothing outside
+    // what the trailing reading already claims. This is the ordinary shape.
+    const answer =
+      'Clarithromycin interacts with active order Methylprednisolone [350].\n' +
+      'Clarithromycin interacts with active order Budesonide [351].\n' +
+      'Clarithromycin interacts with active order Prednisone [352].\n' +
+      'Clarithromycin interacts with active order Dexamethasone [353].\n' +
+      'Clarithromycin interacts with active order Hydrocortisone [354].';
+    const resolved = resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, UNSTATED);
+    expect(Object.fromEntries(resolved)).toEqual({
+      350: 'Major',
+      351: 'Major',
+      352: 'Moderate',
+      353: 'Moderate',
+      354: 'Moderate',
+    });
+  });
+
   it('refuses where the badged sentence names two candidates', () => {
     // The one-candidate requirement is what keeps a resolved rating honest: where the sentence
     // the badge will be drawn against reproduces two candidates' own statements, nothing is
