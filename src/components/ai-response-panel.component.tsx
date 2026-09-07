@@ -413,7 +413,10 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     }
     return {
       bounded: reported < found,
-      text: t('interactionPairsShown', 'Interactions: {{reported}} of {{found}} drug pairs shown.', {
+      // Phrased so the number leads rather than agreeing with a noun: "1 of 1 drug pairs shown"
+      // is ungrammatical, and `found: 1` is observed live. Number-agnostic beats a plural rule
+      // here — i18next plurals would split this into per-language keys for one clause.
+      text: t('interactionPairsShown', 'Interaction pairs shown: {{reported}} of {{found}}.', {
         reported,
         found,
       }),

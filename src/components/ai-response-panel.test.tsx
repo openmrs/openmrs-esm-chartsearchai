@@ -717,20 +717,27 @@ describe('AiResponsePanel answer-limit disclosure', () => {
 
   it('says how much of the interaction screen is shown', () => {
     renderPanel();
-    expect(screen.getByText('Interactions: 5 of 5 drug pairs shown.')).toBeInTheDocument();
+    expect(screen.getByText('Interaction pairs shown: 5 of 5.')).toBeInTheDocument();
     // found === reported means that check withheld nothing; it is not a claim of completeness.
     expect(screen.queryByText(/least severe were withheld/i)).not.toBeInTheDocument();
   });
 
+  it('reads grammatically when the screen related a single pair', () => {
+    // "1 of 1 drug pairs shown" is ungrammatical, and found: 1 is observed live — so the
+    // sentence leads with the count instead of agreeing with a noun.
+    renderPanel({ interactionPairs: { found: 1, reported: 1 } });
+    expect(screen.getByText('Interaction pairs shown: 1 of 1.')).toBeInTheDocument();
+  });
+
   it('says so where the interaction list was truncated', () => {
     renderPanel({ interactionPairs: { found: 18, reported: 10 } });
-    expect(screen.getByText(/Interactions: 10 of 18 drug pairs shown/)).toBeInTheDocument();
+    expect(screen.getByText(/Interaction pairs shown: 10 of 18/)).toBeInTheDocument();
     expect(screen.getByText(/least severe were withheld/i)).toBeInTheDocument();
   });
 
   it('states no interaction extent where the response stated no measurement', () => {
     renderPanel({ interactionPairs: null, conditionRuleCoverage: null });
-    expect(screen.queryByText(/drug pairs shown/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Interaction pairs shown/)).not.toBeInTheDocument();
     expect(limitsSection()).toBeNull();
   });
 
@@ -738,7 +745,7 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     // Silent wrong output, not a crash: the interpolation would stringify the missing half, and
     // `reported < found` would be false so the bounded warning would not fire to contradict it.
     renderPanel({ interactionPairs: { found: 5 }, conditionRuleCoverage: null });
-    expect(screen.queryByText(/drug pairs shown/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Interaction pairs shown/)).not.toBeInTheDocument();
     expect(screen.queryByText(/undefined/)).not.toBeInTheDocument();
     expect(limitsSection()).toBeNull();
   });
@@ -807,7 +814,7 @@ describe('AiResponsePanel answer-limit disclosure', () => {
       { found: 5.5, reported: 1 },
     ]) {
       const { unmount } = renderPanel({ interactionPairs, conditionRuleCoverage: null });
-      expect(screen.queryByText(/drug pairs/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Interaction pairs shown/)).not.toBeInTheDocument();
       expect(limitsSection()).toBeNull();
       unmount();
     }

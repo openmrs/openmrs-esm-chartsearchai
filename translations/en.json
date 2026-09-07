@@ -21,7 +21,7 @@
   "groundedTitle": "Supported by the cited record.",
   "helpful": "Helpful",
   "interactionPairsNone": "The interaction screen that reported here related no drug pairs.",
-  "interactionPairsShown": "Interactions: {{reported}} of {{found}} drug pairs shown.",
+  "interactionPairsShown": "Interaction pairs shown: {{reported}} of {{found}}.",
   "interactionPairsWithheld": "The least severe were withheld.",
   "microphonePermissionDenied": "Microphone access was denied. Please allow microphone permissions.",
   "misattributedCitationTitle": "The module reports that this citation may not be the medication order this sentence names, so it is not offered as a link. The safety finding itself is unaffected.",
