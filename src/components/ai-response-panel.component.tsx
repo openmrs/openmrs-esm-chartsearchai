@@ -357,6 +357,23 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     }
   }, [conditionRuleCoverage, t]);
 
+  /**
+   * Whether a safety screen actually produced anything on this answer.
+   *
+   * `conditionRuleCoverage` describes the loaded DATASET, and the backend states it on every
+   * answer — deliberately ungated, so it answers even where nothing was screened — with
+   * `absent` being the verdict the shipped knowledge base yields. So rendering the coverage
+   * note unconditionally puts "conditions were not screened" under every answer on every
+   * install, including questions that never asked for a contraindication screen, where it
+   * implies a screen was attempted and fell short. Measured on this server: "What is her blood
+   * pressure trend?" comes back `absent` with no warnings and no pair measurement.
+   *
+   * The extent of a screen is worth stating only where there was a screen. A pair measurement
+   * counts as one on its own: it means an interaction check ran, even if it raised no chip.
+   */
+  const safetyScreenRan = (safetyWarnings?.length ?? 0) > 0 || pairsSentence !== null;
+  const coverageNote = safetyScreenRan ? coverageSentence : null;
+
   // The API layer emits a code (not display text) for session expiry so the wording can be localized
   // here; every other error is already a human-readable string from the server or browser.
   const displayError =
@@ -483,7 +500,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
       {/* What the safety screen did and did not cover. Deliberately neutral rather than a
           caution: an arm the loaded dataset cannot run is a limit of the dataset, not a finding
           about this patient, and styling it as a warning would read as the latter. */}
-      {(pairsSentence || coverageSentence) && (
+      {(pairsSentence || coverageNote) && (
         <div className={styles.limitsSection}>
           <span className={styles.limitsLabel}>{t('checkCoverage', 'What this check covered')}</span>
           <ul className={styles.limitsList}>
@@ -496,10 +513,10 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                 </span>
               </li>
             )}
-            {coverageSentence && (
+            {coverageNote && (
               <li className={styles.limitItem}>
                 <Information size={16} className={styles.limitIcon} />
-                <span>{coverageSentence}</span>
+                <span>{coverageNote}</span>
               </li>
             )}
           </ul>

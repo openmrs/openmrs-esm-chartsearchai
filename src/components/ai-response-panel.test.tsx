@@ -690,6 +690,23 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     expect(screen.queryByText('What this check covered')).not.toBeInTheDocument();
   });
 
+  it('states no coverage note on an answer no safety screen produced anything for', () => {
+    // Measured on a live server: "What is her blood pressure trend?" comes back
+    // conditionRuleCoverage "absent" with no warnings and no pair measurement — "absent" is the
+    // verdict the shipped knowledge base yields, so an ungated note would sit under every
+    // answer on every install and imply a contraindication screen fell short where none ran.
+    renderPanel({ safetyWarnings: [], interactionPairs: null, conditionRuleCoverage: 'absent' });
+    expect(screen.queryByText('What this check covered')).not.toBeInTheDocument();
+    expect(screen.queryByText(/were not screened/)).not.toBeInTheDocument();
+  });
+
+  it('states the coverage note where an interaction screen ran but raised no chip', () => {
+    // A pair measurement is a screen on its own, so its extent is worth stating even with no
+    // warnings beside it.
+    renderPanel({ safetyWarnings: [], interactionPairs: { found: 0, reported: 0 } });
+    expect(screen.getByText(/publishes no condition rules/)).toBeInTheDocument();
+  });
+
   it('says conditions were not screened, and why, on "absent"', () => {
     renderPanel();
     expect(screen.getByText(/publishes no condition rules/)).toBeInTheDocument();
