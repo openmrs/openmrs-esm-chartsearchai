@@ -132,7 +132,7 @@ function normalize(text: string): string {
  * marker too: the rating is then read from, and shown beside, the same sentence. A union would
  * let evidence from a later sentence justify a badge drawn against an earlier one.
  */
-export type ClaimDirection = 'trailing' | 'leading';
+export type ClaimDirection = 'trailing' | 'leading' | 'block' | 'block-leading';
 
 export function claimTextByCitation(answer: string, direction: ClaimDirection = 'trailing'): Map<number, string> {
   const matches = [...answer.matchAll(citationGroupPattern())];
@@ -157,15 +157,27 @@ export function claimTextByCitation(answer: string, direction: ClaimDirection = 
   for (let i = 0; i < runs.length; i++) {
     const run = runs[i];
     let claim: string;
-    if (direction === 'trailing') {
-      // The prose BEFORE the marker, confined to the marker's own line.
+    if (direction === 'trailing' || direction === 'block') {
+      // The prose BEFORE the marker: confined to the marker's own line for `trailing`, and
+      // unconfined back to the previous marker for `block`.
+      //
+      // The block reading exists because the line-confined one asks only whether exactly one
+      // candidate is NAMED in its window, never whether the window is a statement ABOUT that
+      // candidate. Where a marker's true subject sits on the item's header line and a CONTRAST
+      // partner sits on the citation's own line, the confined window names only the contrast
+      // partner and elects it. Live, that produced a derangement — a bijection, so completeness
+      // and injectivity both held — with both Major findings badged Moderate.
       const preceding = answer.slice(runs[i - 1]?.end ?? 0, run.start);
-      const lineStart = preceding.lastIndexOf('\n');
+      const lineStart = direction === 'block' ? -1 : preceding.lastIndexOf('\n');
       claim = lineStart < 0 ? preceding : preceding.slice(lineStart + 1);
     } else {
-      // The prose AFTER the marker, up to the next marker and confined to this line.
+      // The prose AFTER the marker, up to the next marker: confined to this line for `leading`,
+      // unconfined for `block-leading`. The unconfined one is what survives a marker written at
+      // the END of its line with its subject on the next — there the confined forward window is
+      // empty and the confined backward window holds only the preamble, so nothing contests an
+      // election made from the preamble's partner.
       const following = answer.slice(run.end, runs[i + 1]?.start ?? answer.length);
-      const lineEnd = following.indexOf('\n');
+      const lineEnd = direction === 'block-leading' ? -1 : following.indexOf('\n');
       claim = lineEnd < 0 ? following : following.slice(0, lineEnd);
       // ...but a marker immediately followed by a sentence terminator CLOSES its claim: nothing
       // after it can be its subject. Without this, an ordinary trailing-marker list self-
@@ -174,7 +186,12 @@ export function claimTextByCitation(answer: string, direction: ClaimDirection = 
       // with the correct trailing one and every rating was withheld. Live, four correct ratings
       // were discarded; whether an answer came out fully badged or fully blank turned on whether
       // the model happened to write one more sentence after its last citation.
-      if (/^[^\S\n]*[.;:!?]/.test(following)) claim = '';
+      // `:` is deliberately NOT in this set: a colon after a marker is a LABEL separator, not a
+      // sentence close, so zeroing the leading claim there silenced the contest on
+      // "…the one to watch is [350]: Solu-Medrol 125mg/5ml". Removing `.` as well was measured
+      // and regresses — it loses four correct ratings on a live answer — so the rest is
+      // load-bearing.
+      if (/^[^\S\n]*[.;!?]/.test(following)) claim = '';
     }
     for (const group of run.groups) {
       for (const index of parseCitationIndices(group[1])) {
@@ -534,6 +551,13 @@ export function resolveFindingSeverities(
     unstatedFindingSeverities,
     claimTextByCitation(answer, 'leading'),
   );
+  const block = readClaims(references, safetyWarnings, unstatedFindingSeverities, claimTextByCitation(answer, 'block'));
+  const blockLeading = readClaims(
+    references,
+    safetyWarnings,
+    unstatedFindingSeverities,
+    claimTextByCitation(answer, 'block-leading'),
+  );
   const soundTrailing = soundSets(trailing);
   const soundLeading = soundSets(leading);
 
@@ -566,8 +590,19 @@ export function resolveFindingSeverities(
     // "Hydrocortisone aside, the order that matters most is [350] Solu-Medrol 125mg/5ml…" badged
     // the MAJOR Methylprednisolone finding as Moderate, scavenging Hydrocortisone's rating from
     // the lead-in, next to a correctly-badged Major.
-    const led = leading.electedOf.get(index);
-    if (led && !claimedByTrailing.get(setKey)?.has(led)) contested.add(setKey);
+    for (const forward of [leading, blockLeading]) {
+      const led = forward.electedOf.get(index);
+      if (led && !claimedByTrailing.get(setKey)?.has(led)) contested.add(setKey);
+    }
+
+    // Or the wider, unconfined window no longer singles out what the line-confined one elected.
+    // This is the check that survives a SILENT leading reading — and it is silent in exactly the
+    // layouts that break the confined one: across 40 live answers a finding marker sits at
+    // end-of-line 54 times and is followed by a sentence terminator 151 times, and in every one
+    // of those the leading reading has no evidence, which the contest above reads as no
+    // objection.
+    const confined = trailing.electedOf.get(index);
+    if (confined && block.electedOf.get(index) !== confined) contested.add(setKey);
   }
 
   const resolved = new Map<number, string>();

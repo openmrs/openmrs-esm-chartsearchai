@@ -73,7 +73,24 @@ const REFS: AiReference[] = INDEX_OF.map((index) => ({
 }));
 
 /** How one finding may be written. Each returns prose containing exactly that finding's marker. */
-const MARKER_FIRST = (name: string, marker: string) => `${marker} ${name}`;
+const MARKER_FIRST_SHAPES: Array<(name: string, marker: string) => string> = [
+  (name, marker) => `${marker} ${name}`,
+  (name, marker) => `${marker}: ${name}`,
+  (name, marker) => `${marker}\n${name}`,
+];
+
+/**
+ * A two-line entry: the subject on a header line, the citation on a CONTRAST line that names a
+ * DIFFERENT candidate. The marker still belongs to the header's finding.
+ *
+ * The generator could not previously produce this, and it is the whole hazard: it maintained an
+ * unstated invariant that the cited finding's own name always appears on the marker's own line,
+ * so a window containing ONLY a foreign candidate was unreachable — and that is precisely the
+ * window the confined reading mishandles. Live, this layout deranged an entire five-finding
+ * answer with both Majors badged Moderate.
+ */
+const CONTRAST = (name: string, marker: string, other: string) =>
+  `${name}\n  This interaction differs from the one for ${other} ${marker}.`;
 
 const SENTENCE_SHAPES: Array<(name: string, marker: string) => string> = [
   (name, marker) => `Clarithromycin interacts with active order ${name} ${marker}.`,
@@ -132,8 +149,15 @@ function generateAnswer(random: () => number): Generated {
     const name = random() < 0.5 ? partner.substance : partner.order;
     // In a targeted answer the first line always leads with its marker; the rest vary, which is
     // what mixes marker-first and marker-last in one answer.
+    // A contrast entry names another partner beside the marker and its own on the header line.
+    if (random() < 0.25) {
+      const other = PARTNERS[(partnerIndex + 1 + Math.floor(random() * (PARTNERS.length - 1))) % PARTNERS.length];
+      return CONTRAST(name, `[${index}]`, random() < 0.5 ? other.substance : other.order);
+    }
     const shape =
-      targeted && position === 0 ? MARKER_FIRST : SENTENCE_SHAPES[Math.floor(random() * SENTENCE_SHAPES.length)];
+      targeted && position === 0
+        ? MARKER_FIRST_SHAPES[Math.floor(random() * MARKER_FIRST_SHAPES.length)]
+        : SENTENCE_SHAPES[Math.floor(random() * SENTENCE_SHAPES.length)];
     return shape(name, `[${index}]`);
   });
 
