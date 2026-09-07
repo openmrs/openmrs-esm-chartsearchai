@@ -285,7 +285,7 @@ describe('useChartSearchAi', () => {
     // ...then the trailing grounded event re-sends them with verdicts, which must land on the
     // SAME (already completed) message.
     act(() => {
-      callbacks.onGrounded([{ ...refs[0], grounded: true }]);
+      callbacks.onGrounded({ references: [{ ...refs[0], grounded: true }] });
     });
     expect(result.current.messages[0].references[0].grounded).toBe(true);
     expect(result.current.messages[0].isLoading).toBe(false);
@@ -315,9 +315,11 @@ describe('useChartSearchAi', () => {
     });
 
     act(() => {
-      firstCallbacks.onGrounded([
-        { index: 1, resourceType: 'condition', resourceUuid: 'uuid-7', date: '2022-11-13', grounded: false },
-      ]);
+      firstCallbacks.onGrounded({
+        references: [
+          { index: 1, resourceType: 'condition', resourceUuid: 'uuid-7', date: '2022-11-13', grounded: false },
+        ],
+      });
     });
 
     expect(result.current.messages).toHaveLength(2);

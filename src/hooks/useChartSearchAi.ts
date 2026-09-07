@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useConfig, useStore } from '@openmrs/esm-framework';
 import {
+  type AiInteractionPairs,
   type AiReference,
   type AiSafetyWarning,
   type AiSearchResponse,
@@ -16,6 +17,16 @@ export interface ChatMessage {
   answer: string;
   references: AiReference[];
   safetyWarnings: AiSafetyWarning[];
+  /** Citations the answer offered as evidence of an active drug order that cannot be one.
+   *  null = the response stated no measurement; [] = the check ran and named none, which is
+   *  NOT a certificate that the remaining citations are sound. */
+  misattributedOrderCitations: number[] | null;
+  /** Citations of safety findings whose rating the answer states nowhere. */
+  unstatedFindingSeverities: number[] | null;
+  /** Whether the loaded dataset could run the condition arm of the contraindication screen. */
+  conditionRuleCoverage: string | null;
+  /** How bounded the interaction check that stated it was. null = no measurement stated. */
+  interactionPairs: AiInteractionPairs | null;
   questionId: string;
   isLoading: boolean;
   error: string | null;
@@ -49,6 +60,30 @@ function generateId(): string {
  *  is accumulated chunk-by-chunk and the trailing space must survive between chunks. */
 function stripPreviewCitations(text: string): string {
   return text.replace(/\s?\[\d+(?:\s*,\s*\d+)*\]/g, '');
+}
+
+type Disclosure = Pick<
+  ChatMessage,
+  'misattributedOrderCitations' | 'unstatedFindingSeverities' | 'conditionRuleCoverage' | 'interactionPairs'
+>;
+
+/**
+ * Carries the answer-limit measurements from a response — or from the trailing `grounded`
+ * event — onto the message.
+ *
+ * Falls back to what the message already holds rather than assigning outright, because under
+ * `chartsearchai.grounding.async=true` the early `done` event states nulls for every
+ * measurement taken after the answer and the trailing `grounded` event supplies them, while
+ * `conditionRuleCoverage` is already final on `done` and merely re-sent. So neither event can
+ * erase the other's value, whichever order a given server states them in.
+ */
+function mergeDisclosure(previous: Disclosure, source: Partial<AiSearchResponse>): Disclosure {
+  return {
+    misattributedOrderCitations: source.misattributedOrderCitations ?? previous.misattributedOrderCitations,
+    unstatedFindingSeverities: source.unstatedFindingSeverities ?? previous.unstatedFindingSeverities,
+    conditionRuleCoverage: source.conditionRuleCoverage ?? previous.conditionRuleCoverage,
+    interactionPairs: source.interactionPairs ?? previous.interactionPairs,
+  };
 }
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
@@ -123,6 +158,10 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         answer: '',
         references: [],
         safetyWarnings: [],
+        misattributedOrderCitations: null,
+        unstatedFindingSeverities: null,
+        conditionRuleCoverage: null,
+        interactionPairs: null,
         questionId: '',
         isLoading: true,
         error: null,
@@ -151,6 +190,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
             answer: response.answer,
             references: response.references,
             safetyWarnings: response.safetyWarnings ?? [],
+            ...mergeDisclosure(updated[idx], response),
             questionId: response.questionId ?? '',
             isLoading: false,
             // the scratchpad served its purpose as a live indicator; don't persist it
@@ -249,15 +289,25 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
               },
               onDone: done,
               // Trailing verdicts (server runs async grounding): update the SAME message's
-              // references after done completed it. Deliberately NOT gated on isMountedRef —
-              // the chat store outlives the panel, and verdicts that arrive after the user
-              // closed it must still land so badges are correct when the panel reopens.
-              onGrounded: (references) => {
+              // references after done completed it — and its safety warnings and answer-limit
+              // measurements, which `done` states as empty/null in that mode because validation
+              // and the answer checks run after it is handed off. Reading `done` alone there
+              // would render none of the disclosure.
+              //
+              // Deliberately NOT gated on isMountedRef — the chat store outlives the panel, and
+              // verdicts that arrive after the user closed it must still land so badges are
+              // correct when the panel reopens.
+              onGrounded: (update) => {
                 updateMessages(patientUuid, (prev) => {
                   const idx = prev.findIndex((m) => m.id === messageId);
                   if (idx === -1) return prev;
                   const updated = [...prev];
-                  updated[idx] = { ...updated[idx], references };
+                  updated[idx] = {
+                    ...updated[idx],
+                    references: update.references ?? updated[idx].references,
+                    safetyWarnings: update.safetyWarnings ?? updated[idx].safetyWarnings,
+                    ...mergeDisclosure(updated[idx], update),
+                  };
                   return updated;
                 });
               },

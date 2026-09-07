@@ -26,6 +26,27 @@ export interface AiReference {
    * never as "verified".
    */
   grounded?: boolean | null;
+  /**
+   * Which corpus the cited record came from: `chart` = the patient's own record,
+   * `reference` = module-supplied reference material (a drug-reference entry, a
+   * safety finding, a drug-class note), which has no chart page to navigate to.
+   * Optional so a response predating the field still parses — {@link isReferenceData}
+   * falls back to `resourceType`.
+   */
+  group?: string | null;
+  /**
+   * Whether the MODULE attached this citation rather than the model emitting it — true for
+   * a chart record that an injected safety finding the model *did* cite was derived from
+   * (the recorded allergy or condition whose match raised it).
+   *
+   * Two consequences a client must handle, neither derivable from any other field:
+   * the answer prose carries NO `[N]` marker for such a citation, so a reference list
+   * built by scanning the answer text drops it silently; and its {@link grounded} is
+   * always null, which here is "there was no claim to verify" rather than "verification
+   * failed" — the module attached no claim. `chart` group + no marker + `grounded: null`
+   * do NOT together identify a module-supplied citation, which is why this key exists.
+   */
+  attachedByTheModule?: boolean | null;
 }
 
 /**
@@ -40,15 +61,101 @@ export interface AiSafetyWarning {
   drug: string;
   /** human-readable detail, e.g. "interacts with active order warfarin" */
   detail: string;
+  /**
+   * The rating the loaded reference dataset assigns the rule this warning was raised from,
+   * verbatim and unnormalized — the dataset's rating, NOT the module's advice, and never a
+   * statement about what the rating licenses clinically.
+   *
+   * null where the finding carries no rating (a contraindication, an overdose and an
+   * ATC-class or cross-reactivity join carry none by construction). Not a closed
+   * vocabulary: the bundled knowledge base publishes Major/Moderate/Minor/Unknown but an
+   * operator's dataset supplies its own words, so compare case-insensitively after
+   * trimming and treat an unrecognised value as unrated rather than as a floor. Read this
+   * field; never parse the rating back out of {@link detail}.
+   */
+  severity?: string | null;
 }
+
+/**
+ * How bounded the interaction check that stated it was: the rule pairs it found above the
+ * server's severity floor, and the number it reported. Where `reported < found` the list is
+ * truncated (least severe dropped first) and has to say so, because silent truncation reads
+ * as "nothing else was found".
+ *
+ * Two readings to keep apart. `found === reported` says that check withheld nothing — NOT
+ * that the response is complete, which this field has never claimed. And a null/absent key
+ * is the absence of a measurement, never a statement that nothing was found.
+ *
+ * It counts drug PAIRS, not the warnings beside it: a response can legitimately carry more
+ * safety warnings than this states pairs, so never derive the ratio by counting chips.
+ */
+export interface AiInteractionPairs {
+  found: number;
+  reported: number;
+}
+
+/**
+ * Whether the loaded drug-reference dataset can run the CONDITION arm of the
+ * contraindication screen at all.
+ *
+ * `absent` = a dataset was read and no entry carries a condition rule, so the arm cannot
+ * fire; `unloaded` = nothing was read, so nothing is known. Those two must not be collapsed —
+ * "we looked and there is none" is not "nobody looked". `published` says the DATASET can run
+ * the arm and is deliberately NOT a claim that any recorded condition was screened.
+ */
+export type ConditionRuleCoverage = 'absent' | 'published' | 'unloaded';
 
 export interface AiSearchResponse {
   answer: string;
   references: AiReference[];
   /** Empty/absent unless the optional drug-reference feature is enabled on the server. */
   safetyWarnings?: AiSafetyWarning[];
+  /**
+   * Citation indices the answer offered as evidence of an active drug order that CANNOT be
+   * one — a condition, a visit, an encounter, or an order the chart says is no longer in
+   * force. Render as "this citation cannot be the order named", never as "this claim is
+   * unsupported": the finding behind the sentence is deterministic and typically correct;
+   * it is the chart evidence attached to it that is wrong.
+   *
+   * An EMPTY array is not a certificate that the citations are sound. The check sees only an
+   * answer that reproduces the module's own "interacts with active order" phrase, only the
+   * markers directly following it, and it cannot tell a citation of the wrong in-force order
+   * from a citation of the right one — so `[]` says the check ran and named none. Never
+   * render a "citations verified" affordance off this field.
+   */
+  misattributedOrderCitations?: number[] | null;
+  /**
+   * Citation indices of safety findings whose rating the answer states NOWHERE, leaving a
+   * clinician no way to rank a flat list of findings. The rating itself is on the
+   * corresponding {@link AiSafetyWarning.severity}; render it beside the sentence.
+   *
+   * The check asks of the whole answer rather than of the citing sentence, so an answer that
+   * states the rating anywhere is silent here — which is why rendering is gated on this list
+   * rather than on severity being present.
+   */
+  unstatedFindingSeverities?: number[] | null;
+  /** @see ConditionRuleCoverage */
+  conditionRuleCoverage?: ConditionRuleCoverage | string | null;
+  /** @see AiInteractionPairs */
+  interactionPairs?: AiInteractionPairs | null;
   questionId?: string;
 }
+
+/**
+ * The measurements the backend re-sends on the trailing `grounded` SSE event. Under
+ * `chartsearchai.grounding.async=true` the `done` event is emitted before validation runs, so
+ * it carries `safetyWarnings: []` and a null for each of these — they arrive only here. A
+ * client that reads `done` alone renders none of the disclosure on such a server.
+ */
+export type AiGroundedUpdate = Pick<
+  AiSearchResponse,
+  | 'references'
+  | 'safetyWarnings'
+  | 'misattributedOrderCitations'
+  | 'unstatedFindingSeverities'
+  | 'conditionRuleCoverage'
+  | 'interactionPairs'
+>;
 
 export type FeedbackRating = 'positive' | 'negative';
 
@@ -145,8 +252,14 @@ export function searchPatientChartStream(
      * verification finishes. Best-effort like {@code onReferences}: when the server runs in
      * classic mode the event never arrives and {@code done}'s references are already final;
      * a malformed payload just leaves citations rendered as unverified.
+     *
+     * It carries more than the verdicts: the final {@code safetyWarnings} and the answer-limit
+     * measurements ({@code interactionPairs}, {@code misattributedOrderCitations},
+     * {@code unstatedFindingSeverities}) are all null/empty on the early {@code done} in that
+     * mode and arrive only here, so the whole payload is handed over rather than the
+     * references alone.
      */
-    onGrounded?: (references: AiReference[]) => void;
+    onGrounded?: (update: AiGroundedUpdate) => void;
     /**
      * Live reasoning ("thinking") chunks, streamed by the server before the answer so the
      * UI can show progress and the model's rationale instead of a dead spinner during the
@@ -255,7 +368,7 @@ export function searchPatientChartStream(
           // the citations unverified rather than erroring an already-complete answer.
           try {
             const parsed = JSON.parse(data);
-            callbacks.onGrounded?.(parsed.references ?? []);
+            callbacks.onGrounded?.({ ...parsed, references: parsed.references ?? [] });
           } catch {
             // ignore; citations simply stay unverified
           }
