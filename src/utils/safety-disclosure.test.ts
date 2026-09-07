@@ -719,6 +719,16 @@ describe('resolveFindingSeverities', () => {
     });
   });
 
+  it('refuses a swap the shift-consistency rule cannot see', () => {
+    // The two contest rules are not redundant. Shift-consistency asks whether the leading
+    // reading names a finding the trailing reading claims for nobody — so a true 2-cycle SWAP,
+    // where both readings elect the same two findings in opposite order, is invisible to it. The
+    // disagreement rule is what catches that, and this is the shape that keeps it honest.
+    const answer = 'Methylprednisolone [350] Budesonide [351] Methylprednisolone.';
+    const resolved = resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 351]);
+    expect(resolved.size).toBe(0);
+  });
+
   it('refuses where the badged sentence names two candidates', () => {
     // The one-candidate requirement is what keeps a resolved rating honest: where the sentence
     // the badge will be drawn against reproduces two candidates' own statements, nothing is
