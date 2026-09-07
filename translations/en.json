@@ -5,9 +5,9 @@
   "askAi": "Ask AI",
   "askAiAboutPatient": "Ask AI about this patient",
   "attachedByTheModule": "Added by the module",
-  "attachedByTheModuleTitle": "The module supplied this citation from the safety finding it fired on, so the answer’s text carries no marker for it. Opening it scrolls to the record.",
+  "attachedByTheModuleTitle": "The module supplied this citation from the safety finding it fired on, so the answer’s text carries no marker for it. Opening it goes to the record.",
   "cancel": "Cancel",
-  "checkCoverage": "What this check covered",
+  "checkCoverage": "What the safety checks covered",
   "close": "Close",
   "conditionRulesAbsent": "Conditions were not screened. The loaded drug-reference dataset publishes no condition rules, so this patient’s recorded conditions were not checked.",
   "conditionRulesUnloaded": "Conditions were not screened. No drug-reference dataset was loaded, so nothing is known about condition coverage.",
@@ -48,7 +48,7 @@
   "streamInterrupted": "Response interrupted:",
   "submitFeedback": "Submit",
   "thinkingEllipsis": "Thinking...",
-  "unstatedSeverityTitle": "Rated by the reference dataset. This answer does not state the rating — it is shown here so the findings can be ranked.",
+  "unstatedSeverityTitle": "Rated by the reference dataset. This answer may not state the rating — it is shown here so the findings can be ranked.",
   "voiceInput": "Voice input",
   "wasThisHelpful": "Was this helpful?"
 }
