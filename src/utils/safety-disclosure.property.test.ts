@@ -176,6 +176,47 @@ function generateAnswer(random: () => number): Generated {
   };
 }
 
+describe('the generator reaches the shapes it exists for', () => {
+  it('produces every structural dimension a defect has used', () => {
+    // A generator is an input source, not a guard: weakening it costs coverage silently, and
+    // removing its contrast entries leaves the property test green while it stops examining the
+    // shape that deranged a whole live answer. So the coverage is asserted, not assumed — an
+    // empty discovery has to fail.
+    let contrast = 0;
+    let markerFirst = 0;
+    let markerAtLineEnd = 0;
+    let colonAfterMarker = 0;
+    let orderVocabulary = 0;
+    let multiLine = 0;
+
+    for (let seed = 1; seed <= 4000; seed++) {
+      const { answer } = generateAnswer(makeRandom(seed));
+      if (answer.includes('This interaction differs')) contrast += 1;
+      if (/\[\d+\]\s+[A-Z]/.test(answer)) markerFirst += 1;
+      if (/\[\d+\]\n/.test(answer)) markerAtLineEnd += 1;
+      if (/\[\d+\]:/.test(answer)) colonAfterMarker += 1;
+      if (/\d+(mg|mcg|ml)/.test(answer)) orderVocabulary += 1;
+      if (answer.includes('\n')) multiLine += 1;
+    }
+
+    expect({
+      contrast: contrast > 200,
+      markerFirst: markerFirst > 200,
+      markerAtLineEnd: markerAtLineEnd > 50,
+      colonAfterMarker: colonAfterMarker > 50,
+      orderVocabulary: orderVocabulary > 200,
+      multiLine: multiLine > 200,
+    }).toEqual({
+      contrast: true,
+      markerFirst: true,
+      markerAtLineEnd: true,
+      colonAfterMarker: true,
+      orderVocabulary: true,
+      multiLine: true,
+    });
+  });
+});
+
 describe('resolveFindingSeverities property: it may refuse, but never mis-attribute', () => {
   it('never renders a rating that is not the cited finding’s, over generated answers', () => {
     const violations: string[] = [];
