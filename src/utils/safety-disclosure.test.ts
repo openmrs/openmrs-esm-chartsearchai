@@ -3,6 +3,7 @@ import type { AiReference, AiSafetyWarning } from '../api/chartsearchai';
 import {
   claimTextByCitation,
   isReferenceData,
+  REFERENCE_RESOURCE_TYPES,
   parseCitationIndices,
   referenceKind,
   resolveFindingSeverities,
@@ -24,7 +25,7 @@ const ANSWER = ANSWER_BY_SUBSTANCE;
 
 describe('isReferenceData', () => {
   it('recognises every reference resource type, not just drug_reference', () => {
-    for (const resourceType of ['drug_reference', 'safety_finding', 'drug_class_note']) {
+    for (const resourceType of REFERENCE_RESOURCE_TYPES) {
       expect(isReferenceData({ index: 1, resourceType, resourceUuid: 'x', date: '' })).toBe(true);
     }
   });
@@ -545,15 +546,7 @@ describe('resolveFindingSeverities', () => {
   it('resolves a lone candidate without needing the prose at all', () => {
     const resolved = resolveFindingSeverities(
       'Ibuprofen interacts with warfarin [40].',
-      [
-        {
-          index: 40,
-          resourceType: 'safety_finding',
-          resourceUuid: 'interaction:Ibuprofen',
-          date: '',
-          group: 'reference',
-        },
-      ],
+      [safetyFindingRef(40, 'interaction', 'Ibuprofen')],
       [{ type: 'interaction', drug: 'Ibuprofen', detail: 'Reworded entirely by the module.', severity: 'Minor' }],
       [40],
     );
@@ -615,9 +608,7 @@ describe('resolveFindingSeverities', () => {
   });
 
   it('preserves an unrecognised rating verbatim rather than normalising it', () => {
-    const refs: AiReference[] = [
-      { index: 1, resourceType: 'safety_finding', resourceUuid: 'interaction:Ibuprofen', date: '', group: 'reference' },
-    ];
+    const refs: AiReference[] = [safetyFindingRef(1, 'interaction', 'Ibuprofen')];
     const resolved = resolveFindingSeverities(
       'A claim [1].',
       refs,
@@ -630,7 +621,7 @@ describe('resolveFindingSeverities', () => {
 
 describe('referenceKind', () => {
   it('names each reference type the predicate admits', () => {
-    for (const resourceType of ['drug_reference', 'safety_finding', 'drug_class_note']) {
+    for (const resourceType of REFERENCE_RESOURCE_TYPES) {
       expect(referenceKind({ index: 1, resourceType, resourceUuid: 'x', date: '' })).toBe(resourceType);
     }
   });

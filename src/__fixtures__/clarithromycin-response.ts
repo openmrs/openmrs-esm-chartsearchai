@@ -57,10 +57,10 @@ export const ANSWER_BY_ORDER_DISPLAY =
 
 /**
  * The response's references, verbatim in wire order. Note `[3]`, the recorded allergy the
- * MODULE attached: it carries no `[N]` marker in either answer above, and its `date` is null.
- * The five INTERACTION `safety_finding` entries share one `resourceUuid` — the sixth, 349, is
- * a contraindication with its own — which is why `(type, drug)` cannot identify which warning
- * holds a given citation's rating.
+ * MODULE attached: it carries no `[N]` marker in ANY of the three answers, and its `date` is null.
+ * Six `safety_finding` entries: 349 is a contraindication with its own `resourceUuid`, and
+ * 350-354 are interactions that all share one — which is why `(type, drug)` cannot identify
+ * which warning holds a given citation's rating.
  */
 export const REFERENCES: AiReference[] = [
   { index: 12, resourceType: 'drug_order', resourceUuid: 'h1440000-0000-4000-8000-000000000109', date: '2026-08-05', group: 'chart' }, // prettier-ignore
@@ -96,13 +96,21 @@ export const REFERENCES: AiReference[] = [
  * Builds one interaction warning in the bundled dataset's own shape: the note is
  * `<lead> — <severity>. <mechanism>`, and the chip appends it.
  *
- * The ` — ` separator is load-bearing for the resolver's fallback tier and is deliberately
- * written here rather than in each test — changing it must redden the panel tests too.
+ * The ` — ` separator is load-bearing for the `leadClause` group and is deliberately written
+ * here rather than in each test — changing it must redden the panel tests too, which is only
+ * true while every test builds its warnings through this. That is why `drug` is a parameter:
+ * a test needing a second candidate set used to hand-write the template and so kept its own
+ * copy of the separator.
  */
-export const interaction = (partner: string, severity: string, orderDisplay?: string): AiSafetyWarning => ({
+export const interaction = (
+  partner: string,
+  severity: string,
+  orderDisplay?: string,
+  drug = 'Clarithromycin',
+): AiSafetyWarning => ({
   type: 'interaction',
-  drug: 'Clarithromycin',
-  detail: `Clarithromycin interacts with active order ${partner} — ${severity}. Coadministration with potent inhibitors of CYP450 3A4 …`,
+  drug,
+  detail: `${drug} interacts with active order ${partner} — ${severity}. Coadministration with potent inhibitors of CYP450 3A4 …`,
   severity,
   chartOrderBridges: orderDisplay ? [{ substance: partner, orderDisplay }] : [],
 });

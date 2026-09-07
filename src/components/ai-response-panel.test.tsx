@@ -5,12 +5,14 @@ import AiResponsePanel from './ai-response-panel.component';
 import { highlightReference } from '../utils/highlight-reference';
 import { SESSION_EXPIRED_ERROR_CODE } from '../api/chartsearchai';
 import {
+  ANSWER_BARE_LIST,
   ANSWER_BY_ORDER_DISPLAY,
   ANSWER_BY_SUBSTANCE,
   interaction,
   MISATTRIBUTED,
   REFERENCES as FIXTURE_REFERENCES,
   SAFETY_WARNINGS,
+  safetyFindingRef,
   UNSTATED,
 } from '../__fixtures__/clarithromycin-response';
 
@@ -608,6 +610,19 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     expect(text).toContain('active order Prednisone Co 5mg [352] Moderate');
   });
 
+  it('badges every finding of a bare list the model wrote without the module’s phrasing', () => {
+    // Shape C, live: "list them one line each, name the order only". The symptom this fixture
+    // documents is a RENDERING one — the list came back half-badged, two Majors beside three
+    // bare items — so it has to be asserted here and not only as a resolver map.
+    renderPanel({ answer: ANSWER_BARE_LIST, misattributedOrderCitations: [] });
+    const text = answerText();
+    expect(text).toContain('Solu-Medrol 125mg/5ml [350] Major');
+    expect(text).toContain('Pulmicort 90mcg [351] Major');
+    expect(text).toContain('Prednisone Co 5mg [352] Moderate');
+    expect(text).toContain('Dexamethasone Injection vial 8mg [353] Moderate');
+    expect(text).toContain('Hydrocortisone Injection vial 100mg [354] Moderate');
+  });
+
   it('badges a repeated marker once, not once per occurrence', () => {
     renderPanel({ answer: ANSWER_BY_ORDER_DISPLAY, misattributedOrderCitations: [] });
     // [350] is cited twice in its own statement; the rating belongs to the finding, not the marker.
@@ -633,27 +648,12 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     // set can never both resolve; the resolver refuses that outright.)
     renderPanel({
       answer: 'Clarithromycin interacts with Methylprednisolone; Ibuprofen interacts with Warfarin [350, 360].',
-      references: [
-        ...FIXTURE_REFERENCES,
-        {
-          index: 360,
-          resourceType: 'safety_finding',
-          resourceUuid: 'interaction:Ibuprofen',
-          date: null,
-          group: 'reference',
-        },
-      ],
+      references: [...FIXTURE_REFERENCES, safetyFindingRef(360, 'interaction', 'Ibuprofen')],
       misattributedOrderCitations: [],
       unstatedFindingSeverities: [350, 360],
       safetyWarnings: [
         interaction('Methylprednisolone', 'Major', 'Solu-Medrol 125mg/5ml'),
-        {
-          type: 'interaction',
-          drug: 'Ibuprofen',
-          detail: 'Ibuprofen interacts with active order Warfarin — Major. …',
-          severity: 'Major',
-          chartOrderBridges: [],
-        },
+        interaction('Warfarin', 'Major', undefined, 'Ibuprofen'),
       ],
     });
     expect(answerText().match(/Major/g) ?? []).toHaveLength(2);
