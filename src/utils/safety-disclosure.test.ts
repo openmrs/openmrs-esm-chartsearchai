@@ -539,6 +539,36 @@ describe('resolveFindingSeverities', () => {
     ).not.toThrow();
   });
 
+  it('refuses a single line whose markers LEAD their subjects', () => {
+    // Live, cached, and rendered wrong before this: asked for one line beginning "Apart from
+    // Prednisone, the interacting orders are", the model put each marker BEFORE its drug. The
+    // preamble names a real partner, so the first marker elected it, the whole list shifted by
+    // one, and it landed as a clean bijection — complete and injective, because a rotation is
+    // both. The Major Methylprednisolone interaction rendered Moderate.
+    //
+    // Line confinement cannot see this: it is all one line. What does is that the LEADING
+    // reading identifies the set just as completely, and elects different findings.
+    const answer =
+      'Apart from Prednisone, the interacting orders are [350] Methylprednisolone, ' +
+      '[351] Budesonide, [353] Dexamethasone, [354] Hydrocortisone';
+    const resolved = resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 351, 353, 354]);
+    expect(resolved.size).toBe(0);
+  });
+
+  it('still resolves a line whose markers TRAIL their subjects', () => {
+    // The mirror case, and the reason the fix is keyed on disagreement rather than on the
+    // leading reading merely working: here the leading reading leaves the last marker with
+    // nothing after it, so it never identifies the set and the trailing reading stands.
+    const resolved = resolveFindingSeverities(ANSWER_BY_SUBSTANCE, REFERENCES, SAFETY_WARNINGS, UNSTATED);
+    expect(Object.fromEntries(resolved)).toEqual({
+      350: 'Major',
+      351: 'Major',
+      352: 'Moderate',
+      353: 'Moderate',
+      354: 'Moderate',
+    });
+  });
+
   it('refuses where the badged sentence names two candidates', () => {
     // The one-candidate requirement is what keeps a resolved rating honest: where the sentence
     // the badge will be drawn against reproduces two candidates' own statements, nothing is

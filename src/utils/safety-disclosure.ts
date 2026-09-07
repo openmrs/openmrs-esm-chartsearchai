@@ -129,19 +129,16 @@ function normalize(text: string): string {
  * marker too: the rating is then read from, and shown beside, the same sentence. A union would
  * let evidence from a later sentence justify a badge drawn against an earlier one.
  */
-export function claimTextByCitation(answer: string): Map<number, string> {
+export type ClaimDirection = 'trailing' | 'leading';
+
+export function claimTextByCitation(answer: string, direction: ClaimDirection = 'trailing'): Map<number, string> {
   const matches = [...answer.matchAll(citationGroupPattern())];
 
-  // Group the markers into runs first: groups separated by nothing but whitespace are one
-  // attachment point, so they all take the prose that precedes the run.
   const runs: Array<{ start: number; end: number; groups: RegExpMatchArray[] }> = [];
   for (const match of matches) {
     const start = match.index ?? 0;
     const end = start + match[0].length;
     const open = runs[runs.length - 1];
-    // A comma or semicolon between two marker groups still leaves them one attachment point:
-    // the model writes "[356], [357]" as readily as "[356] [357]", and the first form used to
-    // give the second marker a claim text of ", ".
     if (open && /^\s*[,;]?\s*$/.test(answer.slice(open.end, start))) {
       open.end = end;
       open.groups.push(match);
@@ -151,32 +148,25 @@ export function claimTextByCitation(answer: string): Map<number, string> {
   }
 
   const claims = new Map<number, string>();
-  let previousRunEnd = 0;
-  for (const run of runs) {
-    // Confined to the marker's OWN line. A marker's claim is the prose that PRECEDES it, which
-    // assumes the marker trails its subject — and the model does not always oblige. Live, asked
-    // to tabulate, it emitted a markdown table with the citation in the FIRST column:
-    //
-    //   | [363] Moderate | Methylprednisolone | Solu-Medrol 125mg/5ml |
-    //   | [364] Major    | Budesonide         | Pulmicort 90mcg       |
-    //
-    // Unconfined, each marker took the PREVIOUS row's text and the whole index-to-finding map
-    // rotated by one: Methylprednisolone (Major) rendered Moderate and Prednisone (Moderate)
-    // rendered Major. The complete-and-injective sweep cannot catch that — a rotation is a
-    // bijection, so it is both. Confining the claim leaves such a marker with only "| " before
-    // it, which names no candidate, so the index refuses and the sweep withdraws the set.
-    const precedingText = answer.slice(previousRunEnd, run.start);
-    const lineStart = precedingText.lastIndexOf('\n');
-    const claim = lineStart < 0 ? precedingText : precedingText.slice(lineStart + 1);
+  for (let i = 0; i < runs.length; i++) {
+    const run = runs[i];
+    let claim: string;
+    if (direction === 'trailing') {
+      // The prose BEFORE the marker, confined to the marker's own line.
+      const preceding = answer.slice(runs[i - 1]?.end ?? 0, run.start);
+      const lineStart = preceding.lastIndexOf('\n');
+      claim = lineStart < 0 ? preceding : preceding.slice(lineStart + 1);
+    } else {
+      // The prose AFTER the marker, up to the next marker and confined to this line.
+      const following = answer.slice(run.end, runs[i + 1]?.start ?? answer.length);
+      const lineEnd = following.indexOf('\n');
+      claim = lineEnd < 0 ? following : following.slice(0, lineEnd);
+    }
     for (const group of run.groups) {
       for (const index of parseCitationIndices(group[1])) {
-        // No finiteness check: the pattern captures only digit groups, so `Number` cannot
-        // produce NaN here, and a clause the suite cannot discriminate is one the next change
-        // removes for free.
         if (!claims.has(index)) claims.set(index, claim);
       }
     }
-    previousRunEnd = run.end;
   }
 
   return claims;
@@ -388,54 +378,27 @@ function splitFindingUuid(resourceUuid: string): { type: string; drug: string } 
   return { type: resourceUuid.slice(0, colon), drug: resourceUuid.slice(colon + 1) };
 }
 
-/**
- * The rating to render beside each citation named in `unstatedFindingSeverities`.
- *
- * The backend states plainly that the rating "cannot be joined to a chip: chips carry no
- * citation index, and `(type, drug)` does not identify one — a screening question raises
- * several findings sharing it". So this does not attempt that join. It narrows to the
- * candidates sharing the finding's `(type, drug)` and then requires the answer's own sentence
- * to single ONE of them out, by reproducing something that candidate states about itself. An
- * index that stays ambiguous is left out of the map and renders no rating at all: attributing
- * "Major" to the wrong sentence is worse for a clinician than attributing nothing, and the
- * backend warns that picking arbitrarily from a candidate set is how a client ends up showing
- * one partner's rating beside another partner's citation.
- *
- * Gated on `unstatedFindingSeverities` deliberately, not on `severity` being present — the
- * backend check asks of the whole answer, so an answer that states its ratings somewhere is
- * absent from the list and must not have them repeated.
- */
-export function resolveFindingSeverities(
-  answer: string,
+/** One reading of the answer: which candidate each citation elects, plus the per-set bookkeeping. */
+interface ClaimReading {
+  resolved: Map<number, string>;
+  setOfIndex: Map<number, string>;
+  citedIndices: Set<number>;
+  electedOf: Map<number, AiSafetyWarning>;
+}
+
+function readClaims(
   references: AiReference[],
   safetyWarnings: AiSafetyWarning[],
-  unstatedFindingSeverities: number[] | null | undefined,
-): Map<number, string> {
+  unstatedFindingSeverities: number[],
+  claims: Map<number, string>,
+): ClaimReading {
   const resolved = new Map<number, string>();
-  // Array.isArray on both: `misattributedOrderCitations` got this guard for exactly this reason
-  // one round earlier, and guarding one member of a family is not guarding the family. A
-  // non-iterable here would throw inside a render memo with no error boundary above it.
-  if (!Array.isArray(unstatedFindingSeverities) || !Array.isArray(safetyWarnings)) return resolved;
-  if (unstatedFindingSeverities.length === 0 || safetyWarnings.length === 0) return resolved;
-
-  // Array.isArray on `references` too — the last member of this family without the guard its
-  // siblings got. It is not reachable from this backend, but the panel has no error boundary
-  // above it and the cost of the inconsistency is the whole answer blanking.
-  const refByIndex = new Map((Array.isArray(references) ? references : []).map((ref) => [ref.index, ref]));
-  const claims = claimTextByCitation(answer);
-  // Which candidate set each index belongs to, so an incompletely-resolved set can be withdrawn
-  // whole below. One map, keyed by index: an earlier version counted set members in a second map
-  // as it looped, which counted OCCURRENCES while this counts distinct indices — so a list that
-  // named one index twice reported a set larger than could ever resolve, and withdrew it. The
-  // backend does not repeat an index today, and its own javadoc calls that dedup "belt and
-  // braces rather than load-bearing", so deriving both numbers from one map is what keeps this
-  // from depending on that.
   const setOfIndex = new Map<number, string>();
-  // Those whose marker the prose actually carries. Completeness is judged over these only; the
-  // injectivity check below deliberately spans the whole set, including the uncited ones.
   const citedIndices = new Set<number>();
-  // Which candidate each index elected, so the sweep can check the elections are INJECTIVE.
   const electedOf = new Map<number, AiSafetyWarning>();
+  // Array.isArray on `references` too — the last member of this family without the guard its
+  // siblings got. Not reachable from this backend, but the panel has no error boundary above it.
+  const refByIndex = new Map((Array.isArray(references) ? references : []).map((ref) => [ref.index, ref]));
 
   for (const index of unstatedFindingSeverities) {
     const ref = refByIndex.get(index);
@@ -445,13 +408,11 @@ export function resolveFindingSeverities(
 
     const candidates = safetyWarnings.filter(
       (warning) =>
-        // typeof, not just a truthy check: a non-string rating would throw inside this render
-        // memo and take the whole answer panel down with it.
-        //
-        // This filter also DEFINES the candidate set as the rated subset of the chips sharing
-        // this (type, drug) — the backend's set includes unrated ones. That is what makes the
-        // single-candidate shortcut below sound, and it is only correct because the backend
-        // never lists a finding whose record states no rating.
+        // typeof, not a truthy check: a non-string rating would throw inside a render memo and
+        // take the whole answer panel down. This filter also DEFINES the candidate set as the
+        // RATED subset of the chips sharing this (type, drug), which is what makes the
+        // single-candidate shortcut sound — the backend never lists a finding whose record
+        // states no rating.
         typeof warning.severity === 'string' &&
         warning.severity.trim() !== '' &&
         warning.type?.toLowerCase() === finding.type.toLowerCase() &&
@@ -459,12 +420,6 @@ export function resolveFindingSeverities(
     );
     if (candidates.length === 0) continue;
 
-    // Findings sharing one (type, drug) are a candidate SET, and the backend requires a client
-    // to "render them together or render none" — so track the set this index belongs to.
-    // An index the prose never carries has no claim to be identified from, and nothing renders
-    // for it either way — so it is not a member the all-or-none sweep can fail on. Measured
-    // live: the model wrote `[37]` where reference `367` was published, and counting the
-    // uncited `367` as a failed member withdrew every correct rating in its set.
     const setKey = `${finding.type.toLowerCase()}:${finding.drug.toLowerCase()}`;
     setOfIndex.set(index, setKey);
     if (claims.has(index)) citedIndices.add(index);
@@ -480,8 +435,6 @@ export function resolveFindingSeverities(
     // by `electCandidate`, which refuses on every disagreement — group order decides nothing.
     const claim = normalize(claims.get(index) ?? '');
     const leadsPerCandidate = candidates.map(candidateLeadTiers);
-    // Every candidate yields the same three groups — `LeadGroups` is a fixed tuple, so the
-    // compiler holds that rather than a runtime guard the suite could not discriminate.
     const perGroupMatches = leadsPerCandidate[0].map((_unused, group) =>
       matchesInGroup(
         candidates,
@@ -496,34 +449,87 @@ export function resolveFindingSeverities(
     }
   }
 
-  // All or none per candidate set. Measured live: an answer listing five findings one line each
-  // resolved only the two carrying a chart-order bridge, so a clinician saw two Majors and
-  // three bare items — and a bare item reads as "no rating exists", not "we declined". The
-  // backend's instruction is to render the set together or not at all, because a partial
-  // rendering is how a reader infers a ranking the module never stated.
+  return { resolved, setOfIndex, citedIndices, electedOf };
+}
+
+/** The candidate sets this reading identified COMPLETELY and INJECTIVELY. */
+function soundSets(reading: ClaimReading): Set<string> {
   const indicesBySet = new Map<string, number[]>();
-  for (const [index, setKey] of setOfIndex) {
+  for (const [index, setKey] of reading.setOfIndex) {
     indicesBySet.set(setKey, [...(indicesBySet.get(setKey) ?? []), index]);
   }
-  for (const indices of indicesBySet.values()) {
-    // Completeness over the CITED members only: an index the prose never carries renders nothing
-    // either way, so it cannot be a member the set fails on.
-    const complete = indices.filter((index) => citedIndices.has(index)).every((index) => resolved.has(index));
-    // And INJECTIVE. Two distinct citations of one set electing the same finding cannot both be
-    // right, so at most one badge is correct and there is no way to tell which. Measured live:
-    // the model put every marker on one line — "Solu-Medrol 125mg/5ml [350] [177] [179] [352]
-    // [353] [354]" — so the run-merge handed all of them that one claim, four indices elected
-    // the Methylprednisolone finding, and three Moderate ratings rendered as Major. The answer
-    // cache then replayed it byte-for-byte on every retry.
-    // Injectivity over EVERY member, cited or not. An uncited index still consumes a candidate,
-    // and excluding it here let one rated finding be elected by two citations while only the
-    // cited one showed a badge — a guess dressed as a resolution.
-    const elected = indices.map((index) => electedOf.get(index)).filter(Boolean);
-    const injective = new Set(elected).size === elected.length;
-    if (!complete || !injective) {
-      for (const index of indices) resolved.delete(index);
-    }
+
+  const sound = new Set<string>();
+  for (const [setKey, indices] of indicesBySet) {
+    // Completeness over the CITED members only — an index the prose never carries renders
+    // nothing either way. Injectivity over EVERY member: two citations of one set electing the
+    // same finding cannot both be right, and an uncited index still consumes a candidate.
+    const complete = indices.filter((i) => reading.citedIndices.has(i)).every((i) => reading.resolved.has(i));
+    const elected = indices.map((i) => reading.electedOf.get(i)).filter(Boolean);
+    if (complete && new Set(elected).size === elected.length) sound.add(setKey);
+  }
+  return sound;
+}
+
+/**
+ * The rating to render beside each citation named in `unstatedFindingSeverities`.
+ *
+ * The backend states plainly that the rating "cannot be joined to a chip: chips carry no
+ * citation index, and `(type, drug)` does not identify one". So this does not attempt that
+ * join. It narrows to the candidates sharing the finding's `(type, drug)` and requires the
+ * answer's own sentence to single ONE of them out. An index that stays ambiguous renders no
+ * rating: attributing "Major" to the wrong sentence is worse than attributing nothing.
+ *
+ * A marker's subject may sit on EITHER SIDE of it, and one reading cannot tell which. Live, both
+ * occur: *"…active order Methylprednisolone [350]"* trails its subject, while *"Apart from
+ * Prednisone, the interacting orders are [364] Methylprednisolone, [365] Budesonide, …"* leads
+ * it — and that second shape resolved as a clean BIJECTION under the trailing reading, shifted
+ * by one, rendering the Major Methylprednisolone interaction as Moderate. Completeness and
+ * injectivity cannot see a rotation, because a rotation is both.
+ *
+ * So both readings are taken, and a set is withheld where both identify it completely and
+ * injectively AND they elect different findings — the layout then does not determine the
+ * mapping, and neither reading is evidence for the other. Where they agree, orientation never
+ * mattered (a single-candidate set resolves the same either way). Where only the leading reading
+ * works, the answer is written the way this module does not read, and refusing is safer than
+ * adopting an orientation on the strength of one example.
+ *
+ * Gated on `unstatedFindingSeverities` deliberately, not on `severity` being present — the
+ * backend check asks of the whole answer, so an answer that states its ratings somewhere is
+ * absent from the list and must not have them repeated.
+ */
+export function resolveFindingSeverities(
+  answer: string,
+  references: AiReference[],
+  safetyWarnings: AiSafetyWarning[],
+  unstatedFindingSeverities: number[] | null | undefined,
+): Map<number, string> {
+  // Array.isArray on both: guarding one member of this family is not guarding the family, and a
+  // non-iterable would throw inside a render memo with no error boundary above it.
+  if (!Array.isArray(unstatedFindingSeverities) || !Array.isArray(safetyWarnings)) return new Map();
+  if (unstatedFindingSeverities.length === 0 || safetyWarnings.length === 0) return new Map();
+
+  const trailing = readClaims(references, safetyWarnings, unstatedFindingSeverities, claimTextByCitation(answer));
+  const leading = readClaims(
+    references,
+    safetyWarnings,
+    unstatedFindingSeverities,
+    claimTextByCitation(answer, 'leading'),
+  );
+  const soundTrailing = soundSets(trailing);
+  const soundLeading = soundSets(leading);
+
+  const contested = new Set<string>();
+  for (const [index, setKey] of trailing.setOfIndex) {
+    if (!soundTrailing.has(setKey) || !soundLeading.has(setKey)) continue;
+    if (trailing.electedOf.get(index) !== leading.electedOf.get(index)) contested.add(setKey);
   }
 
+  const resolved = new Map<number, string>();
+  for (const [index, setKey] of trailing.setOfIndex) {
+    if (!soundTrailing.has(setKey) || contested.has(setKey)) continue;
+    const severity = trailing.resolved.get(index);
+    if (severity !== undefined) resolved.set(index, severity);
+  }
   return resolved;
 }
