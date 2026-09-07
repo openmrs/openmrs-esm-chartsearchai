@@ -683,3 +683,56 @@ describe('useChartSearchAi answer-limit measurements', () => {
     expect(result.current.messages[0].unstatedFindingSeverities).toEqual([]);
   });
 });
+
+describe('useChartSearchAi after the panel closes', () => {
+  it('still completes a message whose done event arrives after unmount', () => {
+    // Closing the floating panel unmounts the hook without aborting the stream. Gating `done`
+    // on the mount flag therefore dropped it, leaving that message `isLoading` forever — the
+    // input disabled on reopen, no feedback row, and the trailing `grounded` event (which was
+    // never gated) landing final measurements on a message nothing would complete. The store
+    // outlives the panel, which is the whole reason `onGrounded` is ungated.
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result, unmount } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Safe to start clarithromycin?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+
+    unmount();
+    act(() => {
+      callbacks.onDone({
+        answer: 'No — it should not be started [350].',
+        references: [],
+        safetyWarnings: [{ type: 'interaction', drug: 'Clarithromycin', detail: 'x', severity: 'Major' }],
+        conditionRuleCoverage: 'absent',
+        questionId: 'q-1',
+      });
+    });
+
+    const stored = chatSessionStore.getState().messagesByPatient['patient-uuid'];
+    expect(stored).toHaveLength(1);
+    expect(stored[0].isLoading).toBe(false);
+    expect(stored[0].questionId).toBe('q-1');
+    expect(stored[0].conditionRuleCoverage).toBe('absent');
+  });
+
+  it('still settles a message whose error arrives after unmount', () => {
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result, unmount } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Safe to start clarithromycin?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+
+    unmount();
+    act(() => {
+      callbacks.onError('boom');
+    });
+
+    const stored = chatSessionStore.getState().messagesByPatient['patient-uuid'];
+    expect(stored[0].isLoading).toBe(false);
+    expect(stored[0].error).toBe('boom');
+  });
+});
