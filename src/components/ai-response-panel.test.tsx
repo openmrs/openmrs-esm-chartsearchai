@@ -762,7 +762,7 @@ describe('AiResponsePanel answer-limit disclosure', () => {
 
   it('reads grammatically when the screen related a single pair', () => {
     // "1 of 1 drug pairs shown" is ungrammatical, and found: 1 is observed live — so the
-    // sentence leads with the count instead of agreeing with a noun.
+    // plural noun is detached from the count and agreement never arises.
     renderPanel({ interactionPairs: { found: 1, reported: 1 } });
     expect(screen.getByText('Interaction pairs shown: 1 of 1.')).toBeInTheDocument();
   });

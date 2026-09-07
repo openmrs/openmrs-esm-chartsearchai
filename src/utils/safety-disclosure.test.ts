@@ -3,6 +3,7 @@ import type { AiReference, AiSafetyWarning } from '../api/chartsearchai';
 import {
   claimTextByCitation,
   isReferenceData,
+  namesLead,
   REFERENCE_RESOURCE_TYPES,
   parseCitationIndices,
   referenceKind,
@@ -288,9 +289,9 @@ describe('resolveFindingSeverities', () => {
     expect(claims.get(352)).toContain('Prednisone');
   });
 
-  it('refuses a candidate an ambiguous stronger tier rejected', () => {
-    // An ambiguous tier must narrow the field, not be discarded: otherwise a weaker tier elects
-    // a candidate the stronger tier positively excluded.
+  it('refuses a candidate an ambiguous group positively excluded', () => {
+    // An ambiguous group must narrow the field rather than be discarded — the refusal is
+    // symmetric in the groups, since their order decides nothing.
     const warnings: AiSafetyWarning[] = [
       {
         ...interaction('Budesonide', 'Major'),
@@ -567,6 +568,59 @@ describe('resolveFindingSeverities', () => {
       353: 'Moderate',
       354: 'Moderate',
     });
+  });
+
+  it('does not truncate an order name at a digit that is part of the name', () => {
+    // `Vitamin B12 1000mcg` must shorten to `Vitamin B12`, not `Vitamin`. Truncating at the
+    // first token CONTAINING a digit produced a generic prefix that matched a sentence about a
+    // different order entirely — and every later guard missed it, because the prefix is not the
+    // finding's own drug, is not shared by all candidates, and matched only one group.
+    const warnings: AiSafetyWarning[] = [
+      {
+        ...interaction('Cyanocobalamin', 'Major'),
+        chartOrderBridges: [{ substance: 'Cyanocobalamin', orderDisplay: 'Vitamin B12 1000mcg' }],
+      },
+      {
+        ...interaction('Warfarin', 'Moderate'),
+        chartOrderBridges: [{ substance: 'Warfarin', orderDisplay: 'Coumadin 5mg' }],
+      },
+    ];
+    const resolved = resolveFindingSeverities(
+      'Clarithromycin interacts with active order Vitamin D 50000iu [351].',
+      [safetyFindingRef(351)],
+      warnings,
+      [351],
+    );
+    expect(resolved.size).toBe(0);
+  });
+
+  it('still shortens an order name at its dose', () => {
+    // The positive control for the rule above: the abbreviation case must keep working.
+    const warnings: AiSafetyWarning[] = [
+      {
+        ...interaction('Cyanocobalamin', 'Major'),
+        chartOrderBridges: [{ substance: 'Cyanocobalamin', orderDisplay: 'Vitamin B12 1000mcg' }],
+      },
+      {
+        ...interaction('Warfarin', 'Moderate'),
+        chartOrderBridges: [{ substance: 'Warfarin', orderDisplay: 'Coumadin 5mg' }],
+      },
+    ];
+    const resolved = resolveFindingSeverities(
+      'Clarithromycin interacts with active order Vitamin B12 [351].',
+      [safetyFindingRef(351)],
+      warnings,
+      [351],
+    );
+    expect(resolved.get(351)).toBe('Major');
+  });
+
+  it('terminates on an empty lead rather than scanning forever', () => {
+    // `indexOf('')` returns the search position for every position, so the whole-term scan would
+    // never advance. The upstream filter removes empty leads, but the failure mode here is a
+    // frozen render thread, so `namesLead` refuses one outright too. A hang, not a wrong answer,
+    // is what an unguarded version costs — which is why this asserts completion at all.
+    expect(namesLead('a claim naming nothing', '')).toBe(false);
   });
 
   it('refuses where the badged sentence names two candidates', () => {

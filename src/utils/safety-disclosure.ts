@@ -139,7 +139,10 @@ export function claimTextByCitation(answer: string, direction: ClaimDirection = 
     const start = match.index ?? 0;
     const end = start + match[0].length;
     const open = runs[runs.length - 1];
-    if (open && /^\s*[,;]?\s*$/.test(answer.slice(open.end, start))) {
+    // Horizontal whitespace only: `\s` would let a NEWLINE merge two runs, and the second would
+    // then take the FIRST marker's line — falsifying the confinement below rather than supporting
+    // it.
+    if (open && /^[^\S\n]*[,;]?[^\S\n]*$/.test(answer.slice(open.end, start))) {
       open.end = end;
       open.groups.push(match);
     } else {
@@ -204,6 +207,31 @@ function leadClause(detail: string): string {
 type LeadGroups = [bridges: string[], partner: string[], leadClause: string[]];
 
 /**
+ * An order display with its dose tokens dropped — `Solu-Medrol 125mg/5ml` → `Solu-Medrol`.
+ *
+ * The model routinely re-writes a chart order in short form after reproducing the module's own
+ * phrase: live, *"Clarithromycin interacts with active order Solu-Medrol [350]"*, where the
+ * bridge carries the full display. Without this the two MAJOR findings of that answer refused
+ * while a Moderate one beside them resolved, so the reader saw a rating on the finding the
+ * answer called least concerning and none on the two graver ones.
+ *
+ * Empty when there is no dose token to drop, so it never duplicates the full display as a lead.
+ */
+function shortOrderDisplay(display: string): string {
+  const tokens = display.trim().split(/\s+/);
+  // Trailing tokens that BEGIN with a digit — `125mg/5ml`, `90mcg`, `400mg`. Not merely tokens
+  // CONTAINING one: a digit inside a product's NAME is not a dose, and truncating there yielded
+  // the generic prefix `Vitamin` from `Vitamin B12 1000mcg`, which then matched a sentence about
+  // `Vitamin D 50000iu` and elected the wrong finding's rating. Every later guard missed it — the
+  // prefix is not the finding's own drug, is not shared by all candidates, and matched only one
+  // group, so nothing contradicted it and one index elected one candidate.
+  let nameEnd = tokens.length;
+  while (nameEnd > 0 && /^\d/.test(tokens[nameEnd - 1])) nameEnd -= 1;
+  if (nameEnd <= 0 || nameEnd === tokens.length) return '';
+  return tokens.slice(0, nameEnd).join(' ');
+}
+
+/**
  * The groups of strings that can identify a warning in the answer's own words.
  *
  * Three groups, and their ORDER carries no precedence — {@link electCandidate} is deliberately
@@ -223,24 +251,6 @@ type LeadGroups = [bridges: string[], partner: string[], leadClause: string[]];
  * Every lead is passed through {@link discriminatingLeads} first, because a bare name is far
  * easier to confuse than the anchored sentence.
  */
-/**
- * An order display with its dose tokens dropped — `Solu-Medrol 125mg/5ml` → `Solu-Medrol`.
- *
- * The model routinely re-writes a chart order in short form after reproducing the module's own
- * phrase: live, *"Clarithromycin interacts with active order Solu-Medrol [350]"*, where the
- * bridge carries the full display. Without this the two MAJOR findings of that answer refused
- * while a Moderate one beside them resolved, so the reader saw a rating on the finding the
- * answer called least concerning and none on the two graver ones.
- *
- * Empty when there is no dose token to drop, so it never duplicates the full display as a lead.
- */
-function shortOrderDisplay(display: string): string {
-  const tokens = display.trim().split(/\s+/);
-  const firstDose = tokens.findIndex((token) => /\d/.test(token));
-  if (firstDose <= 0) return '';
-  return tokens.slice(0, firstDose).join(' ');
-}
-
 function candidateLeadTiers(warning: AiSafetyWarning): LeadGroups {
   // Guarded at the element level, not just the array: a null entry or a non-string member would
   // reach `normalize` and throw inside a render memo. An Array.isArray on the outside alone was
@@ -267,7 +277,8 @@ function candidateLeadTiers(warning: AiSafetyWarning): LeadGroups {
  * bridge could be identified — leaving the list half-badged, which the backend forbids.
  *
  * A narrower slice of the sentence this already parses, not a new dependency on it: where the
- * module's phrase is absent the tier yields nothing and the next one is tried.
+ * module's phrase is absent this group yields nothing, and the others are read anyway — all
+ * three always are.
  */
 function partnerFromLead(lead: string): string {
   const at = lead.lastIndexOf(' order ');
@@ -288,8 +299,9 @@ function discriminatingLeads(leads: string[], drug: string): string[] {
   return (
     leads
       .map((lead) => normalize(lead ?? ''))
-      // A lead with no text is contained in every string, so it would match vacuously and win any
-      // tie it was part of. An operator's dataset can rate a rule and leave its note empty.
+      // A lead with no text carries no evidence to match on. It does NOT "match everything":
+      // `namesLead` would not terminate on it, which is why that function refuses an empty lead
+      // outright too. An operator's dataset can rate a rule and leave its note empty.
       .filter((lead) => lead !== '' && lead !== shared)
   );
 }
@@ -331,7 +343,11 @@ function matchesInGroup(
  * — while the `leadClause` group, anchored by the *"interacts with active order …"* phrase, got
  * the same case right.
  */
-function namesLead(claim: string, lead: string): boolean {
+export function namesLead(claim: string, lead: string): boolean {
+  // An empty lead is not merely uninformative — `indexOf('')` returns `from` for every `from`, so
+  // the scan below would never advance and never terminate. It is filtered out upstream, but a
+  // guard whose failure mode is a frozen render thread does not get to rely on that.
+  if (lead === '') return false;
   for (let from = 0; ; from += 1) {
     const at = claim.indexOf(lead, from);
     if (at < 0) return false;
