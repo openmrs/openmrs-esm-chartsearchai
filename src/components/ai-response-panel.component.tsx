@@ -358,7 +358,9 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   }, [conditionRuleCoverage, t]);
 
   /**
-   * Whether a safety screen actually produced anything on this answer.
+   * Whether this answer carries any drug-safety output at all — a warning, or a stated pair
+   * extent. Named for what it measures rather than for "a screen ran", which is more than
+   * these two fields establish.
    *
    * `conditionRuleCoverage` describes the loaded DATASET, and the backend states it on every
    * answer — deliberately ungated, so it answers even where nothing was screened — with
@@ -368,11 +370,11 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
    * implies a screen was attempted and fell short. Measured on this server: "What is her blood
    * pressure trend?" comes back `absent` with no warnings and no pair measurement.
    *
-   * The extent of a screen is worth stating only where there was a screen. A pair measurement
-   * counts as one on its own: it means an interaction check ran, even if it raised no chip.
+   * A pair extent counts on its own: it is stated by a check that related pairs, so it is
+   * safety output even where the check raised no chip.
    */
-  const safetyScreenRan = (safetyWarnings?.length ?? 0) > 0 || pairsSentence !== null;
-  const coverageNote = safetyScreenRan ? coverageSentence : null;
+  const hasSafetyOutput = (safetyWarnings?.length ?? 0) > 0 || pairsSentence !== null;
+  const coverageNote = hasSafetyOutput ? coverageSentence : null;
 
   // The API layer emits a code (not display text) for session expiry so the wording can be localized
   // here; every other error is already a human-readable string from the server or browser.
