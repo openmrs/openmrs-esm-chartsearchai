@@ -73,6 +73,15 @@ describe('claimTextByCitation', () => {
     expect(claims.get(351)).not.toContain('Methylprednisolone');
   });
 
+  it('does not merge two markers across a line break', () => {
+    // The run-merge tolerates a comma or semicolon between adjacent markers, and `\s` would have
+    // let a NEWLINE do the same — the second marker would then take the FIRST marker's line,
+    // falsifying the confinement rather than supporting it.
+    const claims = claimTextByCitation('Clarithromycin interacts with active order Prednisone [350]\n[360] and more');
+    expect(claims.get(350)).toContain('Prednisone');
+    expect(claims.get(360)).not.toContain('Prednisone');
+  });
+
   it('splits a comma-separated group across its indices', () => {
     const claims = claimTextByCitation('Aspirin and warfarin interact [7, 8].');
     expect(claims.get(7)).toBe('Aspirin and warfarin interact ');
