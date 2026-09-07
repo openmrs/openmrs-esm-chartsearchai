@@ -660,7 +660,9 @@ describe('resolveFindingSeverities', () => {
       'Clarithromycin interacts with active order Prednisone [352]. ' +
       'Clarithromycin interacts with active order Dexamethasone [353]. ' +
       'Clarithromycin interacts with active order Hydrocortisone [354]. ' +
-      'These findings come from the bundled knowledge base.';
+      // The trailing sentence must NAME a candidate, as the live answer's did: that is what let
+      // the leading reading complete as a shift-by-one bijection and contest the correct one.
+      'Methylprednisolone is also known to interact with several of her other active orders.';
     const resolved = resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, UNSTATED);
     expect(Object.fromEntries(resolved)).toEqual({
       350: 'Major',
