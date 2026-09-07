@@ -76,8 +76,11 @@ const CITATION_GROUP_SOURCE = String.raw`\[(\d+(?:\s*,\s*\d+)*)\]`;
 /**
  * A fresh matcher for one citation marker group (`[3]`, `[1, 2]`), capturing its index list.
  *
- * A factory rather than a shared constant because the answer renderer drives it with
- * `exec`/`lastIndex` and a module-level `/g` instance would carry position state across calls.
+ * A factory rather than a shared constant, defensively: the answer renderer drives it with
+ * `exec`, which parks `lastIndex` mid-string if a caller ever stops early. Nothing does today —
+ * `matchAll` clones per spec, and the `exec` loop runs to completion, which resets it — so
+ * sharing one instance would currently pass every test. That is why the freshness property is
+ * asserted directly rather than left to a behavioural test that cannot see it.
  * One source string so the resolver and the renderer cannot recognise different markers — if
  * they diverge, the renderer draws markers the resolver can no longer key a rating to, and
  * ratings vanish from an answer that still looks complete.

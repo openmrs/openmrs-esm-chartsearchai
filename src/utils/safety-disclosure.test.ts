@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AiReference, AiSafetyWarning } from '../api/chartsearchai';
 import {
+  citationGroupPattern,
   claimTextByCitation,
   isReferenceData,
   namesLead,
@@ -773,6 +774,20 @@ describe('referenceKind', () => {
     expect(
       referenceKind({ index: 1, resourceType: 'some_future_type', resourceUuid: 'x', date: '', group: 'reference' }),
     ).toBe('other');
+  });
+});
+
+describe('citationGroupPattern', () => {
+  it('hands out a fresh matcher each time', () => {
+    // The factory's whole reason. No behavioural test can see it: `matchAll` clones per spec and
+    // the renderer's `exec` loop runs to completion, so a shared instance passes everything —
+    // measured. The hazard is a caller that stops early and parks `lastIndex` mid-string, so the
+    // property is asserted directly.
+    const first = citationGroupPattern();
+    const second = citationGroupPattern();
+    expect(first).not.toBe(second);
+    first.lastIndex = 7;
+    expect(second.lastIndex).toBe(0);
   });
 });
 
