@@ -614,15 +614,49 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     expect(answerText().match(/Major/g) ?? []).toHaveLength(2);
   });
 
-  it('renders one rating for a comma-grouped pair that resolves to one finding', () => {
-    // "[350, 351] Major Major" would read as two findings where there is one.
+  it('states nothing where two citations of one set would take the same finding', () => {
+    // 350 and 351 are two different findings, and only one rated warning exists — so attributing
+    // it to both is wrong, and there is no way to tell which citation it belongs to. Refusing is
+    // the whole point of the injectivity rule.
     renderPanel({
       answer: 'Clarithromycin interacts with active order Methylprednisolone [350, 351].',
       misattributedOrderCitations: [],
       unstatedFindingSeverities: [350, 351],
       safetyWarnings: [SAFETY_WARNINGS[0], interaction('Methylprednisolone', 'Major', 'Solu-Medrol 125mg/5ml')],
     });
-    expect(answerText().match(/Major/g) ?? []).toHaveLength(1);
+    expect(answerText().match(/Major/g) ?? []).toHaveLength(0);
+  });
+
+  it('badges two findings of one group separately even when their ratings match', () => {
+    // Two citations from DIFFERENT candidate sets can both resolve, and then two badges are two
+    // real findings — collapsing equal ratings would hide the second. (Two citations of the SAME
+    // set can never both resolve; the resolver refuses that outright.)
+    renderPanel({
+      answer: 'Clarithromycin interacts with Methylprednisolone; Ibuprofen interacts with Warfarin [350, 360].',
+      references: [
+        ...FIXTURE_REFERENCES,
+        {
+          index: 360,
+          resourceType: 'safety_finding',
+          resourceUuid: 'interaction:Ibuprofen',
+          date: null,
+          group: 'reference',
+        },
+      ],
+      misattributedOrderCitations: [],
+      unstatedFindingSeverities: [350, 360],
+      safetyWarnings: [
+        interaction('Methylprednisolone', 'Major', 'Solu-Medrol 125mg/5ml'),
+        {
+          type: 'interaction',
+          drug: 'Ibuprofen',
+          detail: 'Ibuprofen interacts with active order Warfarin — Major. …',
+          severity: 'Major',
+          chartOrderBridges: [],
+        },
+      ],
+    });
+    expect(answerText().match(/Major/g) ?? []).toHaveLength(2);
   });
 
   it('gives an unrecognised rating a treatment distinct from the module’s lowest tier', () => {
@@ -781,10 +815,34 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     expect(screen.getByText(/publishes no condition rules/)).toBeInTheDocument();
   });
 
+  /** Chart-only citations, so no reference-group record can satisfy the coverage gate for free. */
+  const CHART_ONLY_REFS = [{ index: 1, resourceType: 'obs', resourceUuid: 'o-1', date: '2026-01-01', group: 'chart' }];
+
   it('states the coverage note where an interaction screen ran but raised no chip', () => {
     // A pair measurement is a screen on its own, so its extent is worth stating even with no
-    // warnings beside it.
-    renderPanel({ safetyWarnings: [], interactionPairs: { found: 0, reported: 0 } });
+    // warnings beside it. Chart-only references, because the default fixture cites five
+    // reference-group records that would satisfy the gate on their own — with them, deleting
+    // this disjunct from `hasSafetyOutput` left the whole suite green.
+    renderPanel({
+      safetyWarnings: [],
+      interactionPairs: { found: 0, reported: 0 },
+      references: CHART_ONLY_REFS,
+      misattributedOrderCitations: [],
+      unstatedFindingSeverities: [],
+    });
+    expect(screen.getByText(/publishes no condition rules/)).toBeInTheDocument();
+  });
+
+  it('states the coverage note where a chip was raised but no extent was measured', () => {
+    // The third way a safety screen shows it produced something. Also chart-only references, for
+    // the same reason — this disjunct was unpinned too.
+    renderPanel({
+      safetyWarnings: [SAFETY_WARNINGS[1]],
+      interactionPairs: null,
+      references: CHART_ONLY_REFS,
+      misattributedOrderCitations: [],
+      unstatedFindingSeverities: [],
+    });
     expect(screen.getByText(/publishes no condition rules/)).toBeInTheDocument();
   });
 
@@ -804,8 +862,8 @@ describe('AiResponsePanel answer-limit disclosure', () => {
 
   it('does not state a pair ratio where the screen related no pairs', () => {
     // `found: 0` is a real measurement, but it is about the check that reported it and NOT about
-    // the findings beside it — which may come from another check. "0 of 0 drug pairs shown"
-    // above a Major interaction chip reads as "no interactions found".
+    // the findings beside it — which may come from another check. "Interaction pairs shown:
+    // 0 of 0." above a Major interaction chip reads as "no interactions found".
     renderPanel({ interactionPairs: { found: 0, reported: 0 } });
     expect(screen.queryByText(/0 of 0/)).not.toBeInTheDocument();
     expect(screen.getByText(/related no drug pairs/)).toBeInTheDocument();

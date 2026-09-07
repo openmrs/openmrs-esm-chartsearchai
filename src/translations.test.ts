@@ -17,8 +17,13 @@ import en from '../translations/en.json';
  * in a browser, because the keys already existed.
  *
  * Uses `i18next-parser`'s own `JsxLexer` — the lexer `yarn extract-translations` runs — rather
- * than a private regex, so this cannot recognise a different set of calls than the extractor
- * does. It also reports every OCCURRENCE rather than one per key, which a hand-rolled
+ * than a private regex, so it cannot recognise a different SHAPE of call than the extractor
+ * does. The file SET is deliberately wider: the extractor globs only `*.component.tsx` files
+ * under `src`, and this sweeps every non-test `.ts` and `.tsx` there. One consequence worth knowing: a
+ * `t()` default outside a `*.component.tsx` fails the catalogue assertion below and no run of
+ * `yarn extract-translations` can add its key — it has to be added to `en.json` by hand.
+ *
+ * It also reports every OCCURRENCE rather than one per key, which a hand-rolled
  * last-wins scan could not: three call sites shared one key here, and a correction that reached
  * two of them plus the catalogue would have left the third stale and this file green.
  */

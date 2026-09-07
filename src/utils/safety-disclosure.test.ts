@@ -177,6 +177,23 @@ describe('resolveFindingSeverities', () => {
     expect(resolved.get(351)).toBe('Major');
   });
 
+  it('does not match a bridge against half of a hyphenated brand', () => {
+    // The hyphen half of the boundary class: dropping `-` from it left the whole suite green,
+    // and this repo's own fixture vocabulary contains the hazard — a chip bridged to `Medrol`
+    // must not take the rating of a claim naming `Solu-Medrol 125mg/5ml`.
+    const warnings: AiSafetyWarning[] = [
+      { ...interaction('Medrol', 'Minor'), chartOrderBridges: [{ substance: 'Medrol', orderDisplay: 'Medrol 4mg' }] },
+      interaction('Methylprednisolone', 'Major', 'Solu-Medrol 125mg/5ml'),
+    ];
+    const resolved = resolveFindingSeverities(
+      'Clarithromycin interacts with active order Solu-Medrol 125mg/5ml [351].',
+      [safetyFindingRef(351)],
+      warnings,
+      [351],
+    );
+    expect(resolved.get(351)).toBe('Major');
+  });
+
   it('does not match a bridge against half of a combination product', () => {
     const warnings: AiSafetyWarning[] = [
       {
@@ -399,6 +416,62 @@ describe('resolveFindingSeverities', () => {
       353: 'Moderate',
       354: 'Moderate',
     });
+  });
+
+  it('refuses a run that would elect one finding for several citations of its set', () => {
+    // Live, and cache-sticky once emitted: the model put every marker on one line —
+    // "Solu-Medrol 125mg/5ml [350] [177] [179] [352] [353] [354]" — so the run-merge handed all
+    // of them that one claim, four indices elected the Methylprednisolone finding, and three
+    // Moderate ratings rendered as Major. Two citations of one set cannot both be one finding.
+    const answer = 'Solu-Medrol 125mg/5ml [350] [177] [179] [352] [353] [354]';
+    const resolved = resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, UNSTATED);
+    expect(resolved.size).toBe(0);
+  });
+
+  it('ignores a lead every candidate in the set carries', () => {
+    // Live: asked for chart names only, the answer led with the subject order, and every finding
+    // bridged that same order — so all seven matched it, the one decisive lead was swamped, and
+    // six correct ratings were discarded. A lead the whole set shares is not evidence about any
+    // one member, which is what `discriminatingLeads` says but cannot see: it compares a lead
+    // against the finding's drug NAME, and this shared lead was that drug's order display.
+    const shared = [{ substance: 'Ibuprofen', orderDisplay: 'Advil 400mg' }];
+    const warnings: AiSafetyWarning[] = [
+      {
+        type: 'interaction',
+        drug: 'Ibuprofen',
+        detail: 'Ibuprofen interacts with active order Methylprednisolone — Moderate. …',
+        severity: 'Moderate',
+        chartOrderBridges: [...shared, { substance: 'Methylprednisolone', orderDisplay: 'Solu-Medrol 125mg/5ml' }],
+      },
+      {
+        type: 'interaction',
+        drug: 'Ibuprofen',
+        detail: 'Ibuprofen interacts with active order Prednisone — Minor. …',
+        severity: 'Minor',
+        chartOrderBridges: [...shared],
+      },
+    ];
+    const refs: AiReference[] = [safetyFindingRef(358, 'interaction', 'Ibuprofen')];
+    const resolved = resolveFindingSeverities(
+      'Advil 400mg interacts with the following medications: 1. Solu-Medrol 125mg/5ml [358]',
+      refs,
+      warnings,
+      [358],
+    );
+    expect(resolved.get(358)).toBe('Moderate');
+  });
+
+  it('refuses a set whose only rated finding is cited more than once', () => {
+    // One rated warning, two citations: attributing it to both is wrong and there is no way to
+    // tell which it belongs to, so the single-candidate shortcut must not badge both.
+    const refs: AiReference[] = [safetyFindingRef(350), safetyFindingRef(351)];
+    const resolved = resolveFindingSeverities(
+      'Clarithromycin interacts with active order Methylprednisolone [350] [351].',
+      refs,
+      [SAFETY_WARNINGS[0], interaction('Methylprednisolone', 'Major', 'Solu-Medrol 125mg/5ml')],
+      [350, 351],
+    );
+    expect(resolved.size).toBe(0);
   });
 
   it('refuses where the badged sentence names two candidates', () => {

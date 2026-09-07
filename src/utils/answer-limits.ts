@@ -29,8 +29,10 @@ export const NO_ANSWER_LIMITS: MessageAnswerLimits = {
  * value DOES replace an earlier one — including `[]` replacing null, which is the whole
  * distinction between "the check ran and named none" and "no measurement stated".
  *
- * This function is the ONE place the four keys are enumerated. Everything else derives from it,
- * so adding a fifth measurement is a compile error here and nowhere has to be found by hand.
+ * One of two enumerations of the four keys — {@link NO_ANSWER_LIMITS} above is the other, and a
+ * fifth measurement is a compile error at both, plus at any `ChatMessage` literal. It is NOT a
+ * compile error in the panel: that reads its props by name, so making a new measurement RENDER
+ * is a hand edit there whatever this file does.
  */
 export function mergeDisclosure(previous: MessageAnswerLimits, source: Partial<AiSearchResponse>): MessageAnswerLimits {
   return {
@@ -46,9 +48,10 @@ export function mergeDisclosure(previous: MessageAnswerLimits, source: Partial<A
  *
  * Spread rather than listed key-by-key in JSX, and that is the point: the panel's props extend
  * {@link AiAnswerLimits}, whose keys are all optional, so a hand-written list of them in JSX is
- * the one place a fifth measurement would NOT be a compile error — it would be stored on the
- * message and silently never reach the panel. Verified by adding a fifth key: every other site
- * reddened and that one did not.
+ * the one place a fifth measurement would silently fail to REACH the panel at all — stored on
+ * the message and never passed down. Verified by adding a fifth key: this file, the
+ * `ChatMessage` literals and the hook redden; the panel's own prop destructuring does not, which
+ * is why the spread is about delivery and not about rendering.
  */
 export function answerLimitsOf(message: MessageAnswerLimits): MessageAnswerLimits {
   return mergeDisclosure(message, {});

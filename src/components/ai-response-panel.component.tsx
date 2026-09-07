@@ -308,23 +308,25 @@ function renderAnswerWithCitations(answer: string, ctx: CitationContext): React.
     // the marker group — beside the sentence it belongs to, so a flat list of five findings can
     // be ranked in one pass instead of reading as five equals.
     //
-    // Distinct ratings only: two indices of one group commonly resolve to the same finding, and
-    // "Major Major" would read as two findings where there is one. Where a group does yield two
-    // different ratings they render in the group's own index order.
+    // One badge per unbadged index, in the group's own index order. No de-duplication by rating:
+    // the resolver refuses to elect one finding for two citations of the same set, so two badges
+    // in one group are two DIFFERENT findings — and collapsing equal ratings would then hide
+    // that there are two. (The "Major Major" case that once motivated a dedupe is now refused
+    // outright, one level down.)
     const groupRatings: string[] = [];
     citIndices.forEach((citIndex) => {
       const severity = severities.get(citIndex);
       if (!severity || badged.has(citIndex)) return;
       badged.add(citIndex);
-      if (!groupRatings.includes(severity)) groupRatings.push(severity);
+      groupRatings.push(severity);
     });
-    groupRatings.forEach((severity) => {
+    groupRatings.forEach((severity, group) => {
       // A real space, not just the tag's margin: without it the paragraph's text content reads
       // "[350]Major", which is what a screen reader announces and what any text extraction gets.
       parts.push(' ');
       parts.push(
         <span
-          key={`sev-${matchIndex}-${severity}`}
+          key={`sev-${matchIndex}-${group}`}
           className={`${styles.severityTag} ${SEVERITY_TONE_CLASS[severityTone(severity)]}`}
           title={t(
             'unstatedSeverityTitle',

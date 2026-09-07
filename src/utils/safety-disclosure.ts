@@ -156,7 +156,9 @@ export function claimTextByCitation(answer: string): Map<number, string> {
     const claim = answer.slice(previousRunEnd, run.start);
     for (const group of run.groups) {
       for (const index of parseCitationIndices(group[1])) {
-        if (!Number.isFinite(index)) continue;
+        // No finiteness check: the pattern captures only digit groups, so `Number` cannot
+        // produce NaN here, and a clause the suite cannot discriminate is one the next change
+        // removes for free.
         if (!claims.has(index)) claims.set(index, claim);
       }
     }
@@ -218,10 +220,15 @@ type LeadGroups = [bridges: string[], partner: string[], leadClause: string[]];
  * easier to confuse than the anchored sentence.
  */
 function candidateLeadTiers(warning: AiSafetyWarning): LeadGroups {
-  // Array.isArray, not `?? []`: a non-array here would reach `flatMap` and throw.
+  // Guarded at the element level, not just the array: a null entry or a non-string member would
+  // reach `normalize` and throw inside a render memo. An Array.isArray on the outside alone was
+  // the same partial guard this file has now been caught making twice.
   const bridges = Array.isArray(warning.chartOrderBridges) ? warning.chartOrderBridges : [];
+  const bridgeLeads = bridges.flatMap((bridge) =>
+    [bridge?.orderDisplay, bridge?.substance].filter((value): value is string => typeof value === 'string'),
+  );
   const lead = leadClause(warning.detail);
-  return [bridges.flatMap((bridge) => [bridge.orderDisplay, bridge.substance]), [partnerFromLead(lead)], [lead]];
+  return [bridgeLeads, [partnerFromLead(lead)], [lead]];
 }
 
 /**
@@ -265,6 +272,29 @@ function discriminatingLeads(leads: string[], drug: string): string[] {
  *  combination product (`aspirin` inside `aspirin/dipyridamole`) or half a hyphenated brand. */
 function isWordish(character: string): boolean {
   return character !== '' && /[a-z0-9/-]/.test(character);
+}
+
+/**
+ * The candidates a group's leads single out, after removing the leads every candidate shares.
+ *
+ * A lead the whole set carries cannot tell its members apart, and it does worse than nothing:
+ * measured live, every finding of one set bridged the SUBJECT's own order, so all seven matched
+ * that order's display, the one decisive lead was swamped, the group went ambiguous and six
+ * correct ratings were discarded. `discriminatingLeads` cannot see this on its own — it compares
+ * a lead against the finding's drug NAME, and the shared lead here was that drug's order display.
+ */
+function matchesInGroup(
+  candidates: AiSafetyWarning[],
+  leadsPerCandidate: string[][],
+  claim: string,
+): AiSafetyWarning[] {
+  const shared = leadsPerCandidate.reduce<string[]>(
+    (common, leads) => common.filter((lead) => leads.includes(lead)),
+    leadsPerCandidate[0] ?? [],
+  );
+  return candidates.filter((_candidate, i) =>
+    leadsPerCandidate[i].some((lead) => !shared.includes(lead) && namesLead(claim, lead)),
+  );
 }
 
 /**
@@ -346,7 +376,11 @@ export function resolveFindingSeverities(
   unstatedFindingSeverities: number[] | null | undefined,
 ): Map<number, string> {
   const resolved = new Map<number, string>();
-  if (!unstatedFindingSeverities?.length || !safetyWarnings?.length) return resolved;
+  // Array.isArray on both: `misattributedOrderCitations` got this guard for exactly this reason
+  // one round earlier, and guarding one member of a family is not guarding the family. A
+  // non-iterable here would throw inside a render memo with no error boundary above it.
+  if (!Array.isArray(unstatedFindingSeverities) || !Array.isArray(safetyWarnings)) return resolved;
+  if (unstatedFindingSeverities.length === 0 || safetyWarnings.length === 0) return resolved;
 
   const refByIndex = new Map(references.map((ref) => [ref.index, ref]));
   const claims = claimTextByCitation(answer);
@@ -358,6 +392,8 @@ export function resolveFindingSeverities(
   // braces rather than load-bearing", so deriving both numbers from one map is what keeps this
   // from depending on that.
   const setOfIndex = new Map<number, string>();
+  // Which candidate each index elected, so the sweep can check the elections are INJECTIVE.
+  const electedOf = new Map<number, AiSafetyWarning>();
 
   for (const index of unstatedFindingSeverities) {
     const ref = refByIndex.get(index);
@@ -392,6 +428,7 @@ export function resolveFindingSeverities(
 
     if (candidates.length === 1) {
       resolved.set(index, candidates[0].severity!.trim());
+      electedOf.set(index, candidates[0]);
       continue;
     }
 
@@ -403,12 +440,17 @@ export function resolveFindingSeverities(
     // Every candidate yields the same three groups — `LeadGroups` is a fixed tuple, so the
     // compiler holds that rather than a runtime guard the suite could not discriminate.
     const perGroupMatches = leadsPerCandidate[0].map((_unused, group) =>
-      candidates.filter((candidate, i) =>
-        discriminatingLeads(leadsPerCandidate[i][group], candidate.drug).some((lead) => namesLead(claim, lead)),
+      matchesInGroup(
+        candidates,
+        candidates.map((candidate, i) => discriminatingLeads(leadsPerCandidate[i][group], candidate.drug)),
+        claim,
       ),
     );
     const winner = electCandidate(perGroupMatches);
-    if (winner) resolved.set(index, winner.severity!.trim());
+    if (winner) {
+      resolved.set(index, winner.severity!.trim());
+      electedOf.set(index, winner);
+    }
   }
 
   // All or none per candidate set. Measured live: an answer listing five findings one line each
@@ -421,7 +463,16 @@ export function resolveFindingSeverities(
     indicesBySet.set(setKey, [...(indicesBySet.get(setKey) ?? []), index]);
   }
   for (const indices of indicesBySet.values()) {
-    if (!indices.every((index) => resolved.has(index))) {
+    const complete = indices.every((index) => resolved.has(index));
+    // And INJECTIVE. Two distinct citations of one set electing the same finding cannot both be
+    // right, so at most one badge is correct and there is no way to tell which. Measured live:
+    // the model put every marker on one line — "Solu-Medrol 125mg/5ml [350] [177] [179] [352]
+    // [353] [354]" — so the run-merge handed all of them that one claim, four indices elected
+    // the Methylprednisolone finding, and three Moderate ratings rendered as Major. The answer
+    // cache then replayed it byte-for-byte on every retry.
+    const elected = indices.map((index) => electedOf.get(index)).filter(Boolean);
+    const injective = new Set(elected).size === elected.length;
+    if (!complete || !injective) {
       for (const index of indices) resolved.delete(index);
     }
   }
