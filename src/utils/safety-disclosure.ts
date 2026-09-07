@@ -370,40 +370,23 @@ export function namesLead(claim: string, lead: string): boolean {
 }
 
 /**
- * Reconciles the per-tier match lists into one candidate, or null to refuse.
+ * The one candidate the answer's sentence identifies, or null to refuse.
  *
- * ORDER-FREE by construction: both loops below are set predicates, so permuting the groups
- * cannot change the outcome. That is the safety property — a lead group can corroborate or
- * contradict, never outrank — and it is why nothing may describe these as a precedence ladder.
- * Three ways to refuse, each reached by a real or reproduced payload:
+ * The whole rule: the lead groups, between them, must name exactly ONE candidate. That subsumes
+ * every refusal this used to spell out separately — two groups naming different candidates, and
+ * a group that is ambiguous or that excludes another group's winner, all put a second candidate
+ * into the union — and it closes the case those checks missed, where an ambiguous group was a
+ * strict SUPERSET of the winner. That group then excluded nobody, so it decided nothing, while a
+ * group blind to the second candidate decided everything: live, a Moderate Hydrocortisone
+ * finding rendered Major because its sentence also mentioned a bridged Methylprednisolone.
  *
- * - no tier names exactly one candidate: nothing was identified;
- * - two tiers name DIFFERENT candidates: the evidence contradicts itself, which is stronger
- *   evidence of ambiguity than either tier is of its own winner;
- * - a group was ambiguous and its matches do NOT include the winner: that group positively
- *   rejected the candidate another group elected, so an ambiguous group narrows the field rather
- *   than being discarded.
+ * Order-free by construction — a set union cannot depend on the order of the groups. That is the
+ * safety property (a group can corroborate or contradict, never outrank), and it is why nothing
+ * anywhere may describe these groups as a precedence ladder.
  */
 function electCandidate(perGroupMatches: AiSafetyWarning[][]): AiSafetyWarning | null {
-  let winner: AiSafetyWarning | null = null;
-  for (const matches of perGroupMatches) {
-    if (matches.length !== 1) continue;
-    if (winner && winner !== matches[0]) return null;
-    winner = matches[0];
-  }
-  if (!winner) return null;
-  for (const matches of perGroupMatches) {
-    if (matches.length > 1 && !matches.includes(winner)) return null;
-  }
-  // And refuse when the groups BETWEEN them name more than one candidate. The loop above only
-  // catches an ambiguous group that EXCLUDES the winner, never one that is a strict superset of
-  // it — so a group blind to a second named candidate could decide while the group that could
-  // see both was powerless. Since a bridge's substance sits in the `bridges` group as well as in
-  // `partner`, that made any claim naming a bridged candidate and an unbridged one elect the
-  // bridged one, whichever the sentence was about. Live: a Moderate Hydrocortisone finding
-  // rendered Major because the sentence also mentioned Methylprednisolone.
-  if (new Set(perGroupMatches.flat()).size > 1) return null;
-  return winner;
+  const named = new Set(perGroupMatches.flat());
+  return named.size === 1 ? [...named][0] : null;
 }
 
 /** Splits a safety finding's synthetic uuid (`interaction:Clarithromycin`) into type and drug. */
