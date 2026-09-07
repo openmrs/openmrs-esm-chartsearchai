@@ -633,6 +633,44 @@ describe('resolveFindingSeverities', () => {
     expect(namesLead('a claim naming nothing', '')).toBe(false);
   });
 
+  it('refuses a claim naming a bridged candidate and an unbridged one', () => {
+    // Live: "…should not be started with Hydrocortisone, which belongs to the same steroid class
+    // as Methylprednisolone: … [376]". The Hydrocortisone finding is Moderate; it rendered
+    // Major. A bridge's substance sits in the bridges group as well as in partner, so the
+    // bridged candidate was visible to two groups and the unbridged one to a single group — the
+    // bridges group was a decisive singleton and the group that could see BOTH was ambiguous,
+    // which the old check waved through because it included the winner.
+    const answer =
+      'Clarithromycin should not be started with Hydrocortisone, which belongs to the same ' +
+      'steroid class as Methylprednisolone [354].';
+    const resolved = resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [354]);
+    expect(resolved.size).toBe(0);
+  });
+
+  it('resolves a prose list whose last marker is followed by another sentence', () => {
+    // Live, and withheld before this: in a list where each sentence opens with the module's own
+    // phrase and closes with its marker, the LEADING claim of marker N is sentence N+1 — a
+    // complete claim about the next candidate. The leading reading was then a clean shift-by-one
+    // bijection that disagreed with the correct trailing one, so the whole set was contested and
+    // four correct ratings were discarded. Whether an answer came out fully badged or fully
+    // blank turned on whether the model wrote one more sentence after its last citation.
+    const answer =
+      'Clarithromycin interacts with active order Methylprednisolone [350]. ' +
+      'Clarithromycin interacts with active order Budesonide [351]. ' +
+      'Clarithromycin interacts with active order Prednisone [352]. ' +
+      'Clarithromycin interacts with active order Dexamethasone [353]. ' +
+      'Clarithromycin interacts with active order Hydrocortisone [354]. ' +
+      'These findings come from the bundled knowledge base.';
+    const resolved = resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, UNSTATED);
+    expect(Object.fromEntries(resolved)).toEqual({
+      350: 'Major',
+      351: 'Major',
+      352: 'Moderate',
+      353: 'Moderate',
+      354: 'Moderate',
+    });
+  });
+
   it('refuses where the badged sentence names two candidates', () => {
     // The one-candidate requirement is what keeps a resolved rating honest: where the sentence
     // the badge will be drawn against reproduces two candidates' own statements, nothing is

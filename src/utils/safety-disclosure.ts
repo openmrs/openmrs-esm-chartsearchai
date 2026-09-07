@@ -167,6 +167,14 @@ export function claimTextByCitation(answer: string, direction: ClaimDirection = 
       const following = answer.slice(run.end, runs[i + 1]?.start ?? answer.length);
       const lineEnd = following.indexOf('\n');
       claim = lineEnd < 0 ? following : following.slice(0, lineEnd);
+      // ...but a marker immediately followed by a sentence terminator CLOSES its claim: nothing
+      // after it can be its subject. Without this, an ordinary trailing-marker list self-
+      // contested — the leading claim of marker N was sentence N+1, a complete claim about the
+      // next candidate, so the leading reading was a clean shift-by-one bijection that disagreed
+      // with the correct trailing one and every rating was withheld. Live, four correct ratings
+      // were discarded; whether an answer came out fully badged or fully blank turned on whether
+      // the model happened to write one more sentence after its last citation.
+      if (/^[^\S\n]*[.;:!?]/.test(following)) claim = '';
     }
     for (const group of run.groups) {
       for (const index of parseCitationIndices(group[1])) {
@@ -387,6 +395,14 @@ function electCandidate(perGroupMatches: AiSafetyWarning[][]): AiSafetyWarning |
   for (const matches of perGroupMatches) {
     if (matches.length > 1 && !matches.includes(winner)) return null;
   }
+  // And refuse when the groups BETWEEN them name more than one candidate. The loop above only
+  // catches an ambiguous group that EXCLUDES the winner, never one that is a strict superset of
+  // it — so a group blind to a second named candidate could decide while the group that could
+  // see both was powerless. Since a bridge's substance sits in the `bridges` group as well as in
+  // `partner`, that made any claim naming a bridged candidate and an unbridged one elect the
+  // bridged one, whichever the sentence was about. Live: a Moderate Hydrocortisone finding
+  // rendered Major because the sentence also mentioned Methylprednisolone.
+  if (new Set(perGroupMatches.flat()).size > 1) return null;
   return winner;
 }
 
