@@ -58,8 +58,9 @@ export const ANSWER_BY_ORDER_DISPLAY =
 /**
  * The response's references, verbatim in wire order. Note `[3]`, the recorded allergy the
  * MODULE attached: it carries no `[N]` marker in either answer above, and its `date` is null.
- * The five `safety_finding` entries all share one `resourceUuid`, which is why `(type, drug)`
- * cannot identify which warning holds a given citation's rating.
+ * The five INTERACTION `safety_finding` entries share one `resourceUuid` — the sixth, 349, is
+ * a contraindication with its own — which is why `(type, drug)` cannot identify which warning
+ * holds a given citation's rating.
  */
 export const REFERENCES: AiReference[] = [
   { index: 12, resourceType: 'drug_order', resourceUuid: 'h1440000-0000-4000-8000-000000000109', date: '2026-08-05', group: 'chart' }, // prettier-ignore
@@ -109,8 +110,9 @@ export const interaction = (partner: string, severity: string, orderDisplay?: st
 /**
  * The response's safety warnings, verbatim as to type/drug/severity and bridges.
  *
- * Only the first two carry a `chartOrderBridges` entry — measured, and the reason the resolver
- * needs a fallback: the other three were attributed to no order, so nothing on them states the
+ * Only the first two INTERACTIONS carry a `chartOrderBridges` entry — index [1] and [2], since
+ * [0] is the contraindication. Measured, and the reason the resolver needs more than one lead
+ * group: the other three interactions were attributed to no order, so nothing on them states the
  * chart's name for the partner. The two that DO bridge are exactly the two Majors.
  */
 export const SAFETY_WARNINGS: AiSafetyWarning[] = [
@@ -139,6 +141,19 @@ export const SAFETY_WARNINGS: AiSafetyWarning[] = [
 export const ANSWER_BARE_LIST =
   'Solu-Medrol 125mg/5ml [350]\nPulmicort 90mcg [351]\nPrednisone Co 5mg [352]\n' +
   'Dexamethasone Injection vial 8mg [353]\nHydrocortisone Injection vial 100mg [354]';
+
+/**
+ * One `safety_finding` reference, in the shape the wire actually carries: `reference` group and a
+ * null date. Ten tests used to rebuild this literal inline with `date: ''`, which is a value the
+ * backend never sends — harmless while nothing reads `date`, and wrong the moment something does.
+ */
+export const safetyFindingRef = (index: number, type = 'interaction', drug = 'Clarithromycin'): AiReference => ({
+  index,
+  resourceType: 'safety_finding',
+  resourceUuid: `${type}:${drug}`,
+  date: null as unknown as string,
+  group: 'reference',
+});
 
 /** The citations the backend reported as unable to be the drug order their sentence names. */
 export const MISATTRIBUTED = [177, 166, 155];

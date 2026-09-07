@@ -717,6 +717,10 @@ describe('AiResponsePanel answer-limit disclosure', () => {
 
   it('says how much of the interaction screen is shown', () => {
     renderPanel();
+    // Also the only assertion that pins `limitsSection`'s selector to the component: six
+    // sibling tests assert the block is ABSENT, and renaming the class left all six passing
+    // while examining nothing until this line existed.
+    expect(limitsSection()).not.toBeNull();
     expect(screen.getByText('Interaction pairs shown: 5 of 5.')).toBeInTheDocument();
     // found === reported means that check withheld nothing; it is not a claim of completeness.
     expect(screen.queryByText(/least severe were withheld/i)).not.toBeInTheDocument();

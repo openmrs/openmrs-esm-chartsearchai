@@ -16,6 +16,7 @@ import {
   interaction,
   REFERENCES,
   SAFETY_WARNINGS,
+  safetyFindingRef,
   UNSTATED,
 } from '../__fixtures__/clarithromycin-response';
 
@@ -145,15 +146,7 @@ describe('resolveFindingSeverities', () => {
       },
       interaction('Hydrocortisone', 'Major'),
     ];
-    const refs: AiReference[] = [
-      {
-        index: 351,
-        resourceType: 'safety_finding',
-        resourceUuid: 'interaction:Clarithromycin',
-        date: '',
-        group: 'reference',
-      },
-    ];
+    const refs: AiReference[] = [safetyFindingRef(351)];
     const resolved = resolveFindingSeverities(
       'Clarithromycin interacts with active order Hydrocortisone [351].',
       refs,
@@ -174,15 +167,7 @@ describe('resolveFindingSeverities', () => {
       },
       interaction('Hydrocortisone', 'Major'),
     ];
-    const refs: AiReference[] = [
-      {
-        index: 351,
-        resourceType: 'safety_finding',
-        resourceUuid: 'interaction:Clarithromycin',
-        date: '',
-        group: 'reference',
-      },
-    ];
+    const refs: AiReference[] = [safetyFindingRef(351)];
     const resolved = resolveFindingSeverities(
       'Clarithromycin interacts with active order Hydrocortisone [351].',
       refs,
@@ -200,15 +185,7 @@ describe('resolveFindingSeverities', () => {
       },
       interaction('Aspirin/Dipyridamole', 'Major'),
     ];
-    const refs: AiReference[] = [
-      {
-        index: 351,
-        resourceType: 'safety_finding',
-        resourceUuid: 'interaction:Clarithromycin',
-        date: '',
-        group: 'reference',
-      },
-    ];
+    const refs: AiReference[] = [safetyFindingRef(351)];
     const resolved = resolveFindingSeverities(
       'Clarithromycin interacts with active order Aspirin/Dipyridamole [351].',
       refs,
@@ -228,15 +205,7 @@ describe('resolveFindingSeverities', () => {
       },
       interaction('Prednisone', 'Major'),
     ];
-    const refs: AiReference[] = [
-      {
-        index: 351,
-        resourceType: 'safety_finding',
-        resourceUuid: 'interaction:Clarithromycin',
-        date: '',
-        group: 'reference',
-      },
-    ];
+    const refs: AiReference[] = [safetyFindingRef(351)];
     const resolved = resolveFindingSeverities(
       'Clarithromycin interacts with active order Prednisone, taken with Pulmicort 90mcg [351].',
       refs,
@@ -260,15 +229,7 @@ describe('resolveFindingSeverities', () => {
       },
       interaction('Hydrocortisone', 'Moderate'),
     ];
-    const refs: AiReference[] = [
-      {
-        index: 354,
-        resourceType: 'safety_finding',
-        resourceUuid: 'interaction:Clarithromycin',
-        date: '',
-        group: 'reference',
-      },
-    ];
+    const refs: AiReference[] = [safetyFindingRef(354)];
     const resolved = resolveFindingSeverities(
       'Clarithromycin interacts with active order Cortef 100mg [354].',
       refs,
@@ -323,15 +284,7 @@ describe('resolveFindingSeverities', () => {
       },
       interaction('Hydrocortisone', 'Unknown'),
     ];
-    const refs: AiReference[] = [
-      {
-        index: 351,
-        resourceType: 'safety_finding',
-        resourceUuid: 'interaction:Clarithromycin',
-        date: '',
-        group: 'reference',
-      },
-    ];
+    const refs: AiReference[] = [safetyFindingRef(351)];
     // "Inhaler" matches both bridged candidates (ambiguous); the prose tier singles out the
     // third, which the bridge tier's matches do not include.
     const resolved = resolveFindingSeverities(
@@ -347,20 +300,8 @@ describe('resolveFindingSeverities', () => {
     // Per-SET isolation, not per-answer: mutating the sweep to clear everything left the whole
     // suite green, because no fixture had ever put two candidate sets in one response.
     const refs: AiReference[] = [
-      ...[350, 352].map((index) => ({
-        index,
-        resourceType: 'safety_finding',
-        resourceUuid: 'interaction:Clarithromycin',
-        date: '' as unknown as string,
-        group: 'reference',
-      })),
-      ...[360, 361].map((index) => ({
-        index,
-        resourceType: 'safety_finding',
-        resourceUuid: 'interaction:Ibuprofen',
-        date: '' as unknown as string,
-        group: 'reference',
-      })),
+      ...[350, 352].map((index) => safetyFindingRef(index, 'interaction', 'Clarithromycin')),
+      ...[360, 361].map((index) => safetyFindingRef(index, 'interaction', 'Ibuprofen')),
     ];
     const warnings: AiSafetyWarning[] = [
       interaction('Methylprednisolone', 'Major'),
@@ -412,15 +353,7 @@ describe('resolveFindingSeverities', () => {
       },
       interaction('Hydrocortisone', 'Major'),
     ];
-    const refs: AiReference[] = [
-      {
-        index: 351,
-        resourceType: 'safety_finding',
-        resourceUuid: 'interaction:Clarithromycin',
-        date: '',
-        group: 'reference',
-      },
-    ];
+    const refs: AiReference[] = [safetyFindingRef(351)];
     const resolved = resolveFindingSeverities(
       'Clarithromycin interacts with active order Hydrocortisone and with Cortisone [351].',
       refs,
@@ -434,15 +367,7 @@ describe('resolveFindingSeverities', () => {
     // These run inside a render memo with no error boundary above them, so a throw here costs
     // the answer, its citations and its safety chips. `severity` was guarded and its siblings
     // were not — one guarded member of a family is not a guarded family.
-    const refs: AiReference[] = [
-      {
-        index: 351,
-        resourceType: 'safety_finding',
-        resourceUuid: 'interaction:Clarithromycin',
-        date: '',
-        group: 'reference',
-      },
-    ];
+    const refs: AiReference[] = [safetyFindingRef(351)];
     const malformed = [
       { ...interaction('Budesonide', 'Major'), detail: null as unknown as string },
       { ...interaction('Prednisone', 'Major'), chartOrderBridges: 'nope' as unknown as [] },
@@ -465,16 +390,7 @@ describe('resolveFindingSeverities', () => {
     // marker is absent has no claim to be identified from and renders nothing either way, so
     // counting it as a failed set member threw away every correct rating beside it.
     const withUncited = [...UNSTATED, 999];
-    const refs: AiReference[] = [
-      ...REFERENCES,
-      {
-        index: 999,
-        resourceType: 'safety_finding',
-        resourceUuid: 'interaction:Clarithromycin',
-        date: '',
-        group: 'reference',
-      },
-    ];
+    const refs: AiReference[] = [...REFERENCES, safetyFindingRef(999)];
     const resolved = resolveFindingSeverities(ANSWER_BY_SUBSTANCE, refs, SAFETY_WARNINGS, withUncited);
     expect(Object.fromEntries(resolved)).toEqual({
       350: 'Major',
@@ -599,15 +515,7 @@ describe('resolveFindingSeverities', () => {
   });
 
   it('matches type and drug case-insensitively', () => {
-    const refs: AiReference[] = [
-      {
-        index: 1,
-        resourceType: 'safety_finding',
-        resourceUuid: 'INTERACTION:clarithromycin',
-        date: '',
-        group: 'reference',
-      },
-    ];
+    const refs: AiReference[] = [safetyFindingRef(1, 'INTERACTION', 'clarithromycin')];
     const resolved = resolveFindingSeverities(
       'A claim [1].',
       refs,

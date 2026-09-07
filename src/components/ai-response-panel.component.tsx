@@ -15,6 +15,7 @@ import {
   citationStripPattern,
   isReferenceData,
   parseCitationIndices,
+  type ReferenceKind,
   referenceKind,
   resolveFindingSeverities,
   type SeverityTone,
@@ -168,17 +169,16 @@ function referenceTag(t: Translate): GroundedTag {
  * `group` is `reference` but whose type this client predates must not be called a drug
  * reference, which would tell a clinician it came from a drug's reference entry.
  */
+const REFERENCE_KIND_LABEL: Record<ReferenceKind, (t: Translate) => string> = {
+  safety_finding: (t) => t('safetyFindingLabel', 'Safety finding'),
+  drug_reference: (t) => t('drugReferenceLabel', 'Drug reference'),
+  drug_class_note: (t) => t('drugClassNoteLabel', 'Drug class note'),
+  // Only for a `reference`-group type this client predates — never for one the module knows.
+  other: (t) => t('referenceMaterialLabel', 'Reference material'),
+};
+
 function referenceLabel(ref: AiReference, t: Translate): string {
-  switch (referenceKind(ref)) {
-    case 'safety_finding':
-      return t('safetyFindingLabel', 'Safety finding');
-    case 'drug_reference':
-      return t('drugReferenceLabel', 'Drug reference');
-    case 'drug_class_note':
-      return t('drugClassNoteLabel', 'Drug class note');
-    default:
-      return t('referenceMaterialLabel', 'Reference material');
-  }
+  return REFERENCE_KIND_LABEL[referenceKind(ref)](t);
 }
 
 /**
@@ -382,7 +382,8 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     navigator.clipboard?.writeText(stripCitations(answer));
   }, [answer]);
 
-  // "N of M drug pairs shown" — the backend's own recommended rendering. Rendered whenever a
+  // The bounded-ness of the interaction screen, in this panel's own phrasing rather than the
+  // backend's suggested "N of M shown" (see the count-of-one note below). Rendered whenever a
   // measurement exists, because the count is the only thing that tells a bounded interaction
   // list from a complete one; withheld pairs are always the least severe ones.
   //
@@ -392,7 +393,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     const found = interactionPairs?.found;
     const reported = interactionPairs?.reported;
     // Both halves must be sane, not just present. A payload carrying only one would render
-    // "Interactions: undefined of 5 drug pairs shown.", and `reported > found` would render
+    // "Interaction pairs shown: undefined of 5.", and `reported > found` would render
     // "8 of 5" while leaving `bounded` false so nothing contradicted it — silent nonsense in
     // both cases. The backend contract is non-negative integers with reported <= found.
     if (typeof found !== 'number' || typeof reported !== 'number') return null;
@@ -403,7 +404,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     // though the backend notes it is not always that (a chart whose only medication the
     // reference data cannot resolve was never a population to screen). Either way it is a
     // statement about the check that reported it and NOT about the findings listed beside it,
-    // which may come from another check entirely. "0 of 0 drug pairs shown" above a Major
+    // which may come from another check entirely. "Interaction pairs shown: 0 of 0." above a Major
     // interaction chip reads as "no interactions found", so that cell gets its own sentence.
     if (found === 0) {
       return {
@@ -413,7 +414,8 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     }
     return {
       bounded: reported < found,
-      // Phrased so the number leads rather than agreeing with a noun: "1 of 1 drug pairs shown"
+      // The plural noun is DETACHED from the count, so agreement never arises (NOT "the number
+      // leads" — it does not; the noun phrase does): "1 of 1 drug pairs shown"
       // is ungrammatical, and `found: 1` is observed live. Number-agnostic beats a plural rule
       // here — i18next plurals would split this into per-language keys for one clause.
       text: t('interactionPairsShown', 'Interaction pairs shown: {{reported}} of {{found}}.', {
