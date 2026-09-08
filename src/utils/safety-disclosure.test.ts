@@ -122,7 +122,8 @@ describe('a subject left over BETWEEN the set’s own markers', () => {
     // Measured: no objection fires at all, and Budesonide's Major renders beside a sentence about
     // Hydrocortisone. A 7,776-answer enumeration of the class resolved 7,776 and every one
     // carried a wrong rating — no correct resolutions, like every leftover-subject class before
-    // it. Closing it cost nothing: the corpus is unchanged at 80.
+    // it. Closing it cost nothing — the live corpus does not move; see THE CORPUS in the
+    // resolver for what it currently renders.
     for (const answer of [
       'Clarithromycin interacts with active order Dexamethasone [353]. She is also on Hydrocortisone Injection vial 100mg [14]. The mechanism is the same CYP450 3A4 inhibition that raises Budesonide exposure [354].',
       'Clarithromycin interacts with active order Dexamethasone [353]. She is also on Hydrocortisone Injection vial 100mg [14]. The rise there is smaller than what Budesonide sees [354].',

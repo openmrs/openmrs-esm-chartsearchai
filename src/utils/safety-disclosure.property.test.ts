@@ -262,8 +262,8 @@ function generateAnswer(random: () => number): Generated {
     // marker AFTER the subject, on a line whose own marker comes FIRST. It is what leaves the
     // shift-consistency rule as the sole objection — the trailing foreign marker shortens the
     // unconfined backward window so the block rule falls silent, and a terminator closing the
-    // next line's claim bars the disagreement rule. Measured: with that rule disabled, 288
-    // tests and a 200,000-seed sweep of this file stayed green while a Major interaction
+    // next line's claim bars the disagreement rule. Measured: with that rule disabled, the whole
+    // suite and a 200,000-seed sweep of this file stayed green while a Major interaction
     // rendered Moderate. Every objection has to be reachable from here or it is one refactor
     // from deletion.
     if (random() < 0.2) {
