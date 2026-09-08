@@ -690,7 +690,18 @@ interface CandidateSet {
    *
    * Computed once here for the same reason the groups are — it is quadratic in the set size and
    * the readings must be able to share it. Read only by {@link hyphenJoinsASibling}, to tell a
-   * hyphen joining two drug names from one joining a drug to an English suffix.
+   * hyphen joining two drug names from one joining a drug to an English suffix. Cheap even where
+   * it fires on every lead: timed on a 20-member family whose every claim carries a hyphen token,
+   * the check adds about 0.03 ms to a 0.64 ms call.
+   *
+   * Includes leads that are SHARED across the set, and nothing measured discriminates that. The
+   * variant excluding them leaves the suite green and the corpus byte-identical, so this is a
+   * judgement rather than a measurement: the question this feeds is "is there a second DRUG NAME
+   * in this token", and a shared lead — an order display several findings bridge to, which is a
+   * shape the live chart has produced — is a drug name even though it singles out no particular
+   * sibling. Excluding them would miss `prednisone-<that shared display>`. Stated because the
+   * argument the other way is real: a shared lead cannot tell candidates apart anywhere else in
+   * this file, and this is the one place it is allowed to speak.
    */
   siblingLeads: string[][];
   /**
