@@ -173,18 +173,19 @@ describe('an exclusion clause in an EARLIER sentence is not about this claim', (
   });
 });
 
-describe('a colon after a marker is a label separator, not a sentence close', () => {
-  it('keeps the forward claim alive after a colon, which is what lets the set object', () => {
-    // `:` is deliberately absent from the set of terminators that zero a forward claim, and
-    // nothing discriminated that until this test: the whole suite and the property sweep stayed
-    // green with `:` added. It is load-bearing anyway — over a 3,840-answer sweep of
-    // colon-after-marker shapes, adding it resolves 64 MORE answers and every one of the 64 is a
-    // wrong rating, because zeroing that claim costs the set its right to object and the
-    // trailing reading's election, scavenged from the lead-in, then stands.
+describe('a label-separator colon after a marker', () => {
+  it('refuses a rotation labelled with a colon', () => {
+    // Written for a clause that no longer exists. There used to be a rule zeroing a forward claim
+    // when its marker was followed by a sentence terminator, with `:` deliberately excluded from
+    // that set because a colon is a LABEL separator; this shape was the only thing pinning the
+    // exclusion, since adding `:` resolved 64 more answers in a 3,840-answer sweep and all 64
+    // were wrong.
     //
-    // The example the comment beside that clause used to offer refuses either way, so it was
-    // evidence for nothing. This one discriminates: with `:` treated as a close it renders
-    // {350: Moderate, 351: Major} and 350 is Budesonide, which is Major.
+    // The whole terminator rule has since been removed as redundant — suite, corpus and a
+    // 150,000-seed sweep are unchanged without it — so there is no exclusion left to pin. The
+    // shape is kept because it is a rotation and must still refuse, which it now does through the
+    // leftover-subject rules. If a terminator rule ever comes back, this is the case that says
+    // `:` must not be in it.
     const answer = 'Prednisone is the lesser worry, but the greater one is [350]: Budesonide [351] Budesonide';
     expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 351])]).toEqual([]);
   });
@@ -432,7 +433,8 @@ describe('a subject left over past the set’s last own marker', () => {
     // shape and this answer pays for it.
     //
     // Not zero-cost: 13 of 98 ratings across the corpus, stated in full on the sibling test
-    // below and in the README. The alternative was a swapped Major/Moderate
+    // ABOVE and in the README. (It said "below", and there is nothing below it — the full
+    // statement is in the test that precedes this one.) The alternative was a swapped Major/Moderate
     // pair. A blank is safe, which is the premise the whole module rests on.
     const answer =
       'Clarithromycin interacts with active order Solu-Medrol 125mg/5ml [350], and with active order Pulmicort 90mcg [351]. Prednisone would be the safer choice.';
@@ -1377,9 +1379,15 @@ describe('resolveFindingSeverities', () => {
     // Live in 4 of a 62-answer capture (a larger population than THE CORPUS's 46, and taken
     // earlier): a chart-order citation lands between a finding's subject
     // and the finding's own marker, cutting the subject out of the window and leaving only a
-    // contrast partner, which is then elected. The block reading cannot help — on one line its
-    // window is the same one. Without the foreign marker the same sentence correctly refuses,
-    // so the marker converts a refusal into a wrong rating.
+    // contrast partner. The block reading cannot help — on one line its window is the same one.
+    //
+    // BOTH assertions here are refusals, and neither is this test's own doing any more. When it
+    // was written, the widening was what stopped the truncation; measured now, disabling the
+    // widening leaves this test green and it is the leftover-subject rules that refuse both
+    // strings — Solu-Medrol is named in the answer with no citation willing to claim it. The
+    // sibling test below asserts the WINDOW shape directly and does redden when the widening is
+    // disabled, so that one is the widening's pin and this one is history. Do not read
+    // "which is then elected" as current behaviour.
     const withForeign = 'Solu-Medrol 125mg/5ml [17] carries more risk than Prednisone does [350].';
     const withoutForeign = 'Solu-Medrol 125mg/5ml carries more risk than Prednisone does [350].';
     expect(resolveFindingSeverities(withForeign, REFERENCES, SAFETY_WARNINGS, [350]).size).toBe(0);

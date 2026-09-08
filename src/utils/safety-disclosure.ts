@@ -152,8 +152,8 @@ const EXCLUDED_NAME = String.raw`[^\s,;:.]+(?:[^\S\n]+[^\s,;:.]+){0,3}`;
  * rendered the wrong rating ("over", "compared with", "versus", "beyond", "in contrast to",
  * "relative to", "; X is milder", ", not X", "— X is the lesser worry", "well above", "unlike").
  * A list of words cannot decide which drug a sentence is ABOUT. Removing it now changes nothing:
- * the leaks stay closed, the live corpus stays at 85 ratings and the suite stays green, because
- * the head rule in `resolveFindingSeverities` asks a structural question instead — is some
+ * the leaks stay closed, the corpus does not move and the suite stays green, because the head
+ * rule in `resolveFindingSeverities` asks a structural question instead — is some
  * candidate the answer names left with no citation willing to claim it?
  *
  * Kept as a note rather than deleted silently: this is the second word list in this file to be
@@ -280,7 +280,7 @@ function sentenceBreaks(answer: string): number[] {
  * Two things bound it, and a marker citing something OUTSIDE this measurement is neither.
  * Letting a foreign marker bound the window cuts the subject out — live, in 4 of a 62-answer
  * capture taken before THE CORPUS above was fixed at 46, so it is a different and larger
- * population; the shape it names is in the 46 too. Counted
+ * population; the shape it names is in the 46 too. Counted in 4
  * answers and 7 times in all: *"Solu-Medrol 125mg/5ml [17] carries more risk than Prednisone
  * does [350]"* left only the contrast partner in the window, and `[350]` elected it. The block
  * reading cannot help; on one line its window is the same one.
@@ -414,20 +414,24 @@ export function claimTextByCitation(
       // It used to be confined for `'leading'`, whose removal took the only branch that could
       // reach the confinement with it.
       claim = answer.slice(run.end, runs[i + 1]?.start ?? answer.length);
-      const following = claim;
-      // ...but a marker immediately followed by a sentence terminator CLOSES its claim: nothing
-      // after it can be its subject. Without this, an ordinary trailing-marker list self-
-      // contested — the forward claim of marker N was sentence N+1, a complete claim about the
-      // next candidate, so the forward reading was a clean shift-by-one bijection that disagreed
-      // with the correct trailing one and every rating was withheld. Live, four correct ratings
-      // were discarded; whether an answer came out fully badged or fully blank turned on whether
-      // the model happened to write one more sentence after its last citation.
-      // `:` is deliberately NOT in this set: a colon after a marker is a LABEL separator, not a
-      // sentence close, so zeroing the forward claim there silenced the contest on
-      // "…the one to watch is [350]: Solu-Medrol 125mg/5ml". Removing `.` as well was measured
-      // and regresses — it loses four correct ratings on a live answer — so the rest is
-      // load-bearing.
-      if (/^[^\S\n]*[.;!?]/.test(following)) claim = '';
+
+      // A clause used to sit here zeroing this claim when the marker was immediately followed by
+      // a sentence terminator, on the reasoning that nothing after a full stop can be the
+      // marker's subject. It was added because an ordinary trailing-marker list self-contested —
+      // the forward claim of marker N was sentence N+1, a complete claim about the next
+      // candidate, so the forward reading was a clean shift-by-one bijection disagreeing with the
+      // correct trailing one, and four correct live ratings were discarded.
+      //
+      // It is gone, and the removal is measured three ways: the suite, the 46-answer corpus (no
+      // change, 80 ratings) and a 150,000-seed sweep are all unchanged without it. Its job has
+      // been taken over by the three leftover-subject rules, which refuse those answers for a
+      // better reason than "the claim was blanked". And the direction matters: zeroing a claim
+      // REDUCES objections, so the clause made refusals fire LESS often — the unsafe side for
+      // something nothing discriminated. Removing it can only add refusals.
+      //
+      // If a future change makes the forward reading over-contest sentence-separated lists again,
+      // this is the clause that used to prevent it; re-measure before re-adding it, because the
+      // reason it existed no longer reproduces.
     }
     for (const group of run.groups) {
       for (const index of parseCitationIndices(group[1])) {
@@ -639,8 +643,14 @@ interface CandidateSet {
  * stops being shareable across the readings, and the readings must stay independent.
  */
 function buildCandidateSet(candidates: AiSafetyWarning[]): CandidateSet {
-  // A single candidate resolves by the shortcut in `readClaims` and its leads are never asked
-  // for, so building them would be the only work this function ever wasted.
+  // Two cases, and only one of them is about wasted work. A SINGLE candidate resolves by the
+  // shortcut in `readClaims` and its leads are never asked for, so building them would be
+  // pointless. ZERO candidates must not reach `leadsPerCandidate[0]` below at all: it is
+  // `undefined` there and `.map` throws, inside a render memo with no error boundary above it —
+  // the same class this file guards everywhere else. That path is ordinary, not exotic:
+  // `readClaims` calls this BEFORE its own `candidates.length === 0` check, and the live payload
+  // has a `contraindication:Clarithromycin` finding with `severity: null`, which yields zero
+  // RATED candidates on every real answer of that shape.
   if (candidates.length <= 1) return { candidates, groups: [], unnameable: false };
   const leadsPerCandidate = candidates.map(candidateLeadTiers);
   const groups = leadsPerCandidate[0].map((_unused, group) => {
@@ -884,7 +894,8 @@ function soundSets(reading: ClaimReading): Set<string> {
  * TAIL, where no claim window can hide it. Two local repairs to this gate were implemented and
  * measured first, and both cost correct live ratings — widening the forward window past a
  * foreign marker (98 -> 95) and removing the `.` from the terminator rule (98 -> 82), both
- * against the then-98 baseline rather than today's 85. Neither
+ * against the then-98 baseline rather than the current one — see THE CORPUS at the top of this
+ * file, which is the only place that number should be read from. Neither
  * was shipped. That is why the answer to a bad proxy here was a different question elsewhere
  * rather than a better proxy.
  *
@@ -905,6 +916,10 @@ function objectingSets(reading: ClaimReading): Set<string> {
   const qualified = new Set<string>();
   for (const [setKey, indices] of indicesBySet(reading)) {
     const named = indices
+      // Cited members only: an index the prose never carries names nothing either way, so
+      // requiring it would bar the set from objecting for a reason that is not about this answer.
+      // Nothing discriminates the filter — dropping it makes objections fire LESS often, which is
+      // the unsafe side, so it stays.
       .filter((i) => reading.citedIndices.has(i))
       .every((i) => (reading.namedOf.get(i)?.size ?? 0) > 0);
     if (named) qualified.add(setKey);
@@ -1114,6 +1129,11 @@ export function resolveFindingSeverities(
     let upto = -1;
     for (const [index, end] of firstRunStartOfIndex) {
       if (trailing.setOfIndex.get(index) !== setKey) continue;
+      // `min` — the FIRST own marker. Nothing discriminates this against `max`, and since the
+      // interior rule landed nothing can: `max` would make the head [0, last own marker), which
+      // is exactly this head plus the interior span, and both are scanned with the same predicate
+      // into the same contest. The boundary only becomes observable again if the interior rule is
+      // removed, which is where a test for it would have to go.
       upto = upto < 0 ? end : Math.min(upto, end);
     }
     // Stripped like a CLAIM is, unlike the tail — but only the LAST SENTENCE of the head, which

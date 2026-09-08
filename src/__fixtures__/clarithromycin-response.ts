@@ -109,8 +109,8 @@ export const REFERENCES: AiReference[] = [
  * expected.
  *
  * THE MEASUREMENT LIVES HERE and nowhere else, because it was quoted in two places and both
- * went stale. Re-measured on the current suite: changing this separator to ` :: ` reddens 34
- * tests — 27 in the resolver's own suite, 6 in the panel's, and 1 in the property fuzzer. Before
+ * went stale. Re-measured on the current suite: changing this separator to ` :: ` reddens 33
+ * tests — 26 in the resolver's own suite, 6 in the panel's, and 1 in the property fuzzer. Before
  * the fuzzer was converted it stayed GREEN. Re-run the probe rather than trusting this
  * paragraph if you add a caller; the counts move with the suite and this is the only note that
  * should carry them.
