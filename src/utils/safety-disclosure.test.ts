@@ -63,6 +63,38 @@ describe('severityTone', () => {
   });
 });
 
+describe('a shifted list is refused even when its tell is ambiguous', () => {
+  it('refuses a five-item rotation whose dangling last line names two partners', () => {
+    // The class cycle 9 left open, and the worst failure this module has produced: not a missing
+    // badge but five ratings, each the NEIGHBOURING finding's. The trailing reading resolves the
+    // set as a clean rotation — complete and injective — while the forward reading elects the
+    // correct finding for four of the five and hits a two-candidate window on the last line,
+    // which cost it completeness and barred it from objecting at all.
+    const answer = [
+      'Budesonide aside, the order that matters most is [352]',
+      'Prednisone Co 5mg [353]',
+      'Dexamethasone [354]',
+      'Hydrocortisone [350]',
+      'Methylprednisolone [351]',
+      'Budesonide rather than Prednisone Co 5mg',
+    ].join('\n');
+    const resolved = resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 351, 352, 353, 354]);
+    expect([...resolved]).toEqual([]);
+  });
+
+  it('still resolves the ordinary trailing list, whose forward reading dangles nothing', () => {
+    // The positive control, and the reason completeness is measured on NAMED rather than
+    // dropped: written trailing, the text after the last marker names no candidate, so the
+    // forward reading cannot object and the answer resolves. Removing that requirement refuses
+    // this too — a normal list's forward reading is a rotation of it and always disagrees.
+    const answer =
+      'Clarithromycin interacts with active order Solu-Medrol 125mg/5ml [350], and with active order Pulmicort 90mcg [351], because coadministration raises plasma concentrations.';
+    const resolved = resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 351]);
+    expect(resolved.get(350)).toBe('Major');
+    expect(resolved.get(351)).toBe('Major');
+  });
+});
+
 describe('clauses no earlier test discriminated', () => {
   // Each of these was found by mutating the clause and watching the whole suite stay green.
   // A clause the suite never discriminates is one the next change removes for free.

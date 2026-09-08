@@ -156,11 +156,23 @@ function shiftedAnswer(random: () => number, chosen: number[]): Generated {
   const truth = new Map<number, string>();
   for (const i of chosen) truth.set(INDEX_OF[i], PARTNERS[i].severity);
 
+  // A second partner named on a line, which is what makes the forward reading elect NOBODY
+  // there. Load-bearing on the DANGLING line above all: the forward reading's completeness is
+  // the whole tell for a shift, and an ambiguous last line was measured to destroy it — the
+  // rotation then resolved, complete and injective and wrong in all five positions. Without
+  // this clause the generator produces only shifts whose tell is intact, which is the easy half.
+  const extra = () => {
+    if (random() < 0.55) return '';
+    const other = [...PARTNERS.keys()][Math.floor(random() * PARTNERS.length)];
+    const joiner = ['and also', 'as well as', 'plus', 'alongside', 'rather than'][Math.floor(random() * 5)];
+    return ` ${joiner} ${nameOf(other)}`;
+  };
+
   const lines = [`${lead} [${INDEX_OF[chosen[0]]}]`];
   for (let j = 1; j < chosen.length; j++) {
-    lines.push(`${nameOf(chosen[j - 1])} [${INDEX_OF[chosen[j]]}]`);
+    lines.push(`${nameOf(chosen[j - 1])}${extra()} [${INDEX_OF[chosen[j]]}]`);
   }
-  lines.push(nameOf(last));
+  lines.push(`${nameOf(last)}${extra()}`);
 
   return { answer: lines.join('\n'), truth, unstated: chosen.map((i) => INDEX_OF[i]) };
 }
@@ -256,6 +268,7 @@ describe('the generator reaches the shapes it exists for', () => {
     let orderVocabulary = 0;
     let multiLine = 0;
     let shifted = 0;
+    let shiftedAmbiguousTail = 0;
     let leadInPartnerCited = 0;
 
     for (let seed = 1; seed <= 4000; seed++) {
@@ -271,6 +284,9 @@ describe('the generator reaches the shapes it exists for', () => {
       // carrying a name and no marker at all.
       if (/aside, the order that matters most is \[\d+\]\n/.test(answer) && !/\[\d+\]\s*$/.test(answer)) {
         shifted += 1;
+        // And the harder half: a shift whose DANGLING last line names two partners, so the
+        // forward reading's completeness — the only tell a shift leaves — is destroyed.
+        if (/(and also|as well as|plus|alongside|rather than)[^\n\[]*$/.test(answer)) shiftedAmbiguousTail += 1;
       }
       // And, separately, that a lead-in's own partner reaches the citations — the filter that
       // forbade this is why ten rounds ran without reaching the permutation class.
@@ -290,6 +306,7 @@ describe('the generator reaches the shapes it exists for', () => {
       orderVocabulary: orderVocabulary > 200,
       multiLine: multiLine > 200,
       shifted: shifted > 200,
+      shiftedAmbiguousTail: shiftedAmbiguousTail > 100,
       leadInPartnerCited: leadInPartnerCited > 200,
     }).toEqual({
       contrast: true,
@@ -300,6 +317,7 @@ describe('the generator reaches the shapes it exists for', () => {
       orderVocabulary: true,
       multiLine: true,
       shifted: true,
+      shiftedAmbiguousTail: true,
       leadInPartnerCited: true,
     });
   });

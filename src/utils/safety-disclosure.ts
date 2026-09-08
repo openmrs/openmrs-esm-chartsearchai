@@ -678,6 +678,54 @@ function soundSets(reading: ClaimReading): Set<string> {
 }
 
 /**
+ * The sets for which this reading found a candidate NAMED at every cited citation, and whose
+ * elections — so far as it made any — are pairwise distinct.
+ *
+ * This is the qualification to OBJECT, and it is deliberately weaker than {@link soundSets},
+ * which is the qualification to RESOLVE. The difference is one word, and getting it wrong
+ * shipped every rating of an answer wrong.
+ *
+ * Why completeness has to be measured on NAMED rather than ELECTED. For any list of findings,
+ * the forward reading is a ROTATION of the trailing one and vice versa — so a bare disagreement
+ * between them is the norm and carries no information at all. What actually separates the two
+ * orientations is whether a subject DANGLES past the last marker: written trailing, the text
+ * after the final marker names no candidate, so the forward reading has nothing there and is
+ * incomplete; written shifted, there is a name left over, and the forward reading reaches every
+ * citation. That is the signal, and requiring an ELECTION for it threw it away wherever the
+ * dangling text was ambiguous.
+ *
+ * Measured — a five-item shifted list whose last line read "Budesonide rather than Prednisone
+ * Co 5mg". The forward reading elected the CORRECT finding for four of the five citations and
+ * named two candidates on the fifth, so it elected nobody there, lost completeness, and was
+ * barred from objecting at all. Meanwhile the trailing reading resolved the set as a clean
+ * rotation — complete, injective, and wrong in all five positions. Every rating rendered was
+ * the neighbouring finding's.
+ *
+ * Named-completeness is the WHOLE test, and two further restrictions were tried and dropped:
+ * requiring the forward elections to be injective, and requiring an election at the index being
+ * contested. Both make an objection fire LESS often, which is the unsafe direction for a rule
+ * whose only output is a refusal — and neither is justified by anything measurable. With both
+ * removed the 288-test suite, the 46-answer live corpus (94 ratings) and a 150,000-seed sweep
+ * (269 resolving answers) are byte-identical to with them. So they were noise in the direction
+ * of resolving more, and are gone rather than left for the next change to delete for free.
+ */
+function objectingSets(reading: ClaimReading): Set<string> {
+  const indicesBySet = new Map<string, number[]>();
+  for (const [index, setKey] of reading.setOfIndex) {
+    indicesBySet.set(setKey, [...(indicesBySet.get(setKey) ?? []), index]);
+  }
+
+  const qualified = new Set<string>();
+  for (const [setKey, indices] of indicesBySet) {
+    const named = indices
+      .filter((i) => reading.citedIndices.has(i))
+      .every((i) => (reading.namedOf.get(i)?.size ?? 0) > 0);
+    if (named) qualified.add(setKey);
+  }
+  return qualified;
+}
+
+/**
  * The rating to render beside each citation named in `unstatedFindingSeverities`.
  *
  * The backend states plainly that the rating "cannot be joined to a chip: chips carry no
@@ -748,8 +796,10 @@ export function resolveFindingSeverities(
     setCache,
   );
   const soundTrailing = soundSets(trailing);
-  const soundLeading = soundSets(leading);
-  const soundBlockLeading = soundSets(blockLeading);
+  // Qualified to OBJECT, which is a weaker test than qualified to RESOLVE — see
+  // {@link objectingSets} for the answer that made the difference.
+  const objectingLeading = objectingSets(leading);
+  const objectingBlockLeading = objectingSets(blockLeading);
 
   // Which findings the trailing reading claims for SOME citation of each set.
   const claimedByTrailing = new Map<string, Set<AiSafetyWarning>>();
@@ -797,13 +847,15 @@ export function resolveFindingSeverities(
     // (unsound, so it cannot object) while the confined one names exactly one. That is the
     // residual class this cycle's fix does not close, so removing the only rule that could
     // reach part of it would be the wrong way to tidy up.
-    for (const [forward, soundForward] of [
-      [leading, soundLeading],
-      [blockLeading, soundBlockLeading],
+    for (const [forward, objectingForward] of [
+      [leading, objectingLeading],
+      [blockLeading, objectingBlockLeading],
     ] as const) {
-      if (soundTrailing.has(setKey) && soundForward.has(setKey)) {
-        if (trailing.electedOf.get(index) !== forward.electedOf.get(index)) contested.add(setKey);
-      }
+      if (!soundTrailing.has(setKey) || !objectingForward.has(setKey)) continue;
+      // No `forwardElected &&` guard: on a reading that named a candidate at every cited
+      // citation, an index that still elected NOBODY named two, and that ambiguity is itself a
+      // reason to doubt the confined reading's confidence rather than something to pass over.
+      if (trailing.electedOf.get(index) !== forward.electedOf.get(index)) contested.add(setKey);
     }
 
     // Or the leading reading names a finding the trailing reading claims for NO citation of this
