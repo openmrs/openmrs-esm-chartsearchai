@@ -145,6 +145,28 @@ function normalize(text: string): string {
   return text.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
+/**
+ * {@link normalize}, but keeping LINE breaks — collapsing only horizontal whitespace.
+ *
+ * Exists so {@link stripExclusions} can see the line structure {@link EXCLUDED_NAME} is written
+ * against. That pattern bounds an excluded name with `[^\S\n]`, horizontal-only, precisely so a
+ * name cannot cross a line — and the guard was INERT for as long as it existed, because every
+ * call site handed it `normalize` output and `normalize` had already turned every newline into a
+ * space. A guard that cannot fire reads in review exactly like one that can.
+ *
+ * Measured, with the guard live again: *"Apart from dose timing\nSolu-Medrol 125mg/5ml, her worst
+ * order\n…The rise is above what Prednisone Co 5mg gives [350]"* stopped deleting Solu-Medrol —
+ * the marker's own subject, which the clause never excluded — out of the head, and stopped
+ * rendering Prednisone's MODERATE for a MAJOR finding.
+ */
+function normalizeKeepingLines(text: string): string {
+  return text
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/\n[^\S\n]*/g, '\n')
+    .trim()
+    .toLowerCase();
+}
+
 /** At most four whitespace-separated tokens — a drug name, not a clause. See {@link stripExclusions}. */
 const EXCLUDED_NAME = String.raw`[^\s,;:.]+(?:[^\S\n]+[^\s,;:.]+){0,3}`;
 
@@ -961,30 +983,36 @@ function candidateSetFor(
  * The corpus is byte-identical to before either — see THE CORPUS at the top of this file — and a
  * blank is safe where a swapped pair is not, which is the premise the whole module rests on.
  *
- * Matched with {@link namesLead}, so `Minor` cannot be found inside a word and a rating stated in
- * any casing counts.
+ * Decided the BACKEND'S way, with {@link RATING_BOUNDARY} rather than the drug matcher, and the
+ * reason is a safety property that only holds if the two agree.
  *
- * THIS RULE CANNOT DELETE A CORRECT RATING on a payload the backend could have emitted, and that
- * is provable rather than measured. The backend decides the list with `statesWord`, a
- * case-insensitive scan requiring a non-alphanumeric neighbour on each side. `namesLead` requires
- * a non-`isWordish` neighbour, and `isWordish` is a SUPERSET of alphanumeric — it also counts `/`
- * and, before a lead, `-`. So everything `namesLead` accepts, `statesWord` accepts: the module's
- * reading of "the answer states this rating" is strictly narrower than the backend's. Checked over
- * a probe of every rating against seventeen surroundings: seven divergences, all of them the
- * module declining where the backend would accept, and ZERO the other way.
+ * For a citation the backend LISTED, `statesWord(answer, its true rating)` is false — that is what
+ * listing means. So if this function answers the same question the same way, a resolution carrying
+ * the RIGHT rating is never deleted, and only a resolution carrying some OTHER rating the answer
+ * states can be, which is a wrong one. The rule then cannot cost a correct rating on any payload
+ * the backend could emit.
  *
- * The consequence is the safety property. For a citation the backend LISTED, `statesWord(answer,
- * its true rating)` is false by construction — that is what listing means. By the subset above,
- * `namesLead(answer, its true rating)` is therefore false too, so a resolution carrying the RIGHT
- * rating is never deleted. Only a resolution carrying some OTHER rating the answer states can be,
- * and that resolution is wrong.
+ * IT USED TO BORROW {@link namesLead}, WITH A WRITTEN PROOF THAT THE BORROWING WAS SAFE, AND THE
+ * PROOF WAS FALSE. It argued that `isWordish` is a superset of alphanumeric so everything
+ * `namesLead` accepts `statesWord` accepts — but `isWordish` is ASCII-only and
+ * `Character.isLetterOrDigit` is Unicode-aware, so the subset inverts wherever a non-ASCII letter
+ * or digit sits next to the rating word. Measured on the shipped fixture: appending *"Majorの相互
+ * 作用に注意してください。"* to a live answer deleted BOTH correct Major ratings while the
+ * backend's own scan returned false for "Major", meaning it had listed exactly those citations.
+ * Also reproduced with an accented letter and an Arabic-Indic digit. This module is translated and
+ * its answer language follows the model, so non-ASCII prose is the normal case, not the exotic one.
  *
- * It also means an ordinary-English use of the word costs nothing: an adversarial sweep measured
- * 64,251 correct ratings deleted on answers saying "recovering from major abdominal surgery" or
- * "minor bleeding at the cannula site" — but the backend reads the same text with the same kind of
- * scan, so it would not have listed those citations, and the module never sees the payload. That
- * changes the day the backend's check becomes rating-CONTEXT aware rather than textual; if it
- * does, this rule starts over-refusing and the subset argument above is where to look.
+ * The probe behind the false proof is why it survived: seventeen surroundings, all ASCII. A
+ * boundary rule is exactly the kind of claim where the interesting inputs are the ones outside the
+ * character set the prober was thinking in — and "provable rather than measured" is the phrase
+ * that told the next reader not to check.
+ *
+ * One consequence of agreeing with the backend is worth stating, because it looks like a cost and
+ * is not: an ordinary-English use of the word deletes nothing, because the backend reads the same
+ * text with the same scan and would not have listed the citation. A sweep measured 64,251 correct
+ * ratings deleted on answers saying "recovering from major abdominal surgery" — on payloads that
+ * cannot occur. That changes the day the backend's check becomes rating-CONTEXT aware rather than
+ * textual; if it does, this rule starts over-refusing and this paragraph is where to look.
  *
  * Reachable only where two findings of one group share a rating, which is the live chart's shape
  * (three of five Moderate) and deliberately NOT the property fixture's — see the note above
@@ -999,8 +1027,28 @@ function candidateSetFor(
  * not three witnesses.
  */
 function answerStatesRating(normalizedAnswer: string, severity: string): boolean {
-  return namesLead(normalizedAnswer, normalize(severity));
+  const needle = normalize(severity);
+  if (needle === '') return false;
+  for (let at = normalizedAnswer.indexOf(needle); at >= 0; at = normalizedAnswer.indexOf(needle, at + 1)) {
+    const end = at + needle.length;
+    const before = at === 0 ? '' : normalizedAnswer[at - 1];
+    const after = end >= normalizedAnswer.length ? '' : normalizedAnswer[end];
+    if (!RATING_BOUNDARY.test(before) && !RATING_BOUNDARY.test(after)) return true;
+  }
+  return false;
 }
+
+/**
+ * What counts as part of a word on either side of a RATING, mirroring `Character.isLetterOrDigit`
+ * — Unicode letters and numbers, and nothing else.
+ *
+ * Transcribed from the backend's `statesWord` rather than shared with {@link isWordish}, and the
+ * difference is not cosmetic. `isWordish` is a DRUG-name boundary: it counts `/` and `-` so a lead
+ * cannot match half a combination product, and it is ASCII-only. Borrowing it here looked like
+ * reuse and was a contract mismatch, because this question is the backend's question and has to be
+ * decided the backend's way.
+ */
+const RATING_BOUNDARY = /[\p{L}\p{N}]/u;
 
 function readClaims(
   references: AiReference[],
@@ -1045,7 +1093,7 @@ function readClaims(
     // Several findings share this (type, drug), so the answer's own sentence has to single one
     // out. Each lead group is asked of the whole candidate list and the verdicts are reconciled
     // by `electCandidate`, which refuses on every disagreement — group order decides nothing.
-    const claim = stripExclusions(normalize(claims.get(index) ?? ''));
+    const claim = normalize(stripExclusions(normalizeKeepingLines(claims.get(index) ?? '')));
     const perGroupMatches = set.groups.map((group) =>
       matchesInGroup(candidates, group.leadsPerCandidate, group.shared, claim, set.siblingLeads),
     );
@@ -1405,8 +1453,21 @@ export function resolveFindingSeverities(
     const rawHead = upto < 0 ? '' : answer.slice(0, upto);
     const breaks = [...rawHead.matchAll(SENTENCE_END_GLOBAL)];
     const lastBreak = breaks[breaks.length - 1];
+    // Bounding this at a LINE break as well as a sentence break was tried and REMOVED, and the
+    // reason is worth the four lines. It looked necessary: in a newline-separated list — the shape
+    // `ANSWER_BARE_LIST` is captured from — the head holds no sentence terminator, so this cut is
+    // 0 and the strip runs over every line of it, which is how a clause on line 1 came to delete
+    // the subject named on line 2 and render a MAJOR finding as Moderate. But what actually closed
+    // that was giving {@link stripExclusions} its line breaks back, a few lines below: with those
+    // intact, {@link EXCLUDED_NAME}'s horizontal-only bound stops an excluded name crossing a line
+    // by itself. With the fix in place, mutating the line bound away leaves the whole suite green,
+    // so nothing discriminated it — and an unpinned addition to a refusal rule is the exact shape
+    // that twice this week turned out to change an election nobody intended.
     const cut = lastBreak === undefined ? 0 : (lastBreak.index ?? 0) + lastBreak[0].length;
-    headTextOfSet.set(setKey, `${normalize(rawHead.slice(0, cut))} ${stripExclusions(normalize(rawHead.slice(cut)))}`);
+    headTextOfSet.set(
+      setKey,
+      `${normalize(rawHead.slice(0, cut))} ${stripExclusions(normalizeKeepingLines(rawHead.slice(cut)))}`,
+    );
   }
 
   const tailTextOfSet = new Map<string, string>();

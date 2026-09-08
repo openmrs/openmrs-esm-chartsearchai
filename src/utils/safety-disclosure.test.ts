@@ -159,6 +159,40 @@ describe('a subject left over BETWEEN the set’s own markers', () => {
 });
 
 describe('an exclusion clause in an EARLIER sentence is not about this claim', () => {
+  it('does not let a clause on an earlier LINE strip the subject, only an earlier sentence', () => {
+    // The bound below is stated as "only the head's LAST SENTENCE, because an exclusion clause in
+    // an EARLIER sentence is not about this claim" — and it was defeated on the answers that need
+    // it most, because a NEWLINE is not a sentence terminator. In a newline-separated list, which
+    // is the shape the live `ANSWER_BARE_LIST` is captured from, the head holds no terminator at
+    // all, so the cut was 0 and the strip ran over every line of it.
+    //
+    // Here the clause excludes DOSE TIMING and never mentions a drug, so this is not the recorded
+    // residual about prose that contradicts itself. The strip reached three lines back and deleted
+    // `Solu-Medrol 125mg/5ml` — the subject the rise is about — leaving only what it is measured
+    // against, and rendered Prednisone's Moderate for a MAJOR finding. Under-warned.
+    const answer =
+      'Apart from dose timing\nSolu-Medrol 125mg/5ml, her worst order\nCYP450 3A4 inhibition is the mechanism\nThe rise is above what Prednisone Co 5mg gives [350].';
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350])]).toEqual([]);
+  });
+
+  it('does not let an exclusion clause cross a line into the marker’s own subject', () => {
+    // The same root cause reaching a claim window instead of the head, and it silenced the ONE
+    // objection that fired on this shape. `EXCLUDED_NAME` bounds an excluded name with a
+    // horizontal-only whitespace class, exactly so the name cannot cross a line — and that guard
+    // could never fire, because every call site handed it text whose newlines had already been
+    // collapsed to spaces. So `apart from dose timing` reached across the line break and took
+    // `Pulmicort 90mcg,` with it, deleting the marker's own subject from the unconfined backward
+    // window. The block rule then elected the same wrong candidate the confined one did, their
+    // disagreement vanished, and a swapped pair rendered: [351] Major shown as Moderate.
+    //
+    // 25,344 answers of this class carried an under-warning rating on the shipped payload, and in
+    // every one of them the control with the clause deleted refused — the clause was load-bearing
+    // for the defect, not incidental to it.
+    const answer =
+      'Compared with Budesonide, the bigger problem is [352] Prednisone Co 5mg apart from dose timing\nPulmicort 90mcg, the inhaled steroid\n  This interaction differs from the one for Prednisone Co 5mg [351].';
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [351, 352])]).toEqual([]);
+  });
+
   it('refuses when the strip would otherwise delete the subject out of the head', () => {
     // The last recorded open residual of the head-rule class, closed by stripping only the head's
     // LAST sentence — the part that is the first citation's claim window — rather than the whole
@@ -181,6 +215,32 @@ describe('an exclusion clause in an EARLIER sentence is not about this claim', (
 });
 
 describe('a rating the answer states cannot be the unstated citation’s', () => {
+  it('reads the rating boundary the way the backend does, not the way drug names are read', () => {
+    // The rule deletes a resolution whose rating the answer states, on the backend's own contract:
+    // a citation is listed only when its rating word appears nowhere. That is safe only while the
+    // two agree about what "appears" means — and for a while this borrowed the DRUG-name boundary,
+    // which is ASCII-only, while the backend's is `Character.isLetterOrDigit`, which is not. Every
+    // one of these deleted both of the answer's CORRECT Major ratings, because the module saw a
+    // word boundary after "Major" where the backend saw a letter and therefore listed the
+    // citations it had found no rating for.
+    //
+    // This module is translated and the answer's language follows the model, so this is ordinary
+    // prose rather than a contrivance. The written proof that the borrowing was safe was ASCII-
+    // blind, and so was the probe behind it.
+    for (const tail of [
+      'Majorの相互作用に注意してください。',
+      'Riesgo Majoré en esta paciente.',
+      'Major٣ grading scale applies.',
+    ]) {
+      const resolved = resolveFindingSeverities(`${ANSWER} ${tail}`, REFERENCES, SAFETY_WARNINGS, UNSTATED);
+      expect([...resolved.keys()].sort()).toEqual([350, 351, 352, 353, 354]);
+    }
+    // The control: a plain ASCII use of the word still deletes, because the backend would then
+    // have found the rating stated and left those citations off the list entirely.
+    const stated = resolveFindingSeverities(`${ANSWER} Major risk overall.`, REFERENCES, SAFETY_WARNINGS, UNSTATED);
+    expect([...stated.keys()].sort()).toEqual([352, 353, 354]);
+  });
+
   it('refuses where the prose gives nothing but the backend does — captured live', () => {
     // The class no reading of the prose could close, and the one the module was most exposed to,
     // because in it all three readings AGREE and every objection is satisfied. The answer names
