@@ -60,11 +60,13 @@ const PARTNERS = [
  * Built through the shared fixture builders, not hand-written here.
  *
  * This file used to keep its own copies of both literals, and that made it the one test in the
- * repo still asserting against a dataset shape the others had moved off. Measured: changing the
- * fixture's ` — ` separator reddens 26 tests across the panel and resolver suites and leaves
- * these 8,000 generated answers GREEN — so the guard the whole module is built around went on
- * proving the safety property about a note format nothing else expected any more, and said
- * nothing. A fuzzer that cannot see the input change is not a fuzzer of the input.
+ * repo still asserting against a dataset shape the others had moved off — the guard the whole
+ * module is built around went on proving the safety property about a note format nothing else
+ * expected, and said nothing. A fuzzer that cannot see the input change is not a fuzzer of the
+ * input.
+ *
+ * The measurement behind that is stated once, on `interaction()` in the fixture, which owns the
+ * separator. It used to be restated here too, with counts that had gone stale in both homes.
  */
 const WARNINGS: AiSafetyWarning[] = PARTNERS.map((partner) =>
   interaction(partner.substance, partner.severity, partner.bridged ? partner.order : undefined),

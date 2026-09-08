@@ -103,11 +103,16 @@ export const REFERENCES: AiReference[] = [
  * copy of the separator.
  *
  * That "only true while" was a claim, not a fact, for as long as it stood here: three callers
- * had not been converted, and the most consequential was the property fuzzer. Measured before
- * conversion — changing this separator to ` :: ` reddened 26 tests and left the fuzzer's 8,000
- * generated answers GREEN, so the module's broadest guard was proving the safety property
- * about a note format nothing else expected. After: 27, the fuzzer among them. Re-run that
- * probe rather than trusting this paragraph if you add a caller.
+ * had not been converted, and the most consequential was the property fuzzer, which meant the
+ * module's broadest guard was proving the safety property about a note format nothing else
+ * expected.
+ *
+ * THE MEASUREMENT LIVES HERE and nowhere else, because it was quoted in two places and both
+ * went stale. Re-measured on the current suite: changing this separator to ` :: ` reddens 33
+ * tests — 26 in the resolver's own suite, 6 in the panel's, and 1 in the property fuzzer. Before
+ * the fuzzer was converted it stayed GREEN. Re-run the probe rather than trusting this
+ * paragraph if you add a caller; the counts move with the suite and this is the only note that
+ * should carry them.
  */
 export const interaction = (
   partner: string,

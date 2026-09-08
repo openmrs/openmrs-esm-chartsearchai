@@ -885,7 +885,9 @@ describe('AiResponsePanel answer-limit disclosure', () => {
   it('states no limits while the answer is still streaming', () => {
     // The citations are not annotated at all during streaming, so a limits block would describe
     // annotations the reader cannot see — and closing the panel mid-stream leaves the message
-    // loading forever while a trailing grounded event still lands its measurements.
+    // loading forever — the panel is gone so nothing re-renders it, while the store keeps the
+    // message. NOT because a trailing `grounded` lands on it: the unmount effect aborts the
+    // stream unconditionally, so it cannot, and the hook's own comment records that correction.
     renderPanel({ isLoading: true });
     expect(limitsSection()).toBeNull();
   });

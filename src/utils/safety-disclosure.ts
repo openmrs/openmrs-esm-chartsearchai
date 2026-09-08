@@ -176,7 +176,7 @@ function normalize(text: string): string {
  * 100mg") and a clause does not: "except Prednisone Co 5mg at her current dose," no longer
  * matches at all, so the claim keeps both names and refuses.
  */
-/** At most four whitespace-separated tokens — a drug name, not a clause. See below. */
+/** At most four whitespace-separated tokens — a drug name, not a clause. See above. */
 const EXCLUDED_NAME = String.raw`[^\s,;:.]+(?:[^\S\n]+[^\s,;:.]+){0,3}`;
 
 const EXCLUSION_CLAUSES = [
@@ -365,7 +365,9 @@ export function claimTextByCitation(
       // and injectivity both held — with both Major findings badged Moderate.
       // Only the confined `trailing` window widens past a foreign marker. `block` is
       // back-to-the-previous-marker by design, and widening it or the forward windows was
-      // measured to regress the live corpus hard (94 correct ratings down to 74).
+      // measured to regress the live corpus hard — the one note that still quoted a 94-rating
+      // baseline after the figure was consolidated. Re-stated against the corpus as THE CORPUS
+      // defines it: widening these windows took it from 98 correct ratings to 74.
       const from =
         direction === 'trailing' && ownIndices
           ? trailingWindowStart(breaks, lastOwnEnd, run.start)
@@ -796,7 +798,10 @@ function soundSets(reading: ClaimReading): Set<string> {
  * elections — so far as it made any — are pairwise distinct.
  *
  * This is the qualification to OBJECT, and it is deliberately weaker than {@link soundSets},
- * which is the qualification to RESOLVE. The difference is one word, and getting it wrong
+ * which is the qualification to RESOLVE. They differ in WHICH predicate completeness is
+ * measured on — named here, resolved there — and in whether injectivity is required at all
+ * (it is not, see below). It was described as a one-word difference, which the paragraph 35
+ * lines down already contradicted. Getting it wrong
  * shipped every rating of an answer wrong.
  *
  * Why completeness has to be measured on NAMED rather than ELECTED. For any list of findings,

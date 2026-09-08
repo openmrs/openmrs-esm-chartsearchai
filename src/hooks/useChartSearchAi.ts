@@ -177,14 +177,19 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           if (idx === -1) return prev;
           // A `done` already in the last read chunk still arrives after abort(), so a message
           // the user STOPPED would otherwise be replaced under them by the full answer. An
-          // unmounted-but-unstopped message is still loading, so this does not re-gate that.
+          // unmounted-but-unstopped message has `stopped === false` — the ref still holds its id
+          // — so this does not re-gate that, and `stopped` alone says it. There was an
+          // `!isLoading &&` conjunct here credited with that, discriminated by nothing and in the
+          // unsafe direction: whenever `stopped` is true and the message is still present it is
+          // never loading anyway (`stopCurrent` either removes it or clears the flag), so the
+          // conjunct could only ever let a late `done` through.
           //
           // `onGrounded` asks the same question of `stoppedMessageIdsRef` rather than of this
           // test, and the two cannot disagree — `stopCurrent` writes both in one go. It reads
           // the recorded fact because this test is only sound HERE: `stopped` above is taken
           // before the ref is cleared a few lines up, and a trailing `grounded` arrives long
           // after that, by which point the ref is null for a normal answer too.
-          if (!prev[idx].isLoading && stopped) return prev;
+          if (stopped) return prev;
           const updated = [...prev];
           updated[idx] = {
             ...updated[idx],
@@ -319,11 +324,15 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
                   const updated = [...prev];
                   updated[idx] = {
                     ...updated[idx],
-                    // The API layer normalises this to `[]` before calling back, so the
-                    // fallback is unreachable — but a payload that parses with no `references`
-                    // key would then BLANK the list, which is the opposite of the documented
-                    // "leaves citations rendered as unverified". Keep the message's own list
-                    // unless the event actually carries one.
+                    // The OPTIONAL CHAIN is the unreachable part — the API layer normalises this
+                    // to `[]` before calling back, so it is never nullish. The `.length` test is
+                    // the live one, and it is exactly the case that normalisation produces: a
+                    // payload parsing with no `references` key arrives as `[]`, and assigning it
+                    // would BLANK the list, the opposite of the documented "leaves citations
+                    // rendered as unverified". (This said the fallback was unreachable, which the
+                    // rest of the same sentence contradicted; the test at
+                    // `does not blank the citation list when the event carries no references`
+                    // reddens if the `.length` is dropped.)
                     references: update.references?.length ? update.references : updated[idx].references,
                     safetyWarnings: update.safetyWarnings ?? updated[idx].safetyWarnings,
                     ...mergeDisclosure(updated[idx], update),
