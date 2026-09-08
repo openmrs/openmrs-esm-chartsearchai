@@ -636,6 +636,15 @@ function isWordish(character: string): boolean {
  * refuses — the outcome the module wants. Cost, measured: one correct rating, on the mirror shape
  * where a bridge names `Medrol` and the claim names `Solu-Medrol` — that one is preserved by the
  * `before` half above, which is why the halves are separate functions rather than one.
+ *
+ * THIS WAS NOT THE WHOLE FIX, and shipping it as though it were traded one wrong-rating class for
+ * its mirror. The premise above — "a lead at the HEAD of a compound is normally that drug in
+ * adjectival form" — fails when the hyphen joins two DRUG names, and then this boundary exposes
+ * the head, which is a sibling, while the `-` before the tail keeps the marker's own subject
+ * hidden. 1,008 wrong ratings across a 2,520-answer sweep of the fixture's own names, every one
+ * of them under-warned. {@link hyphenJoinsASibling} is the other half; the two tests named for
+ * this pair of classes each redden under the other's boundary setting, which is the evidence that
+ * neither setting alone can serve both.
  */
 function isWordishAfter(character: string): boolean {
   return /[a-z0-9/]/.test(character);
@@ -655,9 +664,14 @@ function matchesInGroup(
   leadsPerCandidate: string[][],
   shared: ReadonlySet<string>,
   claim: string,
+  siblingLeads: readonly string[][] = [],
 ): AiSafetyWarning[] {
   return candidates.filter((_candidate, i) =>
-    leadsPerCandidate[i].some((lead) => !shared.has(lead) && namesLead(claim, lead)),
+    // `siblingLeads[i]` is every OTHER candidate's leads, across all groups — see
+    // {@link hyphenJoinsASibling}, which is the only thing that reads it. Another candidate's,
+    // not this one's: `Solu-Medrol` holds `Medrol`, and a compound made of one candidate's own
+    // two names is still one drug.
+    leadsPerCandidate[i].some((lead) => !shared.has(lead) && namesLead(claim, lead, siblingLeads[i])),
   );
 }
 
@@ -671,6 +685,14 @@ interface CandidateGroup {
 interface CandidateSet {
   candidates: AiSafetyWarning[];
   groups: CandidateGroup[];
+  /**
+   * Per candidate, every lead belonging to a DIFFERENT candidate of this set, across all groups.
+   *
+   * Computed once here for the same reason the groups are — it is quadratic in the set size and
+   * the readings must be able to share it. Read only by {@link hyphenJoinsASibling}, to tell a
+   * hyphen joining two drug names from one joining a drug to an English suffix.
+   */
+  siblingLeads: string[][];
   /**
    * True when some candidate has NO discriminating lead in any group, so no prose can name it.
    *
@@ -711,7 +733,7 @@ function buildCandidateSet(candidates: AiSafetyWarning[]): CandidateSet {
   // `readClaims` calls this BEFORE its own `candidates.length === 0` check, and the live payload
   // has a `contraindication:Clarithromycin` finding with `severity: null`, which yields zero
   // RATED candidates on every real answer of that shape.
-  if (candidates.length <= 1) return { candidates, groups: [], unnameable: false };
+  if (candidates.length <= 1) return { candidates, groups: [], siblingLeads: [], unnameable: false };
   const leadsPerCandidate = candidates.map(candidateLeadTiers);
   const groups = leadsPerCandidate[0].map((_unused, group) => {
     const leads = candidates.map((candidate, i) => discriminatingLeads(leadsPerCandidate[i][group], candidate.drug));
@@ -721,7 +743,10 @@ function buildCandidateSet(candidates: AiSafetyWarning[]): CandidateSet {
   const unnameable = candidates.some((_candidate, i) =>
     groups.every((group) => group.leadsPerCandidate[i].length === 0),
   );
-  return { candidates, groups, unnameable };
+  const siblingLeads = candidates.map((_candidate, i) =>
+    groups.flatMap((group) => group.leadsPerCandidate.flatMap((leads, j) => (j === i ? [] : leads))),
+  );
+  return { candidates, groups, siblingLeads, unnameable };
 }
 
 /**
@@ -732,7 +757,7 @@ function buildCandidateSet(candidates: AiSafetyWarning[]): CandidateSet {
  * — while the `leadClause` group, anchored by the *"interacts with active order …"* phrase, got
  * the same case right.
  */
-export function namesLead(claim: string, lead: string): boolean {
+export function namesLead(claim: string, lead: string, siblingLeads: readonly string[] = []): boolean {
   // An empty lead is not merely uninformative — `indexOf('')` returns `from` for every `from`, so
   // the scan below would never advance and never terminate. It is filtered out upstream, but a
   // guard whose failure mode is a frozen render thread does not get to rely on that.
@@ -741,10 +766,55 @@ export function namesLead(claim: string, lead: string): boolean {
     const at = claim.indexOf(lead, from);
     if (at < 0) return false;
     const before = at === 0 ? '' : claim[at - 1];
-    const after = at + lead.length >= claim.length ? '' : claim[at + lead.length];
-    if (!isWordish(before) && !isWordishAfter(after)) return true;
+    const end = at + lead.length;
+    const after = end >= claim.length ? '' : claim[end];
+    if (!isWordish(before) && !isWordishAfter(after) && !hyphenJoinsASibling(claim, end, after, siblingLeads)) {
+      return true;
+    }
     from = at;
   }
+}
+
+/**
+ * Whether the `-` that ended this match is joining this drug's name to a SIBLING'S, rather than to
+ * an English suffix.
+ *
+ * {@link isWordishAfter} makes `-` a boundary after a lead on the premise that a lead at the HEAD
+ * of a compound is normally that drug in adjectival form — `methylprednisolone-containing`. That
+ * premise fails exactly when the hyphen joins two DRUG names, and then the asymmetry does the
+ * wrong thing twice over: it EXPOSES the head, which is a sibling, and leaves the tail — the
+ * marker's own subject — hidden by the `-` before it. One candidate is named, unanimously in all
+ * three readings, and every objection is satisfied because the wrongly-elected sibling is in
+ * `claimedByTrailing` precisely BECAUSE it was wrongly elected.
+ *
+ * Measured on the shipped fixture, under-warning every time — the direction that reaches a
+ * patient: *"Clarithromycin interacts with active order Dexamethasone Injection vial 8mg [353],
+ * with active order Hydrocortisone Injection vial 100mg [354], and with her
+ * prednisone-to-Solu-Medrol switch [350]"* rendered all three badges and got [350] wrong, MAJOR
+ * shown as Moderate. Across every ordered pair of the fixture's own published names joined by six
+ * hyphen forms in five carrier sentences: 1,140 answers, 936 resolved, 576 wrong, 288 of those
+ * under-warned, and not one refused. The real-world shape is a combination product carrying two
+ * findings — `Sulfamethoxazole-Trimethoprim`, `Carbidopa-Levodopa`, `Amoxicillin-Clavulanate`.
+ *
+ * REVERTING `isWordishAfter` IS NOT THE FIX, and that is why this exists instead. Putting `-` back
+ * on both sides refuses these answers and re-opens their mirror, where the compound is a drug plus
+ * a suffix and the drug it names is the marker's own subject — measured as two MAJOR interactions
+ * shown Moderate. The two classes are mirror images; the branch fixed one and measured only that.
+ *
+ * The signal that separates them is in the payload rather than in a word list: ask whether the
+ * rest of the hyphenated TOKEN carries another candidate's lead. `methylprednisolone-containing`
+ * → "containing" is nobody's lead, so the head really is the drug in adjectival form and the
+ * match stands. `prednisone-to-methylprednisolone` → the remainder holds a sibling's lead, so
+ * BOTH drugs are named, `electCandidate` gets two candidates and elects nobody, and the set
+ * refuses. Bounded to the token, not the rest of the claim: an ordinary sentence names other
+ * drugs later on, and taking the whole remainder would refuse every adjectival form that happens
+ * to be followed by a comparison.
+ */
+function hyphenJoinsASibling(claim: string, end: number, after: string, siblingLeads: readonly string[]): boolean {
+  if (after !== '-' || siblingLeads.length === 0) return false;
+  const space = claim.indexOf(' ', end);
+  const rest = space < 0 ? claim.slice(end) : claim.slice(end, space);
+  return siblingLeads.some((sibling) => sibling !== '' && rest.includes(sibling));
 }
 
 /**
@@ -880,8 +950,30 @@ function candidateSetFor(
  * The corpus is byte-identical to before either — see THE CORPUS at the top of this file — and a
  * blank is safe where a swapped pair is not, which is the premise the whole module rests on.
  *
- * Matched with {@link namesLead}, the same boundary test the leads use, so `Minor` cannot be found
- * inside a word and a rating stated in any casing counts.
+ * Matched with {@link namesLead}, so `Minor` cannot be found inside a word and a rating stated in
+ * any casing counts.
+ *
+ * THIS RULE CANNOT DELETE A CORRECT RATING on a payload the backend could have emitted, and that
+ * is provable rather than measured. The backend decides the list with `statesWord`, a
+ * case-insensitive scan requiring a non-alphanumeric neighbour on each side. `namesLead` requires
+ * a non-`isWordish` neighbour, and `isWordish` is a SUPERSET of alphanumeric — it also counts `/`
+ * and, before a lead, `-`. So everything `namesLead` accepts, `statesWord` accepts: the module's
+ * reading of "the answer states this rating" is strictly narrower than the backend's. Checked over
+ * a probe of every rating against seventeen surroundings: seven divergences, all of them the
+ * module declining where the backend would accept, and ZERO the other way.
+ *
+ * The consequence is the safety property. For a citation the backend LISTED, `statesWord(answer,
+ * its true rating)` is false by construction — that is what listing means. By the subset above,
+ * `namesLead(answer, its true rating)` is therefore false too, so a resolution carrying the RIGHT
+ * rating is never deleted. Only a resolution carrying some OTHER rating the answer states can be,
+ * and that resolution is wrong.
+ *
+ * It also means an ordinary-English use of the word costs nothing: an adversarial sweep measured
+ * 64,251 correct ratings deleted on answers saying "recovering from major abdominal surgery" or
+ * "minor bleeding at the cannula site" — but the backend reads the same text with the same kind of
+ * scan, so it would not have listed those citations, and the module never sees the payload. That
+ * changes the day the backend's check becomes rating-CONTEXT aware rather than textual; if it
+ * does, this rule starts over-refusing and the subset argument above is where to look.
  *
  * Reachable only where two findings of one group share a rating, which is the live chart's shape
  * (three of five Moderate) and deliberately NOT the property fixture's — see the note above
@@ -944,7 +1036,7 @@ function readClaims(
     // by `electCandidate`, which refuses on every disagreement — group order decides nothing.
     const claim = stripExclusions(normalize(claims.get(index) ?? ''));
     const perGroupMatches = set.groups.map((group) =>
-      matchesInGroup(candidates, group.leadsPerCandidate, group.shared, claim),
+      matchesInGroup(candidates, group.leadsPerCandidate, group.shared, claim, set.siblingLeads),
     );
     namedOf.set(index, new Set(perGroupMatches.flat()));
     const winner = electCandidate(perGroupMatches);
@@ -1610,6 +1702,28 @@ export function resolveFindingSeverities(
     // which measured four live ratings (`r8_apartfrom`, an earlier cycle's recovery). Left open
     // deliberately: the prose excludes a drug and then calls it the worst in the same breath, and
     // paying four correct ratings for self-contradicting text is the wrong trade.
+    //
+    // KNOWN COST, measured and left open. A candidate named in the head or the interior is judged
+    // a leftover when no citation OF THIS MEASUREMENT claims it — and an answer that states one
+    // finding's rating in prose makes exactly that happen to the rest, because the backend then
+    // drops that finding's citation from the list. Live shape:
+    //
+    //   "…it interacts with active order Methylprednisolone [350], which is a Major interaction;
+    //    it interacts with active order Prednisone [352]; and … Dexamethasone [353]."
+    //     unstated [352, 353] -> refused; the same answer without the rating clause, with all
+    //     three listed, resolves all three correctly.
+    //
+    // Methylprednisolone is named with a citation of its own, just not one this measurement is
+    // about, so it reads as a subject left over and the two ratings that ARE asked for are
+    // withheld with it. Realistic — a model stating one rating and not the others is the shape
+    // `unstatedFindingSeverities` exists to report. No live corpus answer resolves through it, so
+    // the cost is not in the 46.
+    //
+    // Not fixed here on purpose. The fix is to treat a candidate claimed by a same-family citation
+    // OUTSIDE the measurement as accounted for, which adds resolutions — the unsafe direction, on
+    // a safety rule, and twice this week a change in that direction on this file turned out to
+    // manufacture a wrong rating. It wants a cycle of its own with the corpus and a skewed sweep
+    // behind it.
     //
     // Or the mirror: a candidate named BEFORE the set's first marker that no citation of the set
     // claims. In a trailing-written answer the head holds the first citation's own subject and it

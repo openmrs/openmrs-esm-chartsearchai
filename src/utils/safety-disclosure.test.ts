@@ -948,6 +948,47 @@ describe('resolveFindingSeverities', () => {
     expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 351])]).toEqual([]);
   });
 
+  it('refuses when a hyphen joins the marker’s own subject to a sibling’s name', () => {
+    // The mirror of the test above, and the class the fix for that one opened. Making `-` a
+    // boundary AFTER a lead assumed a lead at the head of a compound is that drug in adjectival
+    // form. When the hyphen joins two DRUG names the assumption inverts: the head is EXPOSED and
+    // it is a sibling, while the tail — the marker's own subject — stays hidden by the `-` before
+    // it. One candidate is named, unanimously in all three readings, and all seven objections are
+    // satisfied because the wrongly-elected sibling is claimed precisely BECAUSE it was wrongly
+    // elected.
+    //
+    // Under-warning every time, which is the direction that reaches a patient. Swept over every
+    // ordered pair of this fixture's own published names joined by six hyphen forms in five
+    // carrier sentences: 2,520 answers, 2,448 resolved and 1,008 wrong WITHOUT the sibling check,
+    // all 1,008 under-warned and not one refused; with it, 840 still resolve and none is wrong.
+    // The real-world shape is a combination product carrying two findings —
+    // `Sulfamethoxazole-Trimethoprim`, `Carbidopa-Levodopa`, `Amoxicillin-Clavulanate`.
+    for (const answer of [
+      'Clarithromycin interacts with active order Dexamethasone Injection vial 8mg [353], with active order Hydrocortisone Injection vial 100mg [354], and with her prednisone-to-Solu-Medrol switch [350].',
+      'Clarithromycin interacts with active order Dexamethasone Injection vial 8mg [353], and with her prednisone-to-methylprednisolone conversion [350].',
+      'Her prednisone-to-methylprednisolone conversion [350] is the one to review before starting clarithromycin.',
+      'Her prednisone-to-budesonide step-down [351] is the one to review before starting clarithromycin.',
+    ]) {
+      // Each rendered its Major finding as Moderate before the sibling check — and the first
+      // rendered all three badges, so two correct ratings sat beside the wrong one.
+      expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [353, 354, 350, 351])]).toEqual([]);
+    }
+  });
+
+  it('still reads an adjectival hyphen compound, which is why the check is not symmetric', () => {
+    // The control that forbids the obvious fix. Putting `-` back on both sides refuses the test
+    // above and re-opens its mirror — this answer, where the compound is a drug plus an English
+    // suffix and the drug it hides is the marker's own subject. Measured then as two MAJOR
+    // interactions shown Moderate.
+    //
+    // So the two classes are mirror images and neither boundary setting can serve both. What
+    // separates them is whether the rest of the hyphenated TOKEN carries a sibling's lead:
+    // "containing" is nobody's lead, "methylprednisolone" is.
+    const answer =
+      'Clarithromycin interacts with active order Prednisone Co 5mg and with her methylprednisolone-containing injection [350]. It also interacts with active order Dexamethasone Injection vial 8mg and with her budesonide-containing inhaler [351].';
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 351])]).toEqual([]);
+  });
+
   it('does not match a bridge against half of a hyphenated brand', () => {
     // The hyphen half of the boundary class: dropping `-` from it left the whole suite green,
     // and this repo's own fixture vocabulary contains the hazard — a chip bridged to `Medrol`
