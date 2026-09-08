@@ -1,10 +1,23 @@
-/* eslint-disable testing-library/no-container, testing-library/no-node-access, testing-library/prefer-presence-queries */
+/* eslint-disable testing-library/no-container */
+/* eslint-disable testing-library/no-node-access */
+/* eslint-disable testing-library/prefer-presence-queries */
 import React from 'react';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import AiResponsePanel from './ai-response-panel.component';
 import { highlightReference } from '../utils/highlight-reference';
 import { SESSION_EXPIRED_ERROR_CODE } from '../api/chartsearchai';
+import {
+  ANSWER_BARE_LIST,
+  ANSWER_BY_ORDER_DISPLAY,
+  ANSWER_BY_SUBSTANCE,
+  interaction,
+  MISATTRIBUTED,
+  REFERENCES as FIXTURE_REFERENCES,
+  SAFETY_WARNINGS,
+  safetyFindingRef,
+  UNSTATED,
+} from '../__fixtures__/clarithromycin-response';
 
 vi.mock('../utils/highlight-reference', () => ({ highlightReference: vi.fn() }));
 const mockHighlightReference = highlightReference as Mock;
@@ -138,7 +151,11 @@ describe('AiResponsePanel reference links', () => {
     expect(screen.getByText('Source: WHO-ATC research package')).toBeInTheDocument();
     expect(screen.getByText(/4 additional interactions are not shown/)).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Potential class interaction.' })).not.toBeInTheDocument();
-    expect(screen.getAllByTitle('Clinical reference data — not this patient’s record.')).toHaveLength(2);
+    expect(
+      screen.getAllByTitle(
+        'The module’s own safety finding, computed from this patient’s chart — not a chart record to open.',
+      ),
+    ).toHaveLength(2);
   });
 
   it('keeps legacy safety findings off patient-chart links when group metadata is absent', () => {
@@ -164,7 +181,11 @@ describe('AiResponsePanel reference links', () => {
     );
 
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
-    expect(screen.getAllByTitle('Clinical reference data — not this patient’s record.')).toHaveLength(2);
+    expect(
+      screen.getAllByTitle(
+        'The module’s own safety finding, computed from this patient’s chart — not a chart record to open.',
+      ),
+    ).toHaveLength(2);
   });
 
   it('shows an unresolved citation as a missing-source evidence tile', () => {
@@ -1430,5 +1451,581 @@ describe('AiResponsePanel per-section confidence', () => {
   it('does not split into sections while the answer is still streaming', () => {
     render(<AiResponsePanel {...baseProps} phase="answering" confidence={{ answer: { level: 'red', note: 'x' } }} />);
     expect(screen.queryByTestId('section-answer')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The backend fields that state a bounded safety answer's limits (issue #26), rendered
+ * against the measured response in `src/__fixtures__/clarithromycin-response.ts` — shared with
+ * the resolver's own tests, because the ratings asserted here are that resolver's OUTPUT over
+ * the fixture's prose and warnings and so depend on dataset-format details only the fixture
+ * states.
+ */
+describe('activeOrderClaims', () => {
+  function renderClaims(activeOrderClaims: unknown, misattributedOrderCitations: number[] | null = []) {
+    return render(
+      <AiResponsePanel
+        answer={ANSWER_BY_SUBSTANCE}
+        references={FIXTURE_REFERENCES}
+        safetyWarnings={SAFETY_WARNINGS}
+        misattributedOrderCitations={misattributedOrderCitations}
+        unstatedFindingSeverities={UNSTATED}
+        conditionRuleCoverage="published"
+        interactionPairs={null}
+        activeOrderClaims={activeOrderClaims as never}
+        error={null}
+        phase="complete"
+        patientUuid={patientUuid}
+      />,
+    );
+  }
+
+  it('is what separates the two readings of an empty misattributed list', () => {
+    // The reason this field is drawn at all. The backend states that
+    // `misattributedOrderCitations: []` is two different responses a client cannot tell apart —
+    // every active-order claim cited a chart record and none was rejected, or NO claim cited one —
+    // and that both have been recorded on one patient and one question. The `[]` is the same in
+    // both halves below; only this field distinguishes them, which is why drawing the other four
+    // without it left an ambiguity on screen that their own docs warn about.
+    const view = renderClaims({ stated: 5, uncited: 0 }, []);
+    expect(screen.getByText(/Every statement about her active orders cites a chart record\./)).toBeInTheDocument();
+    view.unmount();
+
+    renderClaims({ stated: 5, uncited: 5 }, []);
+    expect(screen.getByText(/Statements about her active orders citing no chart record: 5 of 5\./)).toBeInTheDocument();
+  });
+
+  it('says why an uncited claim matters', () => {
+    renderClaims({ stated: 4, uncited: 3 });
+    expect(screen.getByText(/citing no chart record: 3 of 4\./)).toBeInTheDocument();
+    expect(screen.getByText(/cannot be checked against the chart at all/)).toBeInTheDocument();
+  });
+
+  it('does not claim the cited records were the RIGHT ones', () => {
+    // `uncited: 0` says a record was offered for every claim and stops there. Whether the record
+    // was the order the sentence named is the neighbouring check's business, and the backend says
+    // that check cannot certify it either — so this must not read as "citations verified", and it
+    // must not carry the caveat clause that belongs to the uncited case.
+    renderClaims({ stated: 5, uncited: 0 });
+    expect(screen.getByText(/Every statement about her active orders cites a chart record\./)).toBeInTheDocument();
+    expect(screen.queryByText(/verified|confirmed|sound/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/cannot be checked against the chart at all/)).not.toBeInTheDocument();
+  });
+
+  it('does not affirm that every claim is cited while a citation is rejected', () => {
+    // `uncited: 0` is true of the MARKERS — every active-order sentence carries one — and the
+    // sibling test above is right that the sentence stops there. But it leads a block headed
+    // "What the safety checks covered", and under that heading, beside citations the
+    // neighbouring check has struck through, it reads as a statement about the RECORDS. Live on
+    // the #26 reproduction: `{stated: 5, uncited: 0}` with `misattributedOrderCitations`
+    // `[177, 166, 155]`, three markers rendered `Not the order named` directly above the
+    // affirmation. Silence here is the choice `misattributedOrderCitations: []` already makes
+    // one field over — no certificate.
+    renderClaims({ stated: 5, uncited: 0 }, [177, 166, 155]);
+    expect(
+      screen.queryByText(/Every statement about her active orders cites a chart record\./),
+    ).not.toBeInTheDocument();
+  });
+
+  it('still affirms it where nothing was rejected, and where no measurement was stated', () => {
+    // The scope of the refusal above, both directions. `[]` is a stated measurement of none, so
+    // the affirmation stands — that is the case the sibling test reasoned about. `null` is NO
+    // measurement, and must not suppress it either: absent evidence of a rejection is not a
+    // rejection, and treating it as one would silence the sentence on every deployment that
+    // does not run the check.
+    const view = renderClaims({ stated: 5, uncited: 0 }, []);
+    expect(screen.getByText(/Every statement about her active orders cites a chart record\./)).toBeInTheDocument();
+    view.unmount();
+
+    renderClaims({ stated: 5, uncited: 0 }, null);
+    expect(screen.getByText(/Every statement about her active orders cites a chart record\./)).toBeInTheDocument();
+  });
+
+  it('renders nothing for a null measurement or an answer that made no such claim', () => {
+    for (const value of [null, undefined, { stated: 0, uncited: 0 }]) {
+      const view = renderClaims(value);
+      expect(screen.queryByText(/active orders/)).not.toBeInTheDocument();
+      view.unmount();
+    }
+  });
+
+  it('survives a malformed measurement rather than taking the panel down', () => {
+    // Guarded per FIELD, not just on the object: this renders inside a memo with no error boundary
+    // above it, and a non-numeric count would reach the interpolation.
+    for (const value of [{ stated: '5', uncited: 2 }, { stated: 5 }, { uncited: 2 }, 'nonsense', 5]) {
+      const view = renderClaims(value);
+      expect(screen.queryByText(/active orders/)).not.toBeInTheDocument();
+      view.unmount();
+    }
+  });
+});
+
+describe('AiResponsePanel answer-limit disclosure', () => {
+  function renderPanel(overrides: Record<string, unknown> = {}) {
+    return render(
+      <AiResponsePanel
+        answer={ANSWER_BY_SUBSTANCE}
+        references={FIXTURE_REFERENCES}
+        safetyWarnings={SAFETY_WARNINGS}
+        misattributedOrderCitations={MISATTRIBUTED}
+        unstatedFindingSeverities={UNSTATED}
+        conditionRuleCoverage="absent"
+        interactionPairs={{ found: 5, reported: 5 }}
+        error={null}
+        phase="complete"
+        patientUuid={patientUuid}
+        {...overrides}
+      />,
+    );
+  }
+
+  /**
+   * The rendered sentence text, markers and severity badges included, with whitespace collapsed.
+   * Found by class rather than by a text fragment so it works across the fixture's two answer
+   * shapes; `identity-obj-proxy` maps the CSS-module class to its own name in tests.
+   */
+  const answerText = () =>
+    (
+      screen.getByText((_content, element) => Boolean(element?.className?.includes?.('markdownAnswer'))).textContent ??
+      ''
+    ).replace(/\s+/g, ' ');
+
+  /**
+   * The limits block, or null. Queried by class rather than by its heading text: four
+   * assertions in this file used to name the heading and went dead the moment it was reworded,
+   * passing while examining nothing.
+   */
+  const limitsSection = () =>
+    screen.queryByText((_content, element) => Boolean(element?.className?.includes?.('limitsLabel')));
+
+  it('renders each unstated rating immediately after the marker of the finding it rates', () => {
+    renderPanel();
+    // Adjacency, not merely sequence: an earlier version of this test asserted the list of
+    // badge texts, which would have passed with every badge appended at the end of the answer.
+    const text = answerText();
+    expect(text).toContain('active order Methylprednisolone [177] [350] Major');
+    expect(text).toContain('active order Budesonide [166] [351] Major');
+    expect(text).toContain('active order Prednisone [155] [352] Moderate');
+    expect(text).toContain('active order Dexamethasone [12] [353] Moderate');
+    expect(text).toContain('active order Hydrocortisone [14] [354] Moderate');
+  });
+
+  it('pairs each rating with its own finding rather than the right multiset of ratings', () => {
+    // Two Majors then three Moderates cannot see a permutation within either run, so give the
+    // five findings five distinct ratings and assert each lands on its own sentence.
+    const distinct = [
+      SAFETY_WARNINGS[0],
+      interaction('Methylprednisolone', 'Major', 'Solu-Medrol 125mg/5ml'),
+      interaction('Budesonide', 'Minor', 'Pulmicort 90mcg'),
+      interaction('Prednisone', 'Moderate'),
+      interaction('Dexamethasone', 'Unknown'),
+      interaction('Hydrocortisone', 'Catastrophic'),
+    ];
+    renderPanel({ safetyWarnings: distinct });
+    const text = answerText();
+    expect(text).toContain('Methylprednisolone [177] [350] Major');
+    expect(text).toContain('Budesonide [166] [351] Minor');
+    expect(text).toContain('Prednisone [155] [352] Moderate');
+    expect(text).toContain('Dexamethasone [12] [353] Unknown');
+    expect(text).toContain('Hydrocortisone [14] [354] Catastrophic');
+  });
+
+  it('resolves ratings on an answer that names the chart’s order display', () => {
+    // The other live answer shape: the answer says "Solu-Medrol 125mg/5ml" where the chip says
+    // "Methylprednisolone", and repeats every marker inside its own statement.
+    renderPanel({ answer: ANSWER_BY_ORDER_DISPLAY, misattributedOrderCitations: [] });
+    const text = answerText();
+    expect(text).toContain('active order Solu-Medrol 125mg/5ml [350] Major');
+    expect(text).toContain('active order Pulmicort 90mcg [351] Major');
+    expect(text).toContain('active order Prednisone Co 5mg [352] Moderate');
+  });
+
+  it('badges every finding of a bare list the model wrote without the module’s phrasing', () => {
+    // Shape C, live: "list them one line each, name the order only". The symptom this fixture
+    // documents is a RENDERING one — the list came back half-badged, two Majors beside three
+    // bare items — so it has to be asserted here and not only as a resolver map.
+    renderPanel({ answer: ANSWER_BARE_LIST, misattributedOrderCitations: [] });
+    const text = answerText();
+    expect(text).toContain('Solu-Medrol 125mg/5ml [350] Major');
+    expect(text).toContain('Pulmicort 90mcg [351] Major');
+    expect(text).toContain('Prednisone Co 5mg [352] Moderate');
+    expect(text).toContain('Dexamethasone Injection vial 8mg [353] Moderate');
+    expect(text).toContain('Hydrocortisone Injection vial 100mg [354] Moderate');
+  });
+
+  it('badges a repeated marker once, not once per occurrence', () => {
+    renderPanel({ answer: ANSWER_BY_ORDER_DISPLAY, misattributedOrderCitations: [] });
+    // [350] is cited twice in its own statement; the rating belongs to the finding, not the marker.
+    expect(answerText().match(/Major/g) ?? []).toHaveLength(2);
+  });
+
+  it('states nothing where two citations of one set would take the same finding', () => {
+    // 350 and 351 are two different findings, and only one rated warning exists — so attributing
+    // it to both is wrong, and there is no way to tell which citation it belongs to. Refusing is
+    // the whole point of the injectivity rule.
+    renderPanel({
+      answer: 'Clarithromycin interacts with active order Methylprednisolone [350, 351].',
+      misattributedOrderCitations: [],
+      unstatedFindingSeverities: [350, 351],
+      safetyWarnings: [SAFETY_WARNINGS[0], interaction('Methylprednisolone', 'Major', 'Solu-Medrol 125mg/5ml')],
+    });
+    expect(answerText().match(/Major/g) ?? []).toHaveLength(0);
+  });
+
+  it('badges two findings of one group separately even when their ratings match', () => {
+    // Two citations from DIFFERENT candidate sets can both resolve, and then two badges are two
+    // real findings — collapsing equal ratings would hide the second. (Two citations of the SAME
+    // set can never both resolve; the resolver refuses that outright.)
+    renderPanel({
+      answer: 'Clarithromycin interacts with Methylprednisolone; Ibuprofen interacts with Warfarin [350, 360].',
+      references: [...FIXTURE_REFERENCES, safetyFindingRef(360, 'interaction', 'Ibuprofen')],
+      misattributedOrderCitations: [],
+      unstatedFindingSeverities: [350, 360],
+      safetyWarnings: [
+        interaction('Methylprednisolone', 'Major', 'Solu-Medrol 125mg/5ml'),
+        interaction('Warfarin', 'Major', undefined, 'Ibuprofen'),
+      ],
+    });
+    expect(answerText().match(/Major/g) ?? []).toHaveLength(2);
+  });
+
+  it('gives an unrecognised rating a treatment distinct from the module’s lowest tier', () => {
+    // `Unknown` is the lowest of the four recognised ratings; unrated sorts ABOVE all four, so
+    // one grey for both would tell a clinician they rank equally.
+    renderPanel({
+      unstatedFindingSeverities: [350, 351],
+      safetyWarnings: [
+        SAFETY_WARNINGS[0],
+        interaction('Methylprednisolone', 'Unknown', 'Solu-Medrol 125mg/5ml'),
+        interaction('Budesonide', 'Catastrophic', 'Pulmicort 90mcg'),
+      ],
+    });
+    const unknown = screen.getByText('Unknown').className;
+    const unrated = screen.getByText('Catastrophic').className;
+    expect(unknown).not.toEqual(unrated);
+  });
+
+  it('states no rating where the answer already states them', () => {
+    renderPanel({ unstatedFindingSeverities: [] });
+    expect(screen.queryAllByTitle(/may not state the rating/i)).toHaveLength(0);
+    expect(answerText()).not.toContain('Major');
+  });
+
+  it('renders the rating as a caveat, not a verdict', () => {
+    // The backend documents three measured cells where this key over-reports — a rating stated
+    // by synonym among them — so the wording must not assert that the answer omitted it.
+    renderPanel();
+    expect(screen.getAllByTitle(/may not state the rating/i).length).toBeGreaterThan(0);
+  });
+
+  it('does not make a misattributed citation navigate, in the prose or on its chip', () => {
+    renderPanel();
+    // The record is real but is not the order the sentence names, so following either the
+    // inline marker or the chip would land the clinician on an unrelated row.
+    for (const index of ['177', '166', '155']) {
+      const marker = screen.getByText(index, { selector: 'span' });
+      expect(marker.tagName).toBe('SPAN');
+      expect(marker).toHaveAttribute('title', expect.stringContaining('may not be the medication order'));
+    }
+    const chip = screen.getByText('[177] condition — 2024-05-13');
+    expect(chip.tagName).toBe('SPAN');
+  });
+
+  it('marks a misattributed citation as bad evidence, never as an unsupported claim', () => {
+    renderPanel();
+    // A red "Unsupported" badge here is the miscarriage the backend field exists to prevent:
+    // the finding is deterministic and correct; only the chart evidence attached to it is wrong.
+    expect(screen.queryByText('Unsupported')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Not the order named')).toHaveLength(3);
+  });
+
+  it('leaves correctly-cited chart citations navigable', () => {
+    renderPanel();
+    const stillLinked = screen.getByText('12', { selector: 'a' });
+    expect(stillLinked.tagName).toBe('A');
+  });
+
+  it('renders nothing extra when the check named no misattributed citation', () => {
+    // An empty array says the check ran and named none — it is NOT a certificate that the
+    // remaining citations are sound, so nothing here may read as a clean bill of health.
+    renderPanel({ misattributedOrderCitations: [] });
+    // The positive control is the sibling test above, which shows all three tags appear with
+    // this same fixture when the check does name citations.
+    expect(screen.queryByText('Not the order named')).not.toBeInTheDocument();
+    // ...and no marker is struck through or made inert, which is the whole of what `[]` licenses.
+    expect(screen.getByText('177', { selector: 'a' })).toBeInTheDocument();
+  });
+
+  it('gives a module-attached citation somewhere to appear and says who supplied it', () => {
+    renderPanel();
+    // The trap: this citation has NO [N] marker in the prose, so a reference list built by
+    // scanning the answer text drops it silently — here it is the recorded-allergy record
+    // behind the answer's load-bearing claim.
+    expect(ANSWER_BY_SUBSTANCE).not.toContain('[3]');
+    expect(screen.getByText('[3] allergy')).toBeInTheDocument();
+    expect(screen.getByText('Added by the module')).toBeInTheDocument();
+  });
+
+  it('omits the date separator for a record that carries no date', () => {
+    renderPanel();
+    expect(screen.queryByText(/— null/)).not.toBeInTheDocument();
+    expect(screen.getByText('[349] Safety finding')).toBeInTheDocument();
+  });
+
+  it('does not navigate a reference-group citation to a chart page', () => {
+    renderPanel();
+    // A safety finding's resourceUuid is synthetic (`interaction:Clarithromycin`); a link to
+    // Patient Summary could never land anywhere.
+    expect(screen.getByText('[350] Safety finding').tagName).toBe('SPAN');
+  });
+
+  it('says how much of the interaction screen is shown', () => {
+    renderPanel();
+    // Also the only assertion that pins `limitsSection`'s selector to the component: six
+    // sibling tests assert the block is ABSENT, and renaming the class left all six passing
+    // while examining nothing until this line existed.
+    expect(limitsSection()).not.toBeNull();
+    expect(screen.getByText('Interaction pairs shown: 5 of 5.')).toBeInTheDocument();
+    // found === reported means that check withheld nothing; it is not a claim of completeness.
+    expect(screen.queryByText(/severe pairs can be among them/i)).not.toBeInTheDocument();
+  });
+
+  it('reads grammatically when the screen related a single pair', () => {
+    // "1 of 1 drug pairs shown" is ungrammatical, and found: 1 is observed live — so the
+    // plural noun is detached from the count and agreement never arises.
+    renderPanel({ interactionPairs: { found: 1, reported: 1 } });
+    expect(screen.getByText('Interaction pairs shown: 1 of 1.')).toBeInTheDocument();
+  });
+
+  it('says so where the interaction list was truncated', () => {
+    renderPanel({ interactionPairs: { found: 18, reported: 10 } });
+    expect(screen.getByText(/Interaction pairs shown: 10 of 18/)).toBeInTheDocument();
+    expect(screen.getByText(/severe pairs can be among them/i)).toBeInTheDocument();
+  });
+
+  it('states no interaction extent where the response stated no measurement', () => {
+    renderPanel({ interactionPairs: null, conditionRuleCoverage: null });
+    expect(screen.queryByText(/Interaction pairs shown/)).not.toBeInTheDocument();
+    expect(limitsSection()).toBeNull();
+  });
+
+  it('states nothing rather than "undefined of 5" where one half of the measurement is missing', () => {
+    // Silent wrong output, not a crash: the interpolation would stringify the missing half, and
+    // `reported < found` would be false so the bounded warning would not fire to contradict it.
+    renderPanel({ interactionPairs: { found: 5 }, conditionRuleCoverage: null });
+    expect(screen.queryByText(/Interaction pairs shown/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/undefined/)).not.toBeInTheDocument();
+    expect(limitsSection()).toBeNull();
+  });
+
+  it('states no coverage note on an answer no safety screen produced anything for', () => {
+    // Measured on a live server: "What is her blood pressure trend?" comes back
+    // conditionRuleCoverage "absent" with no warnings and no pair measurement — "absent" is the
+    // verdict the shipped knowledge base yields, so an ungated note would sit under every
+    // answer on every install and imply a contraindication screen fell short where none ran.
+    renderPanel({
+      safetyWarnings: [],
+      interactionPairs: null,
+      conditionRuleCoverage: 'absent',
+      // The real payload: 22 obs citations and not one reference-group record, so nothing says a
+      // drug-safety screen produced anything.
+      references: [{ index: 1, resourceType: 'obs', resourceUuid: 'o-1', date: '2026-01-01', group: 'chart' }],
+      misattributedOrderCitations: [],
+      unstatedFindingSeverities: [],
+    });
+    expect(limitsSection()).toBeNull();
+    expect(screen.queryByText(/were not screened/)).not.toBeInTheDocument();
+  });
+
+  it('states the coverage note where a screen cited a reference record but raised no chip', () => {
+    // The load-bearing case: a prescribing question against a chart with conditions and no
+    // active orders runs the contraindication screen, raises no chip and states no pair extent.
+    // The backend says of exactly that — "Render it. That is what the key is for."
+    renderPanel({ safetyWarnings: [], interactionPairs: null, conditionRuleCoverage: 'absent' });
+    expect(screen.getByText(/publishes no condition rules/)).toBeInTheDocument();
+  });
+
+  /** Chart-only citations, so no reference-group record can satisfy the coverage gate for free. */
+  const CHART_ONLY_REFS = [{ index: 1, resourceType: 'obs', resourceUuid: 'o-1', date: '2026-01-01', group: 'chart' }];
+
+  it('states the coverage note where an interaction screen ran but raised no chip', () => {
+    // A pair measurement is a screen on its own, so its extent is worth stating even with no
+    // warnings beside it. Chart-only references, because the default fixture cites five
+    // reference-group records that would satisfy the gate on their own — with them, deleting
+    // this disjunct from `hasSafetyOutput` left the whole suite green.
+    renderPanel({
+      safetyWarnings: [],
+      interactionPairs: { found: 0, reported: 0 },
+      references: CHART_ONLY_REFS,
+      misattributedOrderCitations: [],
+      unstatedFindingSeverities: [],
+    });
+    expect(screen.getByText(/publishes no condition rules/)).toBeInTheDocument();
+  });
+
+  it('states the coverage note where a chip was raised but no extent was measured', () => {
+    // The third way a safety screen shows it produced something. Also chart-only references, for
+    // the same reason — this disjunct was unpinned too.
+    renderPanel({
+      safetyWarnings: [SAFETY_WARNINGS[1]],
+      interactionPairs: null,
+      references: CHART_ONLY_REFS,
+      misattributedOrderCitations: [],
+      unstatedFindingSeverities: [],
+    });
+    expect(screen.getByText(/publishes no condition rules/)).toBeInTheDocument();
+  });
+
+  it('keeps the ungrounded warning on a citation that is also misattributed', () => {
+    // The two checks are independent and both can fire on one citation. The backend is explicit
+    // that this key must render BESIDE the other statements about a citation, never over them:
+    // a marker that hid the verdict would disagree with the chip below, which shows the red
+    // "Unsupported" badge either way.
+    const refs = FIXTURE_REFERENCES.map((ref) => (ref.index === 177 ? { ...ref, grounded: false } : ref));
+    renderPanel({ references: refs });
+    const marker = screen.getByText('177 ⚠', { selector: 'span' });
+    expect(marker).toHaveAttribute('title', expect.stringContaining('may not be the medication order'));
+    expect(marker).toHaveAttribute('title', expect.stringContaining('may not support this statement'));
+    // ...and the chip's own verdict is still published.
+    expect(screen.getByText('Unsupported')).toBeInTheDocument();
+  });
+
+  it('does not state a pair ratio where the screen related no pairs', () => {
+    // `found: 0` is a real measurement, but it is about the check that reported it and NOT about
+    // the findings beside it — which may come from another check. "Interaction pairs shown:
+    // 0 of 0." above a Major interaction chip reads as "no interactions found".
+    renderPanel({ interactionPairs: { found: 0, reported: 0 } });
+    expect(screen.queryByText(/0 of 0/)).not.toBeInTheDocument();
+    expect(screen.getByText(/related no drug pairs/)).toBeInTheDocument();
+  });
+
+  it('states nothing where the measurement is not a sane pair of counts', () => {
+    for (const interactionPairs of [
+      { found: 5, reported: 8 },
+      { found: -1, reported: 0 },
+      { found: 5.5, reported: 1 },
+    ]) {
+      const { unmount } = renderPanel({ interactionPairs, conditionRuleCoverage: null });
+      expect(screen.queryByText(/Interaction pairs shown/)).not.toBeInTheDocument();
+      expect(limitsSection()).toBeNull();
+      unmount();
+    }
+  });
+
+  it('states no limits while the answer is still streaming', () => {
+    // The citations are not annotated at all during streaming, so a limits block would describe
+    // annotations the reader cannot see — and closing the panel mid-stream leaves the message
+    // loading forever — the panel is gone so nothing re-renders it, while the store keeps the
+    // message. NOT because a trailing `grounded` lands on it: the unmount effect aborts the
+    // stream unconditionally, so it cannot, and the hook's own comment records that correction.
+    renderPanel({ phase: 'answering' });
+    expect(limitsSection()).toBeNull();
+  });
+
+  it('does not call the module’s own computed finding “reference data”', () => {
+    // [349] is `contraindication:Clarithromycin` — the module's deterministic finding about THIS
+    // patient's allergy record, not a dataset entry. One wording served every reference-group
+    // kind when the predicate matched `drug_reference` alone; widening it carried that sentence
+    // onto findings computed from the chart.
+    renderPanel();
+    const marker = screen.getByText('349');
+    expect(marker).toHaveAttribute('title', expect.stringMatching(/computed from this patient’s chart/i));
+    expect(marker.getAttribute('title')).not.toMatch(/clinical reference data/i);
+  });
+
+  it('labels each kind of reference material, and never guesses at one it does not know', () => {
+    renderPanel({
+      references: [
+        { index: 8, resourceType: 'drug_class_note', resourceUuid: 'class:H02AB', date: null, group: 'reference' },
+        { index: 9, resourceType: 'some_future_type', resourceUuid: 'x', date: null, group: 'reference' },
+      ],
+      misattributedOrderCitations: [],
+      unstatedFindingSeverities: [],
+    });
+    // Calling a class note a "Drug reference" would tell a clinician it came from a drug's
+    // reference entry when it came from an ATC-class or cross-reactivity join.
+    expect(screen.getByText('[8] Drug class note')).toBeInTheDocument();
+    expect(screen.getByText('[9] Reference material')).toBeInTheDocument();
+  });
+
+  it('navigates a drug order to Orders rather than the default tab', () => {
+    renderPanel();
+    expect(screen.getByText('[12] drug_order — 2026-08-05')).toHaveAttribute(
+      'href',
+      `/openmrs/spa/patient/${patientUuid}/chart/Orders`,
+    );
+  });
+
+  it('routes a visit and an encounter to the same tab as a diagnosis', () => {
+    // `diagnosis` was mapped and its own encounter was not, so a citation of an encounter and a
+    // citation of a diagnosis FROM that encounter landed on two different tabs. Measured on the
+    // live server: one question returned 113 chart citations, of which encounter x45 and
+    // visit x6 fell through to the default tab.
+    renderPanel({
+      references: [
+        { index: 20, resourceType: 'visit', resourceUuid: 'v-1', date: '2024-09-09', group: 'chart' },
+        { index: 21, resourceType: 'encounter', resourceUuid: 'e-1', date: '2024-09-09', group: 'chart' },
+        { index: 22, resourceType: 'diagnosis', resourceUuid: 'd-1', date: '2024-09-09', group: 'chart' },
+      ],
+      misattributedOrderCitations: [],
+      unstatedFindingSeverities: [],
+    });
+    const visits = `/openmrs/spa/patient/${patientUuid}/chart/Visits`;
+    expect(screen.getByText('[20] visit — 2024-09-09')).toHaveAttribute('href', visits);
+    expect(screen.getByText('[21] encounter — 2024-09-09')).toHaveAttribute('href', visits);
+    expect(screen.getByText('[22] diagnosis — 2024-09-09')).toHaveAttribute('href', visits);
+  });
+
+  it('navigates a module-injected active order like any other chart citation', () => {
+    // It is injected but is the patient's own order with a real Order uuid, so it groups as
+    // chart and must not land on the default tab under its raw wire type.
+    renderPanel({
+      references: [
+        { index: 20, resourceType: 'active_drug_order', resourceUuid: 'o-1', date: '2026-01-01', group: 'chart' },
+      ],
+      misattributedOrderCitations: [],
+      unstatedFindingSeverities: [],
+    });
+    expect(screen.getByText('[20] active_drug_order — 2026-01-01')).toHaveAttribute(
+      'href',
+      `/openmrs/spa/patient/${patientUuid}/chart/Orders`,
+    );
+  });
+
+  it('renders rather than blanking when a measurement arrives in the wrong shape', () => {
+    // The panel has no error boundary above it, so a throw in a render memo costs the whole
+    // answer. A string is iterable and would silently match nothing; an object throws.
+    for (const misattributedOrderCitations of ['177', {} as unknown as number[], 5 as unknown as number[]]) {
+      const { unmount } = renderPanel({ misattributedOrderCitations });
+      expect(answerText()).toContain('Clarithromycin');
+      expect(screen.queryByText('Not the order named')).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('says conditions were not screened, and why, on "absent"', () => {
+    renderPanel();
+    expect(screen.getByText(/publishes no condition rules/)).toBeInTheDocument();
+  });
+
+  it('distinguishes "absent" from "unloaded" — a mapping test, not a reachable render', () => {
+    // `renderPanel`'s defaults supply chips and a pair extent, which is what lets this reach the
+    // `unloaded` branch at all. A real `unloaded` payload cannot: it means no dataset was read,
+    // so there are no chips, no pair extent and no reference citations, and the coverage gate
+    // never opens. This asserts the two verdicts map to different sentences — which is worth
+    // asserting, since collapsing them is what the backend forbids — and not that a stock
+    // install ever shows the second one. See the reachability note beside COVERAGE_SENTENCE.
+    // "We looked and there is none" is not "nobody looked".
+    renderPanel({ conditionRuleCoverage: 'unloaded' });
+    expect(screen.getByText(/No drug-reference dataset was loaded/)).toBeInTheDocument();
+    expect(screen.queryByText(/publishes no condition rules/)).not.toBeInTheDocument();
+  });
+
+  it('claims nothing about conditions on "published"', () => {
+    // `published` says the DATASET can run the arm, never that any recorded condition was
+    // screened — so it must not produce a "conditions screened" affordance.
+    renderPanel({ conditionRuleCoverage: 'published', interactionPairs: null });
+    expect(limitsSection()).toBeNull();
+    expect(screen.queryByText(/conditions/i)).not.toBeInTheDocument();
   });
 });

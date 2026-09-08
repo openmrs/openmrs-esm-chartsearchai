@@ -5,6 +5,7 @@ import { Add, Close, Maximize, Microphone, MicrophoneFilled, Minimize, Send, Sto
 import { Button, IconButton, InlineLoading } from '@carbon/react';
 import { useChartSearchAi } from '../hooks/useChartSearchAi';
 import { isAwaitingAnswer as isPhaseAwaiting } from '../hooks/turn-phase';
+import { answerLimitsOf } from '../utils/answer-limits';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { type ChartSearchAiConfig } from '../config-schema';
 import AiResponsePanel from './ai-response-panel.component';
@@ -130,10 +131,15 @@ const AiChatContent: React.FC<AiChatContentProps> = ({
     prevMessagesLengthRef.current = messages.length;
   }, [messages.length]);
 
-  // Re-scrolls when the answer grows and again when streaming ends — references/feedback mount in that final commit and grow the message past the viewport.
+  // Re-scrolls per chunk and again when streaming ends — references and the feedback row mount
+  // in that final commit and grow the message past the viewport.
+  //
+  // Tracks `reasoning` too: it streams before any answer text exists, so without it the live
+  // "Thinking..." scratchpad grows past the viewport and is clipped out of sight.
   const lastMessage = messages.length > 0 ? messages[messages.length - 1] : undefined;
   const lastAnswer = lastMessage?.answer ?? '';
-  // In-depth arrives after the answer settles; track it so it keeps the transcript scrolled to the bottom too.
+  // In-depth arrives after the answer settles; track it so it keeps the transcript scrolled to
+  // the bottom too.
   const lastInDepth = lastMessage?.inDepth?.answer ?? '';
   useEffect(() => {
     if (historyAreaRef.current) {
@@ -260,6 +266,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({
             >
               <AiResponsePanel
                 answer={msg.answer}
+                reasoning={msg.reasoning}
                 references={msg.references}
                 safetyWarnings={msg.safetyWarnings}
                 safetyStatus={msg.safetyStatus}
@@ -269,6 +276,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({
                 answerValidation={msg.answerValidation}
                 inDepth={msg.inDepth}
                 auditLogId={msg.auditLogId}
+                {...answerLimitsOf(msg)}
                 error={msg.error}
                 phase={msg.phase}
                 resolvedModel={msg.resolvedModel}

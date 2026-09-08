@@ -268,7 +268,10 @@ describe('AiChatContent', () => {
 
   describe('safety-warning forwarding', () => {
     it('forwards a message safetyWarnings to the response panel', () => {
-      // The message-to-panel boundary must preserve warnings produced by the safety check.
+      // Regression guard for the wiring at ai-chat-content.component.tsx
+      // (`safetyWarnings={msg.safetyWarnings}`):
+      // the hook populates the message and the panel renders it, but dropping this prop pass-through
+      // would let the chips silently never reach the panel, with no other test catching it.
       mockUseChartSearchAi.mockReturnValue({
         messages: [
           {

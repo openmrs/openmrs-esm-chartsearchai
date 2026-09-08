@@ -67,6 +67,8 @@ describe('chatPatientChartStream', () => {
   function makeCallbacks() {
     return {
       onSession: vi.fn(),
+      onToken: vi.fn(),
+      onReasoning: vi.fn(),
       onAnswerDone: vi.fn(),
       onAnswerValidation: vi.fn(),
       onEvidenceUpdated: vi.fn(),
@@ -114,6 +116,29 @@ describe('chatPatientChartStream', () => {
       }
     },
   );
+
+  it('delivers answer_delta and reasoning_delta frames as text, one leading space stripped per SSE line', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(
+      mockStreamResponse([
+        'event:turn_started\ndata: {"session":"sess-1","messageId":"m1","provider":"bundled"}\n\n',
+        'event:reasoning_delta\ndata: Checking the chart\n\n',
+        'event:answer_delta\ndata: Hello\n\n',
+        // the token " world" is framed as "data:  world": the SSE space plus the token's own space
+        'event:answer_delta\ndata:  world\n\n',
+        'event:answer_done\ndata: {"answer":"Hello world","references":[],"messageId":"m1"}\n\n',
+        'event:turn_done\ndata: {"answer":"Hello world","references":[],"session":"sess-1","messageId":"m1","provider":"bundled"}\n\n',
+      ]),
+    );
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled');
+    await flushPromises();
+
+    expect(cb.onReasoning.mock.calls.map((c) => c[0])).toEqual(['Checking the chart']);
+    expect(cb.onToken.mock.calls.map((c) => c[0])).toEqual(['Hello', ' world']);
+    expect(cb.onAnswerDone).toHaveBeenCalledOnce();
+    expect(cb.onDone).toHaveBeenCalledOnce();
+  });
 
   it('rejects terminal success that omits the final answer envelope', async () => {
     const cb = makeCallbacks();

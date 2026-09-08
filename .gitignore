@@ -9,3 +9,6 @@ dist/
 coverage/
 *.tgz
 .eslintcache
+
+# Agent worktrees (full repo copies) created by isolated review agents.
+.claude/worktrees/

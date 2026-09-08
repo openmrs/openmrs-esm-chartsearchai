@@ -17,8 +17,9 @@ import {
 } from '../api/chartsearchai';
 import { chatSessionStore } from '../store/chat-session.store';
 import { type TurnPhase, isAwaitingAnswer as phaseIsAwaitingAnswer, isAnswerSettled, isTerminal } from './turn-phase';
+import { type MessageAnswerLimits, mergeDisclosure, NO_ANSWER_LIMITS } from '../utils/answer-limits';
 
-export interface ChatMessage {
+export interface ChatMessage extends MessageAnswerLimits {
   id: string;
   question: string;
   answer: string;
@@ -37,6 +38,11 @@ export interface ChatMessage {
   phase: TurnPhase;
   error: string | null;
   /**
+   * Live reasoning streamed before the answer (`reasoning_delta`), shown as a scratchpad while the
+   * turn is still answering and cleared the moment the answer arrives. Never persisted.
+   */
+  reasoning?: string;
+  /**
    * The hub product profile that produced this answer. Surfaced as a subtle
    * per-response tag. Undefined for older rows or system notices.
    */
@@ -52,7 +58,8 @@ export interface ChatMessage {
 interface UseChartSearchAiReturn {
   messages: ChatMessage[];
   /**
-   * The latest turn is still producing or checking its direct answer ({@link TurnPhase} `answering`/`checking`).
+   * The latest turn is still producing or checking its direct answer ({@link TurnPhase}
+   * `answering`/`checking`).
    * The composer disables on this — so a new question can be asked while the prior turn's in-depth is
    * still streaming in the background.
    */
@@ -110,6 +117,7 @@ function hydrateMessages(history: ChatHistoryMessage[]): ChatMessage[] {
         question: m.content,
         answer: '',
         references: [],
+        ...NO_ANSWER_LIMITS,
         auditLogId: undefined,
         phase: 'complete',
         error: null,
@@ -126,6 +134,8 @@ function hydrateMessages(history: ChatHistoryMessage[]): ChatMessage[] {
         pending.inDepth = interruptInDepth(m.inDepth);
         pending.references = m.references ?? [];
         pending.auditLogId = m.auditLogId;
+        // The persisted turn carries the answer-limit statements the stream published (#157).
+        Object.assign(pending, mergeDisclosure(pending, m));
         if (m.terminalState === 'turn_error') {
           pending.phase = 'error';
           pending.error = m.problemCode ?? 'provider_failure';
@@ -171,7 +181,13 @@ function applyTurnEnvelope(message: ChatMessage, payload: TurnEnvelope, phase: T
   return {
     ...message,
     answer: payload.answer ?? message.answer,
-    references: payload.references ?? message.references,
+    // A later event that carries no references, or an empty list, leaves the citations as they were:
+    // the trailing evidence event re-sends the list with verdicts, and an empty one says nothing new.
+    // Only the first list to arrive, or a non-empty one, replaces what is shown.
+    references:
+      Array.isArray(payload.references) && (payload.references.length > 0 || message.references.length === 0)
+        ? payload.references
+        : message.references,
     safetyWarnings: payload.safetyWarnings ?? message.safetyWarnings,
     safetyStatus: payload.safetyStatus ?? message.safetyStatus,
     safetyCheck: payload.safetyCheck ?? message.safetyCheck,
@@ -181,6 +197,11 @@ function applyTurnEnvelope(message: ChatMessage, payload: TurnEnvelope, phase: T
     inDepth: payload.inDepth ?? message.inDepth,
     auditLogId: payload.auditLogId ?? message.auditLogId,
     resolvedModel: payload.resolvedModel ?? message.resolvedModel,
+    // Answer-limit statements accumulate across the turn's events: a later event that states
+    // nothing about a measurement leaves an earlier statement standing.
+    ...mergeDisclosure(message, payload),
+    // The scratchpad served its purpose as a live indicator once the answer exists.
+    reasoning: phase === 'answering' ? message.reasoning : '',
     phase,
   };
 }
@@ -326,6 +347,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           question,
           answer: '',
           references: [],
+          ...NO_ANSWER_LIMITS,
           auditLogId: undefined,
           phase: 'error',
           error,
@@ -340,6 +362,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           question,
           answer: '',
           references: [],
+          ...NO_ANSWER_LIMITS,
           auditLogId: undefined,
           phase: 'error',
           error: 'No AI profile is selected. Refresh the available profiles and try again.',
@@ -388,6 +411,8 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         question,
         answer: '',
         references: [],
+        safetyWarnings: [],
+        ...NO_ANSWER_LIMITS,
         auditLogId: undefined,
         phase: 'answering',
         error: null,
@@ -398,7 +423,15 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       inFlightMessageIdRef.current = messageId;
 
       const done = (response: AiSearchResponse) => {
-        if (!isMountedRef.current) return;
+        // Not gated on isMountedRef: this writes to the chat store, which outlives the panel, so
+        // closing the floating panel mid-answer must not drop the terminal event.
+        //
+        // The reason is that a `done` already decoded in the chunk in hand still arrives after
+        // the unmount effect calls abort() — NOT that a trailing `grounded` would otherwise
+        // land on the stranded message. It could not: that effect aborts unconditionally, and
+        // `grounded` is emitted only after the slower Tier-2 pass, so once the panel closes
+        // there is no stream left to carry it. This comment used to say so in three places and
+        // a test's prose said the opposite of its own sibling.
         if (abortControllerRef.current === abortController) {
           abortControllerRef.current = null;
         }
@@ -408,7 +441,9 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         updateMessages(patientUuid, (prev) => {
           const idx = prev.findIndex((m) => m.id === messageId);
           if (idx === -1) return prev;
-          if (prev[idx].phase === 'error') return prev;
+          // A done already in the last read chunk still arrives after abort(); a message the user
+          // stopped (or that already failed) must not be replaced under them by the full answer.
+          if (isTerminal(prev[idx].phase)) return prev;
           const updated = [...prev];
           updated[idx] = applyTurnEnvelope(updated[idx], response, 'complete');
           return updated;
@@ -422,7 +457,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       };
 
       const fail = (errMessage: string) => {
-        if (!isMountedRef.current) return;
+        // Ungated for the same reason as `done`: a message whose error is dropped stays loading.
         if (abortControllerRef.current === abortController) {
           abortControllerRef.current = null;
         }
@@ -446,7 +481,6 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       };
 
       const answerDone = (response: AiSearchResponse) => {
-        if (!isMountedRef.current) return;
         updateMessages(patientUuid, (prev) => {
           const idx = prev.findIndex((m) => m.id === messageId);
           if (idx === -1) return prev;
@@ -467,7 +501,6 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       };
 
       const answerValidation = (response: AiSearchResponse) => {
-        if (!isMountedRef.current) return;
         // The answer + validation have landed; only in-depth remains. Moving to `settled` unlocks
         // the composer AND makes this turn preemptable (submitQuestion reads the phase).
         updateMessages(patientUuid, (prev) => {
@@ -481,7 +514,6 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       };
 
       const evidenceUpdated = (response: AiSearchResponse) => {
-        if (!isMountedRef.current) return;
         updateMessages(patientUuid, (prev) => {
           const idx = prev.findIndex((m) => m.id === messageId);
           if (idx === -1 || isTerminal(prev[idx].phase)) return prev;
@@ -492,7 +524,6 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       };
 
       const inDepthPending = (payload: Partial<AiSearchResponse> & { messageId?: string; inDepth?: AiInDepth }) => {
-        if (!isMountedRef.current) return;
         updateMessages(patientUuid, (prev) => {
           const idx = prev.findIndex((m) => m.id === messageId);
           if (idx === -1) return prev;
@@ -511,7 +542,6 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       };
 
       const inDepthDone = (payload: TurnEnvelope) => {
-        if (!isMountedRef.current) return;
         updateMessages(patientUuid, (prev) => {
           const idx = prev.findIndex((m) => m.id === messageId);
           if (idx === -1) return prev;
@@ -530,7 +560,6 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       };
 
       const inDepthError = (payload: TurnEnvelope) => {
-        if (!isMountedRef.current) return;
         updateMessages(patientUuid, (prev) => {
           const idx = prev.findIndex((m) => m.id === messageId);
           if (idx === -1) return prev;
@@ -566,6 +595,28 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           sessionUuid,
           question,
           {
+            // Token streaming from a provider that declares it (the bundled engine). Additive while the
+            // turn is still answering; ignored once it settled or the user stopped it (both leave the
+            // phase past 'answering'). `answer_done` then restates the whole answer, so a provider that
+            // streams nothing (the hub) renders exactly as before.
+            onToken: (chunk) => {
+              updateMessages(patientUuid, (prev) => {
+                const idx = prev.findIndex((m) => m.id === messageId);
+                if (idx === -1 || prev[idx].phase !== 'answering') return prev;
+                const updated = [...prev];
+                updated[idx] = { ...updated[idx], answer: updated[idx].answer + chunk };
+                return updated;
+              });
+            },
+            onReasoning: (chunk) => {
+              updateMessages(patientUuid, (prev) => {
+                const idx = prev.findIndex((m) => m.id === messageId);
+                if (idx === -1 || prev[idx].phase !== 'answering') return prev;
+                const updated = [...prev];
+                updated[idx] = { ...updated[idx], reasoning: (updated[idx].reasoning ?? '') + chunk };
+                return updated;
+              });
+            },
             onSession: (uuid) => {
               // Defense in depth alongside the hydration-time provider sync: if the backend
               // returns a DIFFERENT session than the one this turn was sent with, it silently

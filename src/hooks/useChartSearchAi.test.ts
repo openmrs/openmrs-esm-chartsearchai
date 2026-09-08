@@ -1266,3 +1266,306 @@ describe('useChartSearchAi', () => {
     expect(result.current.messages[0].inDepth?.status).toBe('failed');
   });
 });
+
+/**
+ * The answer-limit measurements (issue #26). Where they arrive from depends on the server:
+ * with `chartsearchai.grounding.async=false` the `done` event carries them, and with it true
+ * `done` is emitted before validation runs so they arrive only on the trailing `grounded`
+ * event. A hook that reads `done` alone renders none of the disclosure on such a server.
+ */
+describe('useChartSearchAi answer-limit measurements', () => {
+  const disclosure = {
+    misattributedOrderCitations: [177, 166, 155],
+    unstatedFindingSeverities: [350, 351],
+    conditionRuleCoverage: 'absent',
+    interactionPairs: { found: 18, reported: 10 },
+    // The fifth measurement rides the same merge as the other four, so every test below that
+    // asserts on `disclosure` asserts this key survives the answer_done-then-evidence path, refuses
+    // to be erased by a later null, and is refused after a stop.
+    activeOrderClaims: { stated: 3, uncited: 1 },
+  };
+
+  async function startTurn() {
+    mockChatStream.mockImplementation(() => {});
+    const view = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+    act(() => {
+      view.result.current.submitQuestion('patient-uuid', 'Safe to start clarithromycin?');
+    });
+    return { ...view, callbacks: mockChatStream.mock.calls[0][3] };
+  }
+
+  it('starts a message with no measurement stated', async () => {
+    const { result } = await startTurn();
+    const msg = result.current.messages[0];
+    expect(msg.misattributedOrderCitations).toBeNull();
+    expect(msg.unstatedFindingSeverities).toBeNull();
+    expect(msg.conditionRuleCoverage).toBeNull();
+    expect(msg.interactionPairs).toBeNull();
+    expect(msg.activeOrderClaims).toBeNull();
+  });
+
+  it('carries the measurements stated on answer_done onto the message', async () => {
+    const { result, callbacks } = await startTurn();
+    act(() => {
+      callbacks.onAnswerDone({ answer: 'No — [350].', references: [], ...disclosure });
+    });
+    expect(result.current.messages[0]).toMatchObject(disclosure);
+  });
+
+  it('keeps an empty measurement distinct from an absent one', async () => {
+    const { result, callbacks } = await startTurn();
+    act(() => {
+      callbacks.onAnswerDone({
+        answer: 'Text.',
+        references: [],
+        misattributedOrderCitations: [],
+        unstatedFindingSeverities: [],
+        conditionRuleCoverage: 'absent',
+      });
+    });
+    expect(result.current.messages[0].misattributedOrderCitations).toEqual([]);
+    expect(result.current.messages[0].unstatedFindingSeverities).toEqual([]);
+    expect(result.current.messages[0].conditionRuleCoverage).toBe('absent');
+    expect(result.current.messages[0].interactionPairs).toBeNull();
+    expect(result.current.messages[0].activeOrderClaims).toBeNull();
+  });
+
+  it('carries measurements that arrive only on the trailing evidence_updated event', async () => {
+    const { result, callbacks } = await startTurn();
+    act(() => {
+      callbacks.onAnswerDone({ answer: 'No — [350].', references: [], safetyWarnings: [] });
+    });
+    act(() => {
+      callbacks.onEvidenceUpdated({
+        answer: 'No — [350].',
+        references: [
+          { index: 350, resourceType: 'safety_finding', resourceUuid: 'interaction:Clarithromycin', date: '' },
+        ],
+        safetyWarnings: [{ type: 'interaction', drug: 'Clarithromycin', detail: 'x', severity: 'Major' }],
+        ...disclosure,
+      });
+    });
+    expect(result.current.messages[0]).toMatchObject(disclosure);
+    expect(result.current.messages[0].safetyWarnings).toHaveLength(1);
+    expect(result.current.messages[0].references).toHaveLength(1);
+  });
+
+  it('does not let a later event erase a measurement an earlier one stated', async () => {
+    const { result, callbacks } = await startTurn();
+    act(() => {
+      callbacks.onAnswerDone({ answer: 'Text.', references: [], ...disclosure });
+    });
+    act(() => {
+      callbacks.onEvidenceUpdated({ answer: 'Text.', references: [], conditionRuleCoverage: null });
+    });
+    act(() => {
+      callbacks.onDone({ answer: 'Text.', references: [] });
+    });
+    expect(result.current.messages[0]).toMatchObject(disclosure);
+  });
+
+  it('does not blank the citation list when a later event carries no references', async () => {
+    const { result, callbacks } = await startTurn();
+    act(() => {
+      callbacks.onAnswerDone({
+        answer: 'Has it [1]',
+        references: [{ index: 1, resourceType: 'condition', resourceUuid: 'uuid-7', date: '2022-11-13' }],
+      });
+    });
+    act(() => {
+      callbacks.onEvidenceUpdated({
+        answer: 'Has it [1]',
+        references: [],
+        interactionPairs: { found: 3, reported: 2 },
+      });
+    });
+    expect(result.current.messages[0].references).toHaveLength(1);
+    expect(result.current.messages[0].interactionPairs).toEqual({ found: 3, reported: 2 });
+  });
+
+  it('does not let a trailing evidence_updated event dress up an answer the user stopped', async () => {
+    const { result, callbacks } = await startTurn();
+    act(() => {
+      callbacks.onToken('Clarithromycin inter');
+    });
+    act(() => {
+      result.current.stopCurrent();
+    });
+    act(() => {
+      callbacks.onEvidenceUpdated({
+        answer: 'Clarithromycin interacts with warfarin [350].',
+        references: [{ index: 350, resourceType: 'safety_finding', resourceUuid: 'x', date: '' }],
+        safetyWarnings: [{ type: 'interaction', drug: 'Clarithromycin', detail: 'x', severity: 'Major' }],
+        ...disclosure,
+      });
+    });
+    const msg = result.current.messages[0];
+    expect(msg.answer).toBe('Clarithromycin inter');
+    expect(msg.references).toHaveLength(0);
+    expect(msg.interactionPairs).toBeNull();
+    expect(msg.conditionRuleCoverage).toBeNull();
+    expect(msg.unstatedFindingSeverities).toBeNull();
+  });
+
+  it('persists the measurements the turn published and hydrates them on reload', async () => {
+    mockFetchHistory.mockResolvedValueOnce({
+      session: 'srv-session-1',
+      messages: [
+        { messageId: 'u-1', role: 'user', content: 'Q', createdAt: 1 },
+        { messageId: 'a-1', role: 'assistant', content: 'A [350]', createdAt: 2, ...disclosure },
+      ],
+    });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() => expect(result.current.messages).toHaveLength(1));
+    expect(result.current.messages[0]).toMatchObject(disclosure);
+  });
+});
+
+describe('useChartSearchAi token streaming', () => {
+  async function startTurn() {
+    mockChatStream.mockImplementation(() => {});
+    const view = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+    act(() => {
+      view.result.current.submitQuestion('patient-uuid', 'Summary?');
+    });
+    return { ...view, callbacks: mockChatStream.mock.calls[0][3] };
+  }
+
+  it('accumulates answer_delta tokens on the in-flight message while it is still answering', async () => {
+    const { result, callbacks } = await startTurn();
+    act(() => {
+      callbacks.onToken('Hello');
+      callbacks.onToken(' world');
+    });
+    expect(result.current.messages[0].answer).toBe('Hello world');
+    expect(result.current.messages[0].phase).toBe('answering');
+  });
+
+  it('lets answer_done state the whole answer over the accumulated tokens', async () => {
+    const { result, callbacks } = await startTurn();
+    act(() => {
+      callbacks.onToken('Hello wor');
+    });
+    act(() => {
+      callbacks.onAnswerDone({ answer: 'Hello world.', references: [] });
+    });
+    expect(result.current.messages[0].answer).toBe('Hello world.');
+    expect(result.current.messages[0].phase).toBe('settled');
+  });
+
+  it('renders a provider that sends no deltas exactly as before: the answer lands whole on answer_done', async () => {
+    const { result, callbacks } = await startTurn();
+    expect(result.current.messages[0].answer).toBe('');
+    act(() => {
+      callbacks.onAnswerDone({ answer: 'Whole answer.', references: [] });
+    });
+    expect(result.current.messages[0].answer).toBe('Whole answer.');
+  });
+
+  it('accumulates reasoning_delta as a scratchpad and clears it when the answer arrives', async () => {
+    const { result, callbacks } = await startTurn();
+    act(() => {
+      callbacks.onReasoning('Checking ');
+      callbacks.onReasoning('the chart');
+    });
+    expect(result.current.messages[0].reasoning).toBe('Checking the chart');
+    act(() => {
+      callbacks.onAnswerDone({ answer: 'Done.', references: [] });
+    });
+    expect(result.current.messages[0].reasoning).toBe('');
+  });
+
+  it('ignores a token that arrives after the user stopped the turn', async () => {
+    const { result, callbacks } = await startTurn();
+    act(() => {
+      callbacks.onToken('Partial');
+    });
+    act(() => {
+      result.current.stopCurrent();
+    });
+    act(() => {
+      callbacks.onToken(' answer');
+    });
+    expect(result.current.messages[0].answer).toBe('Partial');
+  });
+});
+
+describe('useChartSearchAi after the panel closes', () => {
+  it('still completes a message whose done event arrives after unmount', async () => {
+    mockChatStream.mockImplementation(() => {});
+    const { result, unmount } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Q');
+    });
+    const callbacks = mockChatStream.mock.calls[0][3];
+    unmount();
+    act(() => {
+      callbacks.onAnswerDone({ answer: 'Late answer.', references: [], conditionRuleCoverage: 'absent' });
+      callbacks.onDone({ answer: 'Late answer.', references: [] });
+    });
+    const stored = chatSessionStore.getState().messagesByPatient['patient-uuid'];
+    expect(stored).toHaveLength(1);
+    expect(stored[0].phase).toBe('complete');
+    expect(stored[0].answer).toBe('Late answer.');
+    expect(stored[0].conditionRuleCoverage).toBe('absent');
+  });
+
+  it('still settles a message whose error arrives after unmount', async () => {
+    mockChatStream.mockImplementation(() => {});
+    const { result, unmount } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Q');
+    });
+    const callbacks = mockChatStream.mock.calls[0][3];
+    unmount();
+    act(() => {
+      callbacks.onError('boom');
+    });
+    const stored = chatSessionStore.getState().messagesByPatient['patient-uuid'];
+    expect(stored[0].phase).toBe('error');
+    expect(stored[0].error).toBe('boom');
+  });
+});
+
+describe('useChartSearchAi late events', () => {
+  it('settles rather than throwing when done carries no reference list', async () => {
+    mockChatStream.mockImplementation(() => {});
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Q');
+    });
+    const callbacks = mockChatStream.mock.calls[0][3];
+    act(() => {
+      callbacks.onDone({ answer: 'Text.' } as never);
+    });
+    expect(result.current.messages[0].phase).toBe('complete');
+    expect(result.current.messages[0].references).toEqual([]);
+    expect(() => result.current.messages[0].references.some(() => true)).not.toThrow();
+  });
+
+  it('does not let a done in the last chunk replace an answer the user stopped', async () => {
+    mockChatStream.mockImplementation(() => {});
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Q');
+    });
+    const callbacks = mockChatStream.mock.calls[0][3];
+    act(() => {
+      callbacks.onToken('Partial answer');
+    });
+    act(() => {
+      result.current.stopCurrent();
+    });
+    expect(result.current.messages[0].answer).toBe('Partial answer');
+    act(() => {
+      callbacks.onDone({ answer: 'THE FULL ANSWER', references: [] });
+    });
+    expect(result.current.messages[0].answer).toBe('Partial answer');
+  });
+});

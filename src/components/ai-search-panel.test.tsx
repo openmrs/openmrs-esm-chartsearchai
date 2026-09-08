@@ -1,4 +1,5 @@
 import React, { act } from 'react';
+import { NO_ANSWER_LIMITS } from '../utils/answer-limits';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -65,6 +66,7 @@ function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
     answer: 'The patient is on metformin.',
     references: [],
     safetyWarnings: [],
+    ...NO_ANSWER_LIMITS,
     auditLogId: 42,
     phase: 'complete',
     error: null,

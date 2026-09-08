@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { NO_ANSWER_LIMITS } from '../utils/answer-limits';
 import { getSessionStore } from '@openmrs/esm-framework';
 import { chatSessionStore, setupChatSessionLogoutCleanup } from './chat-session.store';
 
@@ -14,6 +15,7 @@ const seedSession = () =>
           answer: 'a',
           references: [],
           safetyWarnings: [],
+          ...NO_ANSWER_LIMITS,
           auditLogId: undefined,
           phase: 'complete',
           error: null,

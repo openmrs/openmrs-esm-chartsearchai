@@ -3,13 +3,15 @@ import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { type AiReference } from '../api/chartsearchai';
-import { renderTextWithCitations } from './citation-chip.component';
+import { type CitationDecorations, renderTextWithCitations } from './citation-chip.component';
 import styles from './ai-response-panel.scss';
 
 interface MarkdownAnswerProps {
   answer: string;
   references: AiReference[];
   patientUuid: string;
+  /** Answer-limit statements to apply to the citations; `badged` is recreated on every render. */
+  decorations?: Omit<CitationDecorations, 'badged'>;
 }
 
 /**
@@ -20,10 +22,13 @@ interface MarkdownAnswerProps {
  * chip. No hand-rolled markdown parsing — markdown structure is react-markdown's job, and
  * the citation logic is reused unchanged from the existing renderer.
  */
-const MarkdownAnswer: React.FC<MarkdownAnswerProps> = ({ answer, references, patientUuid }) => {
+const MarkdownAnswer: React.FC<MarkdownAnswerProps> = ({ answer, references, patientUuid, decorations }) => {
+  const applied: CitationDecorations | undefined = decorations
+    ? { ...decorations, badged: new Set<number>() }
+    : undefined;
   const cite = (children: React.ReactNode): React.ReactNode =>
     React.Children.map(children, (child) =>
-      typeof child === 'string' ? renderTextWithCitations(child, references, patientUuid) : child,
+      typeof child === 'string' ? renderTextWithCitations(child, references, patientUuid, 'cit', applied) : child,
     );
 
   // Map every text-bearing element through the citation renderer; headings collapse to a
