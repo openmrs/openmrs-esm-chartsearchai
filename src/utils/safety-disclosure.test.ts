@@ -66,6 +66,47 @@ describe('severityTone', () => {
   });
 });
 
+describe('stripExclusions must not delete the cited finding’s own subject', () => {
+  it('does not strip a SHORT "besides" clause either', () => {
+    // The sibling below is caught by the four-token bound alone, so this one pins the removal of
+    // `besides` from the list itself: one token, so the bound would let it through.
+    const answer =
+      'Clarithromycin will raise her Solu-Medrol 125mg/5ml levels, besides Prednisone, so watch for adrenal suppression [352].';
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [352])]).toEqual([]);
+  });
+
+  it('does not treat "besides" as exclusive — it is additive in English', () => {
+    // "besides X" means IN ADDITION TO X. Stripping it left Solu-Medrol as the only candidate
+    // named and rendered Major where the truth is Moderate; written "as well as" the same
+    // sentence correctly refuses, so the strip was turning a refusal into a WRONG rating.
+    const answer =
+      'Clarithromycin will raise her Solu-Medrol 125mg/5ml levels, besides those of Prednisone Co 5mg, so watch for adrenal suppression [352].';
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [352])]).toEqual([]);
+  });
+
+  it('does not reach back past the noun the writer actually excluded', () => {
+    // The span was bounded by CHARACTERS with a lazy quantifier that backtracks, so
+    // leftmost-match ate the longest run before " aside," — here the module's own anchoring
+    // phrase for Prednisone. Rendered Major against a truth of Moderate. Now bounded to four
+    // tokens, which a drug display fits and a clause does not.
+    const answer =
+      'Clarithromycin interacts with active order Prednisone Co 5mg though dose timing aside, Solu-Medrol 125mg/5ml carries the same mechanism [352].';
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [352])]).toEqual([]);
+  });
+
+  it('leaves an "except" clause alone when it is longer than a drug name', () => {
+    const answer =
+      'Every steroid is affected except Prednisone Co 5mg at her current dose, and Solu-Medrol 125mg/5ml most of all [352].';
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [352])]).toEqual([]);
+  });
+
+  it('still strips the forms that are genuinely exclusive', () => {
+    // The positive control: the recovery cycle 10 measured must survive the tightening.
+    const answer = 'Hydrocortisone aside, the order that matters is Solu-Medrol 125mg/5ml [350].';
+    expect(resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350]).get(350)).toBe('Major');
+  });
+});
+
 describe('a subject left over past the answer’s last marker', () => {
   it('refuses a rotation whose last forward window a foreign marker emptied', () => {
     // The residual cycle 10 recorded and could not close. Every contest was silent: the
@@ -106,17 +147,48 @@ describe('a subject left over past the answer’s last marker', () => {
     expect(resolved.get(366)).toBe('Moderate');
   });
 
-  it('refuses when that drug is named after the last marker instead — the accepted cost', () => {
-    // Stated rather than hidden: this rule cannot tell a leftover SUBJECT from a drug the
-    // answer simply talks about after its last citation, so "…[351]. Prednisone would be the
-    // safer choice." refuses where two correct ratings were available. That is the trade taken
-    // deliberately — the module's whole premise is that a refusal is safe and a rating beside
-    // the wrong citation is not — and it costs nothing on any of the 46 captured live answers.
-    // If it ever needs closing, the missing evidence is grammatical: whether the tail is a
-    // clause with its own verb or a bare noun phrase, which no reading here can tell.
+  it('resolves when the tail is a CLAUSE about the drug rather than a bare name', () => {
+    // This asserted a refusal until the tail test learned to tell a noun phrase from a clause.
+    // "Prednisone would be the safer choice." carries function words a drug name and dose never
+    // do, so it is read as prose rather than as a subject left over, and two correct ratings are
+    // kept. The refusal it used to produce was the safe direction but it was not necessary.
     const answer =
       'Clarithromycin interacts with active order Solu-Medrol 125mg/5ml [350], and with active order Pulmicort 90mcg [351]. Prednisone would be the safer choice.';
-    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 351])]).toEqual([]);
+    const resolved = resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 351]);
+    expect(resolved.get(350)).toBe('Major');
+    expect(resolved.get(351)).toBe('Major');
+  });
+
+  it('refuses a CLOSED rotation, whose leftover is claimed at the wrong index', () => {
+    // The class the tail rule missed on its first outing, and the worst measured on this branch:
+    // across 26,766 resolving answers of this family EVERY one carried a wrong rating. A
+    // rotation closed by a lead-in naming the last partner claims every candidate, so testing
+    // "named in the tail and claimed by NOBODY" fell silent — the leftover is claimed, at the
+    // wrong index. The test is now claimed-by-an-EARLIER-citation.
+    //
+    // It differs from a refusal by one character: delete the full stop and the forward reading is
+    // no longer zeroed, so rule 1 objects. The sibling below uses a chart citation instead.
+    const answer =
+      'Hydrocortisone Injection vial 100mg is the lesser worry, but the greater one is [350].\nSolu-Medrol 125mg/5ml [354]\nHydrocortisone Injection vial 100mg';
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 354])]).toEqual([]);
+  });
+
+  it('refuses it when a chart citation empties the window instead of a full stop', () => {
+    const answer =
+      'Hydrocortisone Injection vial 100mg is the lesser worry, but the greater one is [350], per her active orders [17]\nSolu-Medrol 125mg/5ml [354]\nHydrocortisone Injection vial 100mg';
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 354])]).toEqual([]);
+  });
+
+  it('refuses a five-item closed rotation, where every rating would be wrong', () => {
+    const answer = [
+      'Of her five interacting orders Hydrocortisone Injection vial 100mg is the mildest and the worst is [350].',
+      'Solu-Medrol 125mg/5ml [351]',
+      'Pulmicort 90mcg [352]',
+      'Prednisone Co 5mg [353]',
+      'Dexamethasone Injection vial 8mg [354]',
+      'Hydrocortisone Injection vial 100mg',
+    ].join('\n');
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 351, 352, 353, 354])]).toEqual([]);
   });
 });
 

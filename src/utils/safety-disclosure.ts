@@ -143,14 +143,129 @@ function normalize(text: string): string {
  * this both removes wrong ratings and recovers correct ones.
  *
  * Operates on the lowercased output of {@link normalize}, which is why the patterns carry no
- * case flag. Bounded to 60 characters so a missing comma cannot swallow a whole line.
+ * case flag.
+ *
+ * TWO CORRECTIONS, both of which had turned this into a source of wrong ratings rather than a
+ * cure for them:
+ *
+ * `besides` was in the list and is not exclusive — in ordinary English "besides X" means IN
+ * ADDITION TO X. "Clarithromycin will raise her Solu-Medrol levels, besides those of Prednisone
+ * Co 5mg … [352]" had Prednisone stripped out, leaving Solu-Medrol as the only candidate named,
+ * and rendered a Major rating where the truth was Moderate. Written with "as well as" instead
+ * the same sentence correctly REFUSES, so the strip was turning a refusal into a wrong rating.
+ *
+ * And the span was bounded by CHARACTERS (60) rather than by tokens, with a lazy quantifier
+ * that backtracks — so leftmost-match consumed the longest run it could before " aside,". Only
+ * the noun immediately before "aside" is what a writer excluded. "…active order Prednisone Co
+ * 5mg though dose timing aside, Solu-Medrol … [352]" had the module's own anchoring phrase for
+ * Prednisone deleted, and rendered Major against a truth of Moderate. Both patterns now allow at
+ * most FOUR tokens for the name, which a drug display fits ("Hydrocortisone Injection vial
+ * 100mg") and a clause does not: "except Prednisone Co 5mg at her current dose," no longer
+ * matches at all, so the claim keeps both names and refuses.
  */
+/** At most four whitespace-separated tokens — a drug name, not a clause. See below. */
+const EXCLUDED_NAME = String.raw`[^\s,;:.]+(?:[^\S\n]+[^\s,;:.]+){0,3}`;
+
 const EXCLUSION_CLAUSES = [
   // "apart from X," / "unlike X," / "other than X," — the excluded name FOLLOWS the marker word.
-  /\b(?:apart from|aside from|other than|unlike|besides|except for|except)\s+[^,;:.]{1,60}?\s*[,;:]/g,
+  new RegExp(
+    String.raw`\b(?:apart from|aside from|other than|unlike|except for|except)[^\S\n]+${EXCLUDED_NAME}[^\S\n]*[,;:]`,
+    'g',
+  ),
   // "X aside," — the excluded name PRECEDES it.
-  /\b[^,;:.]{1,60}?\s+aside\s*[,;:]/g,
+  new RegExp(String.raw`\b${EXCLUDED_NAME}[^\S\n]+aside[^\S\n]*[,;:]`, 'g'),
 ];
+
+/**
+ * Words that mark a tail as a CLAUSE rather than a dangling subject — see the use site.
+ *
+ * Determiners, auxiliaries, copulas, prepositions and conjunctions. Deliberately not a stop-word
+ * list: a word belongs here only if a drug name or dose could never contain it, because a false
+ * entry would make a rotation resolve.
+ *
+ * No verbs. Nine were here ('known', 'interacts', 'affected', 'raise', 'watch'…) and removing all
+ * nine changed nothing — suite green, live corpus 98 ratings — because an English clause that
+ * carries a verb carries a determiner or a preposition too. They were nine more chances to be
+ * wrong in the direction that resolves a rotation, for no coverage.
+ *
+ * No individual entry is pinned by a test and none can be: a clause contains several of these, so
+ * dropping one changes no verdict. What IS pinned is the test as a whole — removing the clause
+ * check reddens two of the rotation tests.
+ */
+const CLAUSE_WORDS = new Set([
+  'a',
+  'an',
+  'the',
+  'this',
+  'that',
+  'these',
+  'those',
+  'is',
+  'are',
+  'was',
+  'were',
+  'be',
+  'been',
+  'being',
+  'has',
+  'have',
+  'had',
+  'do',
+  'does',
+  'did',
+  'may',
+  'might',
+  'can',
+  'could',
+  'will',
+  'would',
+  'shall',
+  'should',
+  'must',
+  'and',
+  'but',
+  'or',
+  'nor',
+  'so',
+  'because',
+  'if',
+  'when',
+  'while',
+  'though',
+  'although',
+  'of',
+  'in',
+  'on',
+  'at',
+  'to',
+  'for',
+  'with',
+  'from',
+  'by',
+  'about',
+  'into',
+  'than',
+  'as',
+  'her',
+  'his',
+  'their',
+  'its',
+  'they',
+  'it',
+  'she',
+  'he',
+  'also',
+  'not',
+  'no',
+  'more',
+  'most',
+  'other',
+  'others',
+  'several',
+  'both',
+  'each',
+  'any',
+]);
 
 function stripExclusions(claim: string): string {
   let stripped = claim;
@@ -937,17 +1052,56 @@ export function resolveFindingSeverities(
   const tail = lastRun === undefined ? '' : answer.slice((lastRun.index ?? 0) + lastRun[0].length);
   const tailText = stripExclusions(normalize(tail));
 
+  // Which index of each set its LAST marker cites. A tail that restates the last citation's own
+  // subject is an ordinary flourish; a tail naming a candidate an EARLIER citation claimed is a
+  // rotation closing on itself.
+  const lastIndexOfSet = new Map<string, number>();
+  {
+    const seen = new Set<number>();
+    for (const run of markerRuns) {
+      for (const index of parseCitationIndices(run[1])) {
+        if (seen.has(index)) continue;
+        seen.add(index);
+        const setKey = trailing.setOfIndex.get(index);
+        if (setKey !== undefined) lastIndexOfSet.set(setKey, index);
+      }
+    }
+  }
+
   const namedInTail = new Map<string, Set<AiSafetyWarning>>();
   for (const setKey of new Set(trailing.setOfIndex.values())) {
     const set = setCache.get(setKey);
     if (!set) continue;
     const found = new Set<AiSafetyWarning>();
+    let residual = tailText;
     for (const group of set.groups) {
       for (const candidate of matchesInGroup(set.candidates, group.leadsPerCandidate, group.shared, tailText)) {
         found.add(candidate);
+        const i = set.candidates.indexOf(candidate);
+        for (const lead of group.leadsPerCandidate[i] ?? []) {
+          if (lead) residual = residual.split(lead).join(' ');
+        }
       }
     }
-    namedInTail.set(setKey, found);
+    // A dangling SUBJECT is a NOUN PHRASE. A tail that goes on to say something about the drug
+    // is a clause, and a live answer really does end with one: "…Hydrocortisone [354].
+    // Methylprednisolone is also known to interact with several of her other active orders." Its
+    // five ratings are correct, and contesting it discards them.
+    //
+    // A token COUNT was tried first and is not enough: an unbridged candidate's only lead is its
+    // substance, so a tail carrying its ORDER DISPLAY leaves "injection vial 100mg" behind and
+    // any threshold low enough to catch that also catches real clauses.
+    //
+    // So what is looked for is a FUNCTION WORD — a determiner, auxiliary, preposition or
+    // conjunction. A drug's name and dose carry none ("hydrocortisone injection vial 100mg",
+    // "prednisone co 5mg", "solu-medrol 125mg/5ml"); an English clause cannot avoid them
+    // ("IS also known TO interact WITH several OF HER other…", "WOULD BE THE safer choice").
+    // A word list is crude, and it is here because the alternative is parsing: this is the one
+    // distinction the readings cannot make, and every measured wrong rating of this class turns
+    // on it. It errs toward RESOLVING — an unlisted function word means a clause is read as a
+    // dangling subject and the set refuses, which is the safe direction.
+    const isClause = residual.split(/\s+/).some((word) => CLAUSE_WORDS.has(word.replace(/[^a-z]/g, '')));
+    namedInTail.set(setKey, isClause ? new Set() : found);
   }
 
   const contested = new Set<string>();
@@ -1005,19 +1159,30 @@ export function resolveFindingSeverities(
     // proof against the two things that hid it before: a foreign marker truncating a forward
     // window, and a full stop closing one.
     //
-    // There was a further condition here — that the trailing reading had claimed something for
-    // every cited index — justified as keeping the rule off an answer that merely MENTIONS a
-    // drug it never cites. It did not do that (the test below shows such an answer refusing
-    // either way), and it changed nothing measurable: with it gone the suite, the 46-answer
-    // corpus (98 ratings) and the sweep are identical. A condition on a rule whose only output
-    // is a refusal makes that refusal fire LESS, so an unjustified one is in the unsafe
-    // direction; it is gone rather than kept as ballast.
+    // A candidate in the tail objects unless it is the LAST citation's own subject restated.
+    //
+    // Testing only "claimed by nobody" was not enough, and the gap is the same one that defeats
+    // rule 2: a rotation CLOSED by a lead-in naming the last partner claims every candidate, so
+    // the leftover is claimed — at the wrong index — and the rule fell silent. Measured, that
+    // shipped a swapped pair off an answer one character away from refusing:
+    //
+    //   "Hydrocortisone Injection vial 100mg is the lesser worry, but the greater one is [350].
+    //    Solu-Medrol 125mg/5ml [354]
+    //    Hydrocortisone Injection vial 100mg"
+    //
+    // rendered {350: Moderate, 354: Major} against {350: Major, 354: Moderate}; delete the full
+    // stop and it refuses. Across 26,766 resolving answers of that family EVERY one carried a
+    // wrong rating — the class has no correct resolutions at all.
+    //
+    // Nor is "any candidate in the tail" right: a live answer restates its own subject there
+    // ("Methylprednisolone [350]\n  Solu-Medrol 125mg/5ml"), and contesting that costs a real
+    // rating. So the test is claimed-by-an-EARLIER-citation, or claimed by none.
     const claimedHere = claimedByTrailing.get(setKey);
-    if (claimedHere) {
-      for (const named of namedInTail.get(setKey) ?? []) {
-        if (!claimedHere.has(named)) contested.add(setKey);
-      }
+    const lastClaim = trailing.electedOf.get(lastIndexOfSet.get(setKey) ?? -1);
+    for (const named of namedInTail.get(setKey) ?? []) {
+      if (named !== lastClaim) contested.add(setKey);
     }
+    void claimedHere;
 
     // Or the wider, unconfined BACKWARD window no longer singles out what the line-confined one
     // elected. This is the check that survives a forward reading with nothing to say, and it has
