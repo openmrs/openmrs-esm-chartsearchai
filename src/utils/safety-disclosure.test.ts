@@ -147,16 +147,20 @@ describe('a subject left over past the answer’s last marker', () => {
     expect(resolved.get(366)).toBe('Moderate');
   });
 
-  it('resolves when the tail is a CLAUSE about the drug rather than a bare name', () => {
-    // This asserted a refusal until the tail test learned to tell a noun phrase from a clause.
-    // "Prednisone would be the safer choice." carries function words a drug name and dose never
-    // do, so it is read as prose rather than as a subject left over, and two correct ratings are
-    // kept. The refusal it used to produce was the safe direction but it was not necessary.
+  it('refuses when the closing sentence merely NAMES a candidate — the accepted cost', () => {
+    // This has now asserted a refusal, then a resolution, and a refusal again, and the reason it
+    // moved twice is worth keeping. A function-word list was tried, so that a bare noun phrase
+    // counted as a dangling subject and a clause did not; it recovered these two correct ratings
+    // and it was defeated by every dangling name written with a determiner
+    // ("Hydrocortisone Injection vial 100mg is the last of them." renders a swapped pair). The
+    // distinction is grammatical and nothing here parses, so the tail is read regardless of
+    // shape and this answer pays for it.
+    //
+    // Zero cost on all 46 captured live answers; the alternative was a swapped Major/Moderate
+    // pair. A blank is safe, which is the premise the whole module rests on.
     const answer =
       'Clarithromycin interacts with active order Solu-Medrol 125mg/5ml [350], and with active order Pulmicort 90mcg [351]. Prednisone would be the safer choice.';
-    const resolved = resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 351]);
-    expect(resolved.get(350)).toBe('Major');
-    expect(resolved.get(351)).toBe('Major');
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 351])]).toEqual([]);
   });
 
   it('refuses a CLOSED rotation, whose leftover is claimed at the wrong index', () => {
@@ -177,6 +181,23 @@ describe('a subject left over past the answer’s last marker', () => {
     const answer =
       'Hydrocortisone Injection vial 100mg is the lesser worry, but the greater one is [350], per her active orders [17]\nSolu-Medrol 125mg/5ml [354]\nHydrocortisone Injection vial 100mg';
     expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 354])]).toEqual([]);
+  });
+
+  it('refuses a closed rotation whose dangling name is written as a sentence', () => {
+    // The hole a function-word list left, and why the tail is now read regardless of grammar.
+    // Five phrasings of the same dangling subject were measured rendering the swapped pair,
+    // differing from the bare form only by a determiner or a verb.
+    const head =
+      'Hydrocortisone Injection vial 100mg is the lesser worry, but the greater one is [350].\nSolu-Medrol 125mg/5ml [354]\n';
+    for (const tail of [
+      'Hydrocortisone Injection vial 100mg is the last of them.',
+      'Hydrocortisone Injection vial 100mg is also on her list.',
+      'And Hydrocortisone Injection vial 100mg.',
+      'Then there is Hydrocortisone Injection vial 100mg.',
+      'Hydrocortisone Injection vial 100mg for the fifth.',
+    ]) {
+      expect([...resolveFindingSeverities(head + tail, REFERENCES, SAFETY_WARNINGS, [350, 354])]).toEqual([]);
+    }
   });
 
   it('refuses a five-item closed rotation, where every rating would be wrong', () => {
@@ -929,7 +950,7 @@ describe('resolveFindingSeverities', () => {
     expect(resolved.size).toBe(0);
   });
 
-  it('resolves a prose list whose last marker is followed by another sentence', () => {
+  it('refuses a prose list whose closing sentence names one of its own candidates', () => {
     // Live, and withheld before this: in a list where each sentence opens with the module's own
     // phrase and closes with its marker, the LEADING claim of marker N is sentence N+1 — a
     // complete claim about the next candidate. The forward reading was then a clean shift-by-one
@@ -942,17 +963,18 @@ describe('resolveFindingSeverities', () => {
       'Clarithromycin interacts with active order Prednisone [352]. ' +
       'Clarithromycin interacts with active order Dexamethasone [353]. ' +
       'Clarithromycin interacts with active order Hydrocortisone [354]. ' +
-      // The trailing sentence must NAME a candidate, as the live answer's did: that is what let
-      // the forward reading complete as a shift-by-one bijection and contest the correct one.
+      // The trailing sentence NAMES a candidate. That used to be tolerated — first because the
+      // forward-reading contest was the only rule looking, then because a function-word list
+      // read it as prose — and both readings of it were defeated by a dangling subject written
+      // the same way. The tail rule now objects regardless of the sentence's shape.
       'Methylprednisolone is also known to interact with several of her other active orders.';
-    const resolved = resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, UNSTATED);
-    expect(Object.fromEntries(resolved)).toEqual({
-      350: 'Major',
-      351: 'Major',
-      352: 'Moderate',
-      353: 'Moderate',
-      354: 'Moderate',
-    });
+    // Five correct ratings are discarded here, and that is the cost recorded beside the rule:
+    // this exact shape is absent from all 46 captured live answers (the corpus is byte-identical
+    // with the rule as written), while the shape it protects against renders a swapped
+    // Major/Moderate pair. Delete the closing sentence and all five resolve.
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, UNSTATED)]).toEqual([]);
+    const withoutTail = answer.slice(0, answer.indexOf('Methylprednisolone is also'));
+    expect(resolveFindingSeverities(withoutTail, REFERENCES, SAFETY_WARNINGS, UNSTATED).size).toBe(5);
   });
 
   it('refuses a multi-line answer with one marker written before its drug', () => {

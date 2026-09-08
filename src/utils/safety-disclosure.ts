@@ -189,97 +189,6 @@ const EXCLUSION_CLAUSES = [
   new RegExp(String.raw`\b${EXCLUDED_NAME}[^\S\n]+aside[^\S\n]*[,;:]`, 'g'),
 ];
 
-/**
- * Words that mark a tail as a CLAUSE rather than a dangling subject — see the use site.
- *
- * Determiners, auxiliaries, copulas, prepositions and conjunctions. Deliberately not a stop-word
- * list: a word belongs here only if a drug name or dose could never contain it, because a false
- * entry would make a rotation resolve.
- *
- * No verbs. Nine were here ('known', 'interacts', 'affected', 'raise', 'watch'…) and removing all
- * nine changed nothing — suite green, live corpus unchanged — because an English clause that
- * carries a verb carries a determiner or a preposition too. They were nine more chances to be
- * wrong in the direction that resolves a rotation, for no coverage.
- *
- * No individual entry is pinned by a test and none can be: a clause contains several of these, so
- * dropping one changes no verdict. What IS pinned is the test as a whole — removing the clause
- * check reddens two of the rotation tests.
- */
-const CLAUSE_WORDS = new Set([
-  'a',
-  'an',
-  'the',
-  'this',
-  'that',
-  'these',
-  'those',
-  'is',
-  'are',
-  'was',
-  'were',
-  'be',
-  'been',
-  'being',
-  'has',
-  'have',
-  'had',
-  'do',
-  'does',
-  'did',
-  'may',
-  'might',
-  'can',
-  'could',
-  'will',
-  'would',
-  'shall',
-  'should',
-  'must',
-  'and',
-  'but',
-  'or',
-  'nor',
-  'so',
-  'because',
-  'if',
-  'when',
-  'while',
-  'though',
-  'although',
-  'of',
-  'in',
-  'on',
-  'at',
-  'to',
-  'for',
-  'with',
-  'from',
-  'by',
-  'about',
-  'into',
-  'than',
-  'as',
-  'her',
-  'his',
-  'their',
-  'its',
-  'they',
-  'it',
-  'she',
-  'he',
-  'also',
-  'not',
-  'no',
-  'more',
-  'most',
-  'other',
-  'others',
-  'several',
-  'both',
-  'each',
-  'any',
-]);
-
 function stripExclusions(claim: string): string {
   let stripped = claim;
   for (const pattern of EXCLUSION_CLAUSES) stripped = stripped.replace(pattern, ' ');
@@ -1097,35 +1006,27 @@ export function resolveFindingSeverities(
     const set = setCache.get(setKey);
     if (!set) continue;
     const found = new Set<AiSafetyWarning>();
-    let residual = tailText;
     for (const group of set.groups) {
       for (const candidate of matchesInGroup(set.candidates, group.leadsPerCandidate, group.shared, tailText)) {
         found.add(candidate);
-        const i = set.candidates.indexOf(candidate);
-        for (const lead of group.leadsPerCandidate[i] ?? []) {
-          if (lead) residual = residual.split(lead).join(' ');
-        }
       }
     }
-    // A dangling SUBJECT is a NOUN PHRASE. A tail that goes on to say something about the drug
-    // is a clause, and a live answer really does end with one: "…Hydrocortisone [354].
-    // Methylprednisolone is also known to interact with several of her other active orders." Its
-    // five ratings are correct, and contesting it discards them.
+    // ANY candidate named in the tail counts, whatever the tail's grammar.
     //
-    // A token COUNT was tried first and is not enough: an unbridged candidate's only lead is its
-    // substance, so a tail carrying its ORDER DISPLAY leaves "injection vial 100mg" behind and
-    // any threshold low enough to catch that also catches real clauses.
+    // Two narrower forms were tried and both let a rotation through. A token COUNT cannot work:
+    // an unbridged candidate's only lead is its substance, so a tail carrying its ORDER DISPLAY
+    // leaves "injection vial 100mg" behind, and any threshold low enough to catch that catches
+    // real clauses too. A FUNCTION-WORD list — the idea that a dangling subject is a bare noun
+    // phrase and a clause is prose — shipped for one cycle and was defeated by every tail with a
+    // determiner in it: "Hydrocortisone Injection vial 100mg is the last of them." renders the
+    // swapped pair, and so do four other phrasings of the same dangling name. A word list cannot
+    // separate these because the distinction is grammatical and nothing here parses.
     //
-    // So what is looked for is a FUNCTION WORD — a determiner, auxiliary, preposition or
-    // conjunction. A drug's name and dose carry none ("hydrocortisone injection vial 100mg",
-    // "prednisone co 5mg", "solu-medrol 125mg/5ml"); an English clause cannot avoid them
-    // ("IS also known TO interact WITH several OF HER other…", "WOULD BE THE safer choice").
-    // A word list is crude, and it is here because the alternative is parsing: this is the one
-    // distinction the readings cannot make, and every measured wrong rating of this class turns
-    // on it. It errs toward RESOLVING — an unlisted function word means a clause is read as a
-    // dangling subject and the set refuses, which is the safe direction.
-    const isClause = residual.split(/\s+/).some((word) => CLAUSE_WORDS.has(word.replace(/[^a-z]/g, '')));
-    namedInTail.set(setKey, isClause ? new Set() : found);
+    // So the tail is read without regard to its shape. The cost is real and is stated in two
+    // tests: an answer whose closing sentence merely NAMES a candidate now renders nothing. It
+    // is zero on all 46 captured live answers, and the alternative was a swapped Major/Moderate
+    // pair, which this module's whole premise says is the worse outcome.
+    namedInTail.set(setKey, found);
   }
 
   const contested = new Set<string>();
