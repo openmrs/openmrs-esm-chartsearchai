@@ -22,7 +22,10 @@ const REFERENCE_RESOURCE_TYPE_SET: ReadonlySet<string> = new Set(REFERENCE_RESOU
  * uuid like `interaction:Clarithromycin` — a link that could never land anywhere.
  */
 export function isReferenceData(ref: AiReference): boolean {
-  return ref.group === 'reference' || REFERENCE_RESOURCE_TYPE_SET.has(ref.resourceType?.toLowerCase());
+  return (
+    ref.group === 'reference' ||
+    (typeof ref.resourceType === 'string' && REFERENCE_RESOURCE_TYPE_SET.has(ref.resourceType.toLowerCase()))
+  );
 }
 
 /**
@@ -40,7 +43,7 @@ export type ReferenceKind = (typeof REFERENCE_RESOURCE_TYPES)[number] | 'other';
  * `group` is `reference`, including a type this client predates.
  */
 export function referenceKind(ref: AiReference): ReferenceKind {
-  const resourceType = ref.resourceType?.toLowerCase();
+  const resourceType = typeof ref.resourceType === 'string' ? ref.resourceType.toLowerCase() : undefined;
   return REFERENCE_RESOURCE_TYPES.find((known) => known === resourceType) ?? 'other';
 }
 
@@ -57,6 +60,10 @@ export type SeverityTone = 'major' | 'moderate' | 'minor' | 'unknown' | 'unrated
  * treatment. The rating is always displayed verbatim; only the emphasis comes from this.
  */
 export function severityTone(severity: string): SeverityTone {
+  // `severity` is documented as null for a contraindication, an overdose and a class join, so a
+  // second call site would crash on the value the wire states most often. The one call site today
+  // feeds a value the resolver already type-guarded; this makes that not a precondition.
+  if (typeof severity !== 'string') return 'unrated';
   switch (severity.trim().toLowerCase()) {
     case 'major':
       return 'major';
@@ -134,7 +141,53 @@ function normalize(text: string): string {
  */
 export type ClaimDirection = 'trailing' | 'leading' | 'block' | 'block-leading';
 
-export function claimTextByCitation(answer: string, direction: ClaimDirection = 'trailing'): Map<number, string> {
+/**
+ * A sentence terminator that is not a decimal point inside a dose.
+ *
+ * `Digoxin Elixir 0.125mg` must not read as a sentence end: it does, the window-widening below
+ * stops at it, and the very truncation it exists to prevent comes back. Measured — 183
+ * mis-attributions survived until this exclusion was added. Same class as the digit-inside-a-name
+ * note on {@link shortOrderDisplay}.
+ */
+const SENTENCE_END = /(?<!\d)[.;!?]|[.;!?](?!\d)/;
+
+/**
+ * Where a trailing claim's window begins.
+ *
+ * Back to the previous marker — but a marker that cites something OUTSIDE this measurement is
+ * not evidence about where a claim starts, and letting it bound the window cuts the subject out.
+ * Live, in 4 of 62 cached answers and 7 times in all: *"Solu-Medrol 125mg/5ml [17] carries more
+ * risk than Prednisone does [350]"* left only the contrast partner in the window, and `[350]`
+ * elected it. The block reading cannot help — on one line its window is the same one.
+ *
+ * A foreign marker DOES still bound the window once a sentence has ended between it and this
+ * marker: that is what separates a live answer's *"… [16]. Additionally, it interacts with
+ * Prednisone Co 5mg [352]"* — a new sentence, correctly bounded — from the defect's fragment.
+ */
+function trailingWindowStart(
+  answer: string,
+  runs: Array<{ start: number; end: number; groups: RegExpMatchArray[] }>,
+  index: number,
+  ownIndices: ReadonlySet<number>,
+): number {
+  for (let j = index - 1; j >= 0; j--) {
+    const carriesOwn = runs[j].groups.some((group) =>
+      parseCitationIndices(group[1]).some((cited) => ownIndices.has(cited)),
+    );
+    if (carriesOwn) return runs[j].end;
+    if (SENTENCE_END.test(answer.slice(runs[j].end, runs[index].start))) return runs[j].end;
+  }
+  return 0;
+}
+
+export function claimTextByCitation(
+  answer: string,
+  direction: ClaimDirection = 'trailing',
+  // Undefined means "every marker bounds the window" — the conservative reading. Only
+  // `resolveFindingSeverities` knows which indices this measurement is about, and only it opts
+  // into widening past the others.
+  ownIndices?: ReadonlySet<number>,
+): Map<number, string> {
   const matches = [...answer.matchAll(citationGroupPattern())];
 
   const runs: Array<{ start: number; end: number; groups: RegExpMatchArray[] }> = [];
@@ -167,7 +220,14 @@ export function claimTextByCitation(answer: string, direction: ClaimDirection = 
       // partner sits on the citation's own line, the confined window names only the contrast
       // partner and elects it. Live, that produced a derangement — a bijection, so completeness
       // and injectivity both held — with both Major findings badged Moderate.
-      const preceding = answer.slice(runs[i - 1]?.end ?? 0, run.start);
+      // Only the confined `trailing` window widens past a foreign marker. `block` is
+      // back-to-the-previous-marker by design, and widening it or the forward windows was
+      // measured to regress the live corpus hard (94 correct ratings down to 74).
+      const from =
+        direction === 'trailing' && ownIndices
+          ? trailingWindowStart(answer, runs, i, ownIndices)
+          : (runs[i - 1]?.end ?? 0);
+      const preceding = answer.slice(from, run.start);
       const lineStart = direction === 'block' ? -1 : preceding.lastIndexOf('\n');
       claim = lineStart < 0 ? preceding : preceding.slice(lineStart + 1);
     } else {
@@ -408,7 +468,8 @@ function electCandidate(perGroupMatches: AiSafetyWarning[][]): AiSafetyWarning |
 
 /** Splits a safety finding's synthetic uuid (`interaction:Clarithromycin`) into type and drug. */
 function splitFindingUuid(resourceUuid: string): { type: string; drug: string } | null {
-  const colon = resourceUuid?.indexOf(':') ?? -1;
+  if (typeof resourceUuid !== 'string') return null;
+  const colon = resourceUuid.indexOf(':');
   if (colon <= 0 || colon === resourceUuid.length - 1) return null;
   return { type: resourceUuid.slice(0, colon), drug: resourceUuid.slice(colon + 1) };
 }
@@ -419,6 +480,8 @@ interface ClaimReading {
   setOfIndex: Map<number, string>;
   citedIndices: Set<number>;
   electedOf: Map<number, AiSafetyWarning>;
+  /** Every candidate this reading's window NAMED, not just the one it elected. */
+  namedOf: Map<number, Set<AiSafetyWarning>>;
 }
 
 function readClaims(
@@ -431,6 +494,7 @@ function readClaims(
   const setOfIndex = new Map<number, string>();
   const citedIndices = new Set<number>();
   const electedOf = new Map<number, AiSafetyWarning>();
+  const namedOf = new Map<number, Set<AiSafetyWarning>>();
   // Array.isArray on `references` too — the last member of this family without the guard its
   // siblings got. Not reachable from this backend, but the panel has no error boundary above it.
   const refByIndex = new Map((Array.isArray(references) ? references : []).map((ref) => [ref.index, ref]));
@@ -450,8 +514,12 @@ function readClaims(
         // states no rating.
         typeof warning.severity === 'string' &&
         warning.severity.trim() !== '' &&
-        warning.type?.toLowerCase() === finding.type.toLowerCase() &&
-        warning.drug?.toLowerCase() === finding.drug.toLowerCase(),
+        // typeof on these too. Optional chaining guards null, not TYPE — a numeric `type` reaches
+        // `.toLowerCase()` and throws, one line below the guard that exists for exactly that.
+        typeof warning.type === 'string' &&
+        typeof warning.drug === 'string' &&
+        warning.type.toLowerCase() === finding.type.toLowerCase() &&
+        warning.drug.toLowerCase() === finding.drug.toLowerCase(),
     );
     if (candidates.length === 0) continue;
 
@@ -462,6 +530,7 @@ function readClaims(
     if (candidates.length === 1) {
       resolved.set(index, candidates[0].severity!.trim());
       electedOf.set(index, candidates[0]);
+      namedOf.set(index, new Set(candidates));
       continue;
     }
 
@@ -477,6 +546,7 @@ function readClaims(
         claim,
       ),
     );
+    namedOf.set(index, new Set(perGroupMatches.flat()));
     const winner = electCandidate(perGroupMatches);
     if (winner) {
       resolved.set(index, winner.severity!.trim());
@@ -484,7 +554,7 @@ function readClaims(
     }
   }
 
-  return { resolved, setOfIndex, citedIndices, electedOf };
+  return { resolved, setOfIndex, citedIndices, electedOf, namedOf };
 }
 
 /** The candidate sets this reading identified COMPLETELY and INJECTIVELY. */
@@ -541,10 +611,17 @@ export function resolveFindingSeverities(
 ): Map<number, string> {
   // Array.isArray on both: guarding one member of this family is not guarding the family, and a
   // non-iterable would throw inside a render memo with no error boundary above it.
+  if (typeof answer !== 'string') return new Map();
   if (!Array.isArray(unstatedFindingSeverities) || !Array.isArray(safetyWarnings)) return new Map();
   if (unstatedFindingSeverities.length === 0 || safetyWarnings.length === 0) return new Map();
 
-  const trailing = readClaims(references, safetyWarnings, unstatedFindingSeverities, claimTextByCitation(answer));
+  const ownIndices = new Set(unstatedFindingSeverities);
+  const trailing = readClaims(
+    references,
+    safetyWarnings,
+    unstatedFindingSeverities,
+    claimTextByCitation(answer, 'trailing', ownIndices),
+  );
   const leading = readClaims(
     references,
     safetyWarnings,
@@ -590,9 +667,15 @@ export function resolveFindingSeverities(
     // "Hydrocortisone aside, the order that matters most is [350] Solu-Medrol 125mg/5ml…" badged
     // the MAJOR Methylprednisolone finding as Moderate, scavenging Hydrocortisone's rating from
     // the lead-in, next to a correctly-badged Major.
+    // NAMED, not elected. `electCandidate` returns null both for "this window named nobody" and
+    // for "this window named two candidates", so keying the contest on an ELECTION silenced it
+    // in exactly the second case — and the trailing reading's election, scavenged from a
+    // lead-in, then stood. Measured: one extra clause naming a second candidate flipped a
+    // correct refusal into a wrong rating.
     for (const forward of [leading, blockLeading]) {
-      const led = forward.electedOf.get(index);
-      if (led && !claimedByTrailing.get(setKey)?.has(led)) contested.add(setKey);
+      for (const named of forward.namedOf.get(index) ?? []) {
+        if (!claimedByTrailing.get(setKey)?.has(named)) contested.add(setKey);
+      }
     }
 
     // Or the wider, unconfined window no longer singles out what the line-confined one elected.

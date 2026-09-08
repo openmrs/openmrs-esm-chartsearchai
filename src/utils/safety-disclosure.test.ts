@@ -729,6 +729,74 @@ describe('resolveFindingSeverities', () => {
     expect(resolved.size).toBe(0);
   });
 
+  it('is not truncated by a citation outside this measurement', () => {
+    // Live in 4 of 62 cached answers: a chart-order citation lands between a finding's subject
+    // and the finding's own marker, cutting the subject out of the window and leaving only a
+    // contrast partner, which is then elected. The block reading cannot help — on one line its
+    // window is the same one. Without the foreign marker the same sentence correctly refuses,
+    // so the marker converts a refusal into a wrong rating.
+    const withForeign = 'Solu-Medrol 125mg/5ml [17] carries more risk than Prednisone does [350].';
+    const withoutForeign = 'Solu-Medrol 125mg/5ml carries more risk than Prednisone does [350].';
+    expect(resolveFindingSeverities(withForeign, REFERENCES, SAFETY_WARNINGS, [350]).size).toBe(0);
+    expect(resolveFindingSeverities(withoutForeign, REFERENCES, SAFETY_WARNINGS, [350]).size).toBe(0);
+  });
+
+  it('still lets a foreign citation bound the window across a sentence break', () => {
+    // The distinction that keeps the widening from over-reaching, and it is drawn from a live
+    // answer: "… [16]. Additionally, it interacts with Prednisone Co 5mg [352]" is a NEW
+    // sentence, so the foreign marker still bounds; the defect above is a fragment.
+    const answer =
+      'Clarithromycin interacts with active order Methylprednisolone [16]. ' +
+      'Additionally, it interacts with active order Prednisone [352].';
+    expect(resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [352]).get(352)).toBe('Moderate');
+  });
+
+  it('does not read a decimal point in a dose as a sentence break', () => {
+    // `Digoxin Elixir 0.125mg` reading as a sentence end restores the very truncation the
+    // widening prevents — measured, 183 mis-attributions survived until this was excluded.
+    // The dose must sit BETWEEN the foreign marker and the finding marker — that is the span the
+    // sentence test reads. An earlier version of this test put it before the foreign marker,
+    // where nothing looks at it, and so discriminated nothing.
+    const answer = 'Solu-Medrol [17] at 0.125mg carries more risk than Prednisone does [350].';
+    expect(resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350]).size).toBe(0);
+  });
+
+  it('contests a forward window that NAMES two candidates without electing one', () => {
+    // electCandidate returns null both for "named nobody" and "named two", so keying the forward
+    // contest on an ELECTION silenced it in the second case. One extra clause naming a second
+    // candidate flipped a correct refusal into a wrong rating.
+    const answer =
+      'Hydrocortisone aside, the order that matters most is [353]\n' +
+      'Dexamethasone is the one to watch. Unlike Methylprednisolone, the others carry less risk.';
+    expect(resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [353]).size).toBe(0);
+  });
+
+  it('survives a warning whose type or drug is not a string', () => {
+    // Optional chaining guards null, not TYPE, and these sit one line below the guard that
+    // exists for exactly this.
+    const malformed = [
+      { ...interaction('Budesonide', 'Major'), type: 123 as unknown as string },
+      { ...interaction('Prednisone', 'Major'), drug: {} as unknown as string },
+    ];
+    for (const bad of malformed) {
+      expect(() =>
+        resolveFindingSeverities('A claim [351].', REFERENCES, [bad, interaction('Hydrocortisone', 'Minor')], [351]),
+      ).not.toThrow();
+    }
+  });
+
+  it('survives a reference whose uuid is not a string', () => {
+    const refs: AiReference[] = [{ ...safetyFindingRef(350), resourceUuid: null as unknown as string }];
+    expect(() => resolveFindingSeverities('A claim [350].', refs, SAFETY_WARNINGS, [350])).not.toThrow();
+  });
+
+  it('survives an answer that is not a string, and a non-string rating word', () => {
+    expect(resolveFindingSeverities(undefined as unknown as string, REFERENCES, SAFETY_WARNINGS, UNSTATED).size).toBe(
+      0,
+    );
+    expect(severityTone(null as unknown as string)).toBe('unrated');
+  });
+
   it('refuses where the badged sentence names two candidates', () => {
     // The one-candidate requirement is what keeps a resolved rating honest: where the sentence
     // the badge will be drawn against reproduces two candidates' own statements, nothing is

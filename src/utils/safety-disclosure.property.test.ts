@@ -104,6 +104,15 @@ const SENTENCE_SHAPES: Array<(name: string, marker: string) => string> = [
 ];
 
 /**
+ * Markers that cite something OUTSIDE this measurement — a chart order, another finding.
+ *
+ * The generator had no vocabulary for these, which made a TRUNCATED claim window unreachable:
+ * a foreign citation between a finding's subject and its own marker cuts the subject out. Live
+ * answers interleave them routinely — 7 times across 4 of 62 cached payloads.
+ */
+const FOREIGN_MARKERS = ['[12]', '[14]', '[16]', '[17]', '[18]'];
+
+/**
  * Lead-ins. Several name a partner, which is the escape condition every rotation defect used:
  * the preamble names a real candidate, so a marker written before its drug elects the preamble's
  * partner instead and the whole mapping shifts.
@@ -149,6 +158,13 @@ function generateAnswer(random: () => number): Generated {
     const name = random() < 0.5 ? partner.substance : partner.order;
     // In a targeted answer the first line always leads with its marker; the rest vary, which is
     // what mixes marker-first and marker-last in one answer.
+    // A foreign citation dropped between the subject and the finding's marker, in a fragment
+    // rather than across a sentence break — which is the shape that truncates the window.
+    if (random() < 0.2) {
+      const foreign = FOREIGN_MARKERS[Math.floor(random() * FOREIGN_MARKERS.length)];
+      const other = PARTNERS[(partnerIndex + 1) % PARTNERS.length];
+      return `${name} ${foreign} carries more risk than ${other.substance} does [${index}].`;
+    }
     // A contrast entry names another partner beside the marker and its own on the header line.
     if (random() < 0.25) {
       const other = PARTNERS[(partnerIndex + 1 + Math.floor(random() * (PARTNERS.length - 1))) % PARTNERS.length];
@@ -186,6 +202,7 @@ describe('the generator reaches the shapes it exists for', () => {
     let markerFirst = 0;
     let markerAtLineEnd = 0;
     let colonAfterMarker = 0;
+    let foreignMarker = 0;
     let orderVocabulary = 0;
     let multiLine = 0;
 
@@ -195,6 +212,7 @@ describe('the generator reaches the shapes it exists for', () => {
       if (/\[\d+\]\s+[A-Z]/.test(answer)) markerFirst += 1;
       if (/\[\d+\]\n/.test(answer)) markerAtLineEnd += 1;
       if (/\[\d+\]:/.test(answer)) colonAfterMarker += 1;
+      if (FOREIGN_MARKERS.some((marker) => answer.includes(marker))) foreignMarker += 1;
       if (/\d+(mg|mcg|ml)/.test(answer)) orderVocabulary += 1;
       if (answer.includes('\n')) multiLine += 1;
     }
@@ -204,6 +222,7 @@ describe('the generator reaches the shapes it exists for', () => {
       markerFirst: markerFirst > 200,
       markerAtLineEnd: markerAtLineEnd > 50,
       colonAfterMarker: colonAfterMarker > 50,
+      foreignMarker: foreignMarker > 200,
       orderVocabulary: orderVocabulary > 200,
       multiLine: multiLine > 200,
     }).toEqual({
@@ -211,6 +230,7 @@ describe('the generator reaches the shapes it exists for', () => {
       markerFirst: true,
       markerAtLineEnd: true,
       colonAfterMarker: true,
+      foreignMarker: true,
       orderVocabulary: true,
       multiLine: true,
     });
