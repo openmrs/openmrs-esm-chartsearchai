@@ -47,31 +47,42 @@ yarn start
 
 The following options can be set via the OpenMRS 3.x config system:
 
-| Property | Type | Default | Description |
-|---|---|---|---|
-| `aiSearchPlaceholder` | `string` | `"Ask AI about this patient..."` | Placeholder text for the search input |
-| `maxQuestionLength` | `number` | `1000` | Maximum characters allowed in a question |
-| `useStreaming` | `boolean` | `true` | Use the SSE streaming endpoint for token-by-token responses |
+| Property              | Type      | Default                          | Description                                                 |
+| --------------------- | --------- | -------------------------------- | ----------------------------------------------------------- |
+| `aiSearchPlaceholder` | `string`  | `"Ask AI about this patient..."` | Placeholder text for the search input                       |
+| `maxQuestionLength`   | `number`  | `1000`                           | Maximum characters allowed in a question                    |
+| `useStreaming`        | `boolean` | `true`                           | Use the SSE streaming endpoint for token-by-token responses |
 
 ## API endpoints used
 
 All endpoints are served by the backend module under `/ws/rest/v1/chartsearchai/`:
 
-| Method | Path | Description |
-|---|---|---|
-| POST | `/search` | Synchronous search (returns complete answer) |
-| POST | `/search/stream` | SSE streaming search (tokens streamed in real-time) |
+| Method | Path             | Description                                         |
+| ------ | ---------------- | --------------------------------------------------- |
+| POST   | `/search`        | Synchronous search (returns complete answer)        |
+| POST   | `/search/stream` | SSE streaming search (tokens streamed in real-time) |
 
 Request body: `{ "patient": "<uuid>", "question": "<text>" }`
 
 Response:
+
 ```json
 {
   "answer": "The patient is currently on metformin [1] and lisinopril [2]...",
   "disclaimer": "AI-generated summary. Verify with the full chart.",
   "references": [
-    { "index": 1, "resourceType": "order", "resourceUuid": "5946f880-b197-400b-9caa-a3c661d71165", "date": "2025-12-01" },
-    { "index": 2, "resourceType": "order", "resourceUuid": "a8f5f167-4ee2-4d2a-94f9-3f3f86d2e9b6", "date": "2025-11-15" }
+    {
+      "index": 1,
+      "resourceType": "order",
+      "resourceUuid": "5946f880-b197-400b-9caa-a3c661d71165",
+      "date": "2025-12-01"
+    },
+    {
+      "index": 2,
+      "resourceType": "order",
+      "resourceUuid": "a8f5f167-4ee2-4d2a-94f9-3f3f86d2e9b6",
+      "date": "2025-11-15"
+    }
   ],
   "safetyWarnings": [],
   "misattributedOrderCitations": [],
@@ -85,21 +96,26 @@ Response:
 
 ### Fields that state the answer's limits
 
-Four response fields, plus one per-reference field, say what a bounded safety answer did **not** cover. The panel renders these five; the backend publishes more that this app does not yet consume — see *Not consumed* below. The backend README is authoritative for what each does and does not assert.
+Four response fields, plus one per-reference field, say what a bounded safety answer did **not** cover. The panel renders these five; the backend publishes more that this app does not draw — see _Not rendered_ below. The backend README is authoritative for what each does and does not assert.
 
-| Field | Rendered as |
-|---|---|
-| `unstatedFindingSeverities` | The rating for that finding, beside the sentence whose finding the answer left unrated — as a **caveat**, since the backend documents cells where this key over-reports. The rating is not on the key and cannot be joined to a chip by `(type, drug)`, so the panel narrows to the candidates sharing it and requires the answer's own sentence to single one out. It reads three independent kinds of evidence — `chartOrderBridges` (typed, and carrying both the substance and the chart's order display), the partner substance alone, and the module's whole sentence — and any disagreement between them refuses rather than being resolved by precedence. Findings sharing one `(type, drug)` are a candidate **set**: they are badged together or not at all, because a bare item beside a badged one reads as "no rating exists" rather than "we declined" |
-| `misattributedOrderCitations` | Those citations struck through and non-navigating, marked *Not the order named* — bad **evidence** for a sound finding, never an unsupported claim |
-| `conditionRuleCoverage` | A neutral note on `absent`/`unloaded`, each with its own wording; nothing on `published`, which says the dataset *can* run the condition arm and never that a condition was screened. Shown only where a safety check produced something — the backend states this on every answer, so an ungated note would sit under questions that never asked for a contraindication screen |
-| `interactionPairs` | "Interaction pairs shown: N of M", calling out the withholding where `reported < found`. `found: 0` gets its own sentence, because the count speaks for the check that reported it and not for the findings beside it |
-| `references[].attachedByTheModule` | A chip tagged *Added by the module* — the prose carries no `[N]` marker for such a citation, so this is the only place it appears |
+| Field                              | Rendered as                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unstatedFindingSeverities`        | The rating for that finding, beside the sentence whose finding the answer left unrated — as a **caveat**, since the backend documents cells where this key over-reports. The rating is not on the key and cannot be joined to a chip by `(type, drug)`, so the panel narrows to the candidates sharing it and requires the answer's own sentence to single one out. It reads three independent kinds of evidence — `chartOrderBridges` (typed, and carrying both the substance and the chart's order display), the partner substance alone, and the module's whole sentence — and any disagreement between them refuses rather than being resolved by precedence. Findings sharing one `(type, drug)` are a candidate **set**: they are badged together or not at all, because a bare item beside a badged one reads as "no rating exists" rather than "we declined" |
+| `misattributedOrderCitations`      | Those citations struck through and non-navigating, marked _Not the order named_ — bad **evidence** for a sound finding, never an unsupported claim                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `conditionRuleCoverage`            | A neutral note on `absent`/`unloaded`, each with its own wording; nothing on `published`, which says the dataset _can_ run the condition arm and never that a condition was screened. Shown only where a safety check produced something — the backend states this on every answer, so an ungated note would sit under questions that never asked for a contraindication screen                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `interactionPairs`                 | "Interaction pairs shown: N of M", calling out the withholding where `reported < found`. `found: 0` gets its own sentence, because the count speaks for the check that reported it and not for the findings beside it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `references[].attachedByTheModule` | A chip tagged _Added by the module_ — the prose carries no `[N]` marker for such a citation, so this is the only place it appears                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 Two readings the panel deliberately does not offer. An empty `misattributedOrderCitations` renders **nothing** — the check reads only answers reproducing the module's own phrasing, so `[]` is not a certificate that the other citations are sound. And a `null` measurement renders nothing rather than a completeness claim.
 
-**Not consumed.** The backend also publishes `unfaithfullyRenderedCitations` (citations whose rendering *in the answer* the module found unfaithful to the record they point at) and, per reference, `withheldInteractions` (how many of a cited record's interaction partners the record does not show, so a client can say the citation shows a subset). Both are always present on the wire and neither is rendered here — a deliberate gap, not a claim that the contract has only the fields above.
+**Not rendered.** The backend publishes more than the five above. Naming them here is a deliberate gap, not a claim that the contract stops at what this panel draws.
 
-Under `chartsearchai.grounding.async=true` the SSE `done` event is emitted before validation runs, so `safetyWarnings` and every measurement taken *after* the answer — `interactionPairs`, `misattributedOrderCitations`, `unstatedFindingSeverities` — arrive on the trailing `grounded` event instead. That is why the stream's `onGrounded` callback hands over the whole payload rather than the references alone. Two exceptions not to gate on that event: `conditionRuleCoverage` is read off the dataset load before the model is called and so is already final on `done`, and on an answer-cache hit no early `done` is emitted at all.
+- `unresolvedDrugClass` — the drug **class** a question named that the module resolved to no substance (`"NSAID"`, `"oral contraceptive"`), or `null`. The backend asks a client to say that reference _entries_ are indexed by individual substance name so the class matched none of them, and to ask for a specific drug by name.
+- `unfaithfullyRenderedCitations` — citations whose rendering _in the answer_ the module found unfaithful to the record they point at.
+- `references[].withheldInteractions` — how many of a cited record's interaction partners the record does not show, so a client can say the citation shows a subset.
+- `safetyWarnings[].chartOrderBridges` — `{ substance, orderDisplay }`, saying _this chip's `Ibuprofen` is your `Advil 400mg` order_. This one is a partial: the panel **reads** it, as the strongest of the three kinds of evidence the severity join weighs, but does not **display** it. The backend asks for it beside the chip, and until that is done a clinician reading a chip list next to the answer still has to work out whether `Advil` and `Ibuprofen` are one prescription or two.
+
+Under `chartsearchai.grounding.async=true` the SSE `done` event is emitted before validation runs, so `safetyWarnings` and every measurement taken _after_ the answer — `interactionPairs`, `misattributedOrderCitations`, `unstatedFindingSeverities` — arrive on the trailing `grounded` event instead. That is why the stream's `onGrounded` callback hands over the whole payload rather than the references alone. Two exceptions not to gate on that event: `conditionRuleCoverage` is read off the dataset load before the model is called and so is already final on `done`, and on an answer-cache hit no early `done` is emitted at all.
 
 The required privilege is **AI Query Patient Data**.
 
