@@ -394,9 +394,10 @@ export function claimTextByCitation(
       // measured to regress the live corpus hard — the one note that still quoted a 94-rating
       // baseline after the figure was consolidated. Re-stated against the corpus as THE CORPUS
       // defines it: widening these windows took it from 98 correct ratings to 74 — measured
-      // BEFORE the leftover-subject rules, against the then-98 baseline. The corpus renders 85
-      // today, so do not read 98 here as its current size; the canonical note near the top of
-      // this file is the only place that number should be taken from.
+      // BEFORE the leftover-subject rules, against the then-98 baseline. Do not read 98 here as
+      // the corpus's current size — the canonical note near the top of this file is the only
+      // place that number should be taken from, precisely so this one does not have to move
+      // again. It has already been wrong twice.
       const from =
         direction === 'trailing' && ownIndices
           ? trailingWindowStart(breaks, lastOwnEnd, run.start)
