@@ -1176,13 +1176,12 @@ export function resolveFindingSeverities(
     //
     // Nor is "any candidate in the tail" right: a live answer restates its own subject there
     // ("Methylprednisolone [350]\n  Solu-Medrol 125mg/5ml"), and contesting that costs a real
-    // rating. So the test is claimed-by-an-EARLIER-citation, or claimed by none.
-    const claimedHere = claimedByTrailing.get(setKey);
+    // rating. So the test is: anything but the LAST citation's own election objects — which
+    // covers a candidate no citation claimed at all, since that is not the last one's either.
     const lastClaim = trailing.electedOf.get(lastIndexOfSet.get(setKey) ?? -1);
     for (const named of namedInTail.get(setKey) ?? []) {
       if (named !== lastClaim) contested.add(setKey);
     }
-    void claimedHere;
 
     // Or the wider, unconfined BACKWARD window no longer singles out what the line-confined one
     // elected. This is the check that survives a forward reading with nothing to say, and it has
