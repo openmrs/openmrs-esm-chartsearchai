@@ -741,12 +741,25 @@ function objectingSets(reading: ClaimReading): Set<string> {
  * by one, rendering the Major Methylprednisolone interaction as Moderate. Completeness and
  * injectivity cannot see a rotation, because a rotation is both.
  *
- * So both readings are taken, and a set is withheld where both identify it completely and
- * injectively AND they elect different findings — the layout then does not determine the
- * mapping, and neither reading is evidence for the other. Where they agree, orientation never
- * mattered (a single-candidate set resolves the same either way). Where only the leading reading
- * works, the answer is written the way this module does not read, and refusing is safer than
- * adopting an orientation on the strength of one example.
+ * So the answer is read FOUR ways — trailing and leading, each line-confined or not — and only
+ * the trailing reading may ever resolve a set, which it must identify completely and
+ * injectively ({@link soundSets}). The other three exist to CONTEST it, and the bar to contest
+ * is deliberately lower than the bar to resolve ({@link objectingSets}): a reading barred from
+ * objecting until it is decisive everywhere would fall silent on exactly the ambiguous answers
+ * that need it, which is measured, not hypothetical — it shipped five rotated ratings.
+ *
+ * A set is withheld on any of four objections: a forward reading that identified a candidate at
+ * every cited citation and elects a different one here; a forward reading that NAMES a finding
+ * the trailing reading claims for no citation of the set; the unconfined backward window no
+ * longer singling out what the confined one elected; or the trailing reading not being sound in
+ * the first place. Where nothing objects, orientation never mattered — and a single-candidate
+ * set resolves the same either way, by the shortcut in `readClaims`.
+ *
+ * What no rule here can do is prefer one orientation on its merits. For any list the forward
+ * reading is a rotation of the trailing one, so disagreement between them is the ordinary case
+ * and says nothing on its own; the only structural signal is whether a subject dangles past the
+ * last marker. Refusing is therefore the answer wherever that signal is absent or contradicted,
+ * rather than adopting an orientation on the strength of one example.
  *
  * Gated on `unstatedFindingSeverities` deliberately, not on `severity` being present — the
  * backend check asks of the whole answer, so an answer that states its ratings somewhere is

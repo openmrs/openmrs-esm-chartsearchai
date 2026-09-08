@@ -286,7 +286,7 @@ describe('the generator reaches the shapes it exists for', () => {
         shifted += 1;
         // And the harder half: a shift whose DANGLING last line names two partners, so the
         // forward reading's completeness — the only tell a shift leaves — is destroyed.
-        if (/(and also|as well as|plus|alongside|rather than)[^\n\[]*$/.test(answer)) shiftedAmbiguousTail += 1;
+        if (/(and also|as well as|plus|alongside|rather than)[^\n[]*$/.test(answer)) shiftedAmbiguousTail += 1;
       }
       // And, separately, that a lead-in's own partner reaches the citations — the filter that
       // forbade this is why ten rounds ran without reaching the permutation class.
