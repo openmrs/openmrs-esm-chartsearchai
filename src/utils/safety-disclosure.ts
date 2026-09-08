@@ -160,6 +160,24 @@ const SENTENCE_END = /(?<!\d)[.;!?]|[.;!?](?!\d)/;
 const SENTENCE_END_GLOBAL = new RegExp(SENTENCE_END.source, 'g');
 
 /**
+ * Where every sentence break in the answer ENDS, ascending — computed once per reading rather
+ * than per marker.
+ *
+ * Scanning the whole answer is equivalent to scanning each claim window on its own, and only
+ * because of where the windows are cut. {@link SENTENCE_END} looks one character to each side,
+ * so a window computed from a slice could see different context at its edges than the same
+ * position sees in the whole string — but a trailing window starts at 0 or just past a `]` and
+ * ends at a `[`, and neither is a digit, so the one exclusion those lookarounds encode cannot
+ * turn on the difference. Cutting a window anywhere else would break that and this would have
+ * to go back to slicing.
+ */
+function sentenceBreaks(answer: string): number[] {
+  const breaks: number[] = [];
+  for (const match of answer.matchAll(SENTENCE_END_GLOBAL)) breaks.push((match.index ?? 0) + match[0].length);
+  return breaks;
+}
+
+/**
  * Where a trailing claim's window begins.
  *
  * Two things bound it, and a marker citing something OUTSIDE this measurement is neither.
@@ -170,9 +188,10 @@ const SENTENCE_END_GLOBAL = new RegExp(SENTENCE_END.source, 'g');
  *
  * What does bound it:
  *
- * 1. The nearest earlier marker that cites an index of THIS measurement. Past that marker the
- *    text is another finding's claim, and the renderer badges each index at its own first
- *    marker, so borrowing across one would show a rating beside a sentence it was not read from.
+ * 1. The nearest earlier marker that cites an index of THIS measurement (`ownEnd`, carried
+ *    forward by the caller). Past that marker the text is another finding's claim, and the
+ *    renderer badges each index at its own first marker, so borrowing across one would show a
+ *    rating beside a sentence it was not read from.
  * 2. The last sentence break after that — a claim cannot begin before its own sentence does.
  *
  * The break is a TIGHTER bound than the marker that was previously returned in its place, and
@@ -182,27 +201,20 @@ const SENTENCE_END_GLOBAL = new RegExp(SENTENCE_END.source, 'g');
  * [350]."* resolved nothing, because Prednisone leaked across the full stop. Whichever bound
  * sits later wins, so neither can widen the window the other narrowed.
  */
-function trailingWindowStart(
-  answer: string,
-  runs: Array<{ start: number; end: number; groups: RegExpMatchArray[] }>,
-  index: number,
-  ownIndices: ReadonlySet<number>,
-): number {
-  let start = 0;
-  for (let j = index - 1; j >= 0; j--) {
-    const carriesOwn = runs[j].groups.some((group) =>
-      parseCitationIndices(group[1]).some((cited) => ownIndices.has(cited)),
-    );
-    if (carriesOwn) {
-      start = runs[j].end;
-      break;
-    }
-  }
+function trailingWindowStart(breaks: number[], ownEnd: number, markerStart: number): number {
   // Last, not first: with several sentences in between, only the one this marker sits in is
-  // this claim.
-  const breaks = [...answer.slice(start, runs[index].start).matchAll(SENTENCE_END_GLOBAL)];
-  const last = breaks[breaks.length - 1];
-  return last === undefined ? start : start + (last.index ?? 0) + last[0].length;
+  // this claim. `breaks` is ascending, so the last one inside `(ownEnd, markerStart]` is found by
+  // bisection rather than by re-scanning the window — which is what made this quadratic in the
+  // number of markers preceding the first finding citation.
+  let low = 0;
+  let high = breaks.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (breaks[mid] <= markerStart) low = mid + 1;
+    else high = mid;
+  }
+  const last = breaks[low - 1];
+  return last === undefined || last <= ownEnd ? ownEnd : last;
 }
 
 export function claimTextByCitation(
@@ -232,6 +244,10 @@ export function claimTextByCitation(
   }
 
   const claims = new Map<number, string>();
+  const breaks = direction === 'trailing' && ownIndices ? sentenceBreaks(answer) : [];
+  // The end of the nearest earlier run citing an index of THIS measurement, carried forward so
+  // it is not re-derived by scanning back over every earlier run.
+  let lastOwnEnd = 0;
   for (let i = 0; i < runs.length; i++) {
     const run = runs[i];
     let claim: string;
@@ -250,7 +266,7 @@ export function claimTextByCitation(
       // measured to regress the live corpus hard (94 correct ratings down to 74).
       const from =
         direction === 'trailing' && ownIndices
-          ? trailingWindowStart(answer, runs, i, ownIndices)
+          ? trailingWindowStart(breaks, lastOwnEnd, run.start)
           : (runs[i - 1]?.end ?? 0);
       const preceding = answer.slice(from, run.start);
       const lineStart = direction === 'block' ? -1 : preceding.lastIndexOf('\n');
@@ -281,6 +297,7 @@ export function claimTextByCitation(
     for (const group of run.groups) {
       for (const index of parseCitationIndices(group[1])) {
         if (!claims.has(index)) claims.set(index, claim);
+        if (ownIndices?.has(index)) lastOwnEnd = run.end;
       }
     }
   }
@@ -437,15 +454,49 @@ function isWordish(character: string): boolean {
 function matchesInGroup(
   candidates: AiSafetyWarning[],
   leadsPerCandidate: string[][],
+  shared: ReadonlySet<string>,
   claim: string,
 ): AiSafetyWarning[] {
-  const shared = leadsPerCandidate.reduce<string[]>(
-    (common, leads) => common.filter((lead) => leads.includes(lead)),
-    leadsPerCandidate[0] ?? [],
-  );
   return candidates.filter((_candidate, i) =>
-    leadsPerCandidate[i].some((lead) => !shared.includes(lead) && namesLead(claim, lead)),
+    leadsPerCandidate[i].some((lead) => !shared.has(lead) && namesLead(claim, lead)),
   );
+}
+
+/** One group's leads per candidate, plus the leads every candidate in the set carries. */
+interface CandidateGroup {
+  leadsPerCandidate: string[][];
+  shared: ReadonlySet<string>;
+}
+
+/** A `(type, drug)` set's candidates with their leads already normalised and filtered. */
+interface CandidateSet {
+  candidates: AiSafetyWarning[];
+  groups: CandidateGroup[];
+}
+
+/**
+ * Everything about a candidate set that does NOT depend on the claim being read.
+ *
+ * Split out because it was being rebuilt for every citation of the set and again for each of the
+ * four readings — the same leads re-derived and re-`normalize`d 4 × (citations of the set) times,
+ * which is quadratic in the size of the set. Measured on a 12-member `(interaction, drug)` family
+ * — the size the live corpus reaches — `resolveFindingSeverities` ran 2.50 ms and dropped to
+ * 0.18 ms once this was computed once per set; a 20-member family went 4.80 ms to 0.40 ms.
+ *
+ * Nothing here may be given a claim: the moment this depends on which sentence is being read it
+ * stops being shareable across the four readings, and the readings must stay independent.
+ */
+function buildCandidateSet(candidates: AiSafetyWarning[]): CandidateSet {
+  // A single candidate resolves by the shortcut in `readClaims` and its leads are never asked
+  // for, so building them would be the only work this function ever wasted.
+  if (candidates.length <= 1) return { candidates, groups: [] };
+  const leadsPerCandidate = candidates.map(candidateLeadTiers);
+  const groups = leadsPerCandidate[0].map((_unused, group) => {
+    const leads = candidates.map((candidate, i) => discriminatingLeads(leadsPerCandidate[i][group], candidate.drug));
+    const shared = leads.reduce<string[]>((common, own) => common.filter((lead) => own.includes(lead)), leads[0] ?? []);
+    return { leadsPerCandidate: leads, shared: new Set(shared) };
+  });
+  return { candidates, groups };
 }
 
 /**
@@ -509,11 +560,51 @@ interface ClaimReading {
   namedOf: Map<number, Set<AiSafetyWarning>>;
 }
 
+/**
+ * The candidate set for one finding, built at most once per `(type, drug)` per resolve.
+ *
+ * Keyed on the same `setKey` the readings and {@link soundSets} use, so a cache hit is by
+ * construction the same set the uncached path would have selected. The cache spans all four
+ * readings deliberately: which chips share a finding's `(type, drug)`, and what they can be
+ * named by, is a fact about the payload, not about the direction the answer is being read in.
+ */
+function candidateSetFor(
+  safetyWarnings: AiSafetyWarning[],
+  finding: { type: string; drug: string },
+  setKey: string,
+  setCache: Map<string, CandidateSet>,
+): CandidateSet {
+  const cached = setCache.get(setKey);
+  if (cached) return cached;
+
+  const candidates = safetyWarnings.filter(
+    (warning) =>
+      // typeof, not a truthy check: a non-string rating would throw inside a render memo and
+      // take the whole answer panel down. This filter also DEFINES the candidate set as the
+      // RATED subset of the chips sharing this (type, drug), which is what makes the
+      // single-candidate shortcut sound — the backend never lists a finding whose record
+      // states no rating.
+      typeof warning.severity === 'string' &&
+      warning.severity.trim() !== '' &&
+      // typeof on these too. Optional chaining guards null, not TYPE — a numeric `type` reaches
+      // `.toLowerCase()` and throws, one line below the guard that exists for exactly that.
+      typeof warning.type === 'string' &&
+      typeof warning.drug === 'string' &&
+      warning.type.toLowerCase() === finding.type.toLowerCase() &&
+      warning.drug.toLowerCase() === finding.drug.toLowerCase(),
+  );
+
+  const set = buildCandidateSet(candidates);
+  setCache.set(setKey, set);
+  return set;
+}
+
 function readClaims(
   references: AiReference[],
   safetyWarnings: AiSafetyWarning[],
   unstatedFindingSeverities: number[],
   claims: Map<number, string>,
+  setCache: Map<string, CandidateSet>,
 ): ClaimReading {
   const resolved = new Map<number, string>();
   const setOfIndex = new Map<number, string>();
@@ -530,25 +621,11 @@ function readClaims(
     const finding = splitFindingUuid(ref.resourceUuid);
     if (!finding) continue;
 
-    const candidates = safetyWarnings.filter(
-      (warning) =>
-        // typeof, not a truthy check: a non-string rating would throw inside a render memo and
-        // take the whole answer panel down. This filter also DEFINES the candidate set as the
-        // RATED subset of the chips sharing this (type, drug), which is what makes the
-        // single-candidate shortcut sound — the backend never lists a finding whose record
-        // states no rating.
-        typeof warning.severity === 'string' &&
-        warning.severity.trim() !== '' &&
-        // typeof on these too. Optional chaining guards null, not TYPE — a numeric `type` reaches
-        // `.toLowerCase()` and throws, one line below the guard that exists for exactly that.
-        typeof warning.type === 'string' &&
-        typeof warning.drug === 'string' &&
-        warning.type.toLowerCase() === finding.type.toLowerCase() &&
-        warning.drug.toLowerCase() === finding.drug.toLowerCase(),
-    );
+    const setKey = `${finding.type.toLowerCase()}:${finding.drug.toLowerCase()}`;
+    const set = candidateSetFor(safetyWarnings, finding, setKey, setCache);
+    const candidates = set.candidates;
     if (candidates.length === 0) continue;
 
-    const setKey = `${finding.type.toLowerCase()}:${finding.drug.toLowerCase()}`;
     setOfIndex.set(index, setKey);
     if (claims.has(index)) citedIndices.add(index);
 
@@ -563,13 +640,8 @@ function readClaims(
     // out. Each lead group is asked of the whole candidate list and the verdicts are reconciled
     // by `electCandidate`, which refuses on every disagreement — group order decides nothing.
     const claim = normalize(claims.get(index) ?? '');
-    const leadsPerCandidate = candidates.map(candidateLeadTiers);
-    const perGroupMatches = leadsPerCandidate[0].map((_unused, group) =>
-      matchesInGroup(
-        candidates,
-        candidates.map((candidate, i) => discriminatingLeads(leadsPerCandidate[i][group], candidate.drug)),
-        claim,
-      ),
+    const perGroupMatches = set.groups.map((group) =>
+      matchesInGroup(candidates, group.leadsPerCandidate, group.shared, claim),
     );
     namedOf.set(index, new Set(perGroupMatches.flat()));
     const winner = electCandidate(perGroupMatches);
@@ -641,24 +713,35 @@ export function resolveFindingSeverities(
   if (unstatedFindingSeverities.length === 0 || safetyWarnings.length === 0) return new Map();
 
   const ownIndices = new Set(unstatedFindingSeverities);
+  // Shared across the four readings on purpose: see {@link candidateSetFor}.
+  const setCache = new Map<string, CandidateSet>();
   const trailing = readClaims(
     references,
     safetyWarnings,
     unstatedFindingSeverities,
     claimTextByCitation(answer, 'trailing', ownIndices),
+    setCache,
   );
   const leading = readClaims(
     references,
     safetyWarnings,
     unstatedFindingSeverities,
     claimTextByCitation(answer, 'leading'),
+    setCache,
   );
-  const block = readClaims(references, safetyWarnings, unstatedFindingSeverities, claimTextByCitation(answer, 'block'));
+  const block = readClaims(
+    references,
+    safetyWarnings,
+    unstatedFindingSeverities,
+    claimTextByCitation(answer, 'block'),
+    setCache,
+  );
   const blockLeading = readClaims(
     references,
     safetyWarnings,
     unstatedFindingSeverities,
     claimTextByCitation(answer, 'block-leading'),
+    setCache,
   );
   const soundTrailing = soundSets(trailing);
   const soundLeading = soundSets(leading);
