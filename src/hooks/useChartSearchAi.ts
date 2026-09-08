@@ -172,6 +172,12 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           // A `done` already in the last read chunk still arrives after abort(), so a message
           // the user STOPPED would otherwise be replaced under them by the full answer. An
           // unmounted-but-unstopped message is still loading, so this does not re-gate that.
+          //
+          // `onGrounded` asks the same question of `stoppedMessageIdsRef` rather than of this
+          // test, and the two cannot disagree — `stopCurrent` writes both in one go. It reads
+          // the recorded fact because this test is only sound HERE: `stopped` above is taken
+          // before the ref is cleared a few lines up, and a trailing `grounded` arrives long
+          // after that, by which point the ref is null for a normal answer too.
           if (!prev[idx].isLoading && stopped) return prev;
           const updated = [...prev];
           updated[idx] = {
