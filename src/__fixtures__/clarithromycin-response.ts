@@ -175,3 +175,36 @@ export const MISATTRIBUTED = [177, 166, 155];
 
 /** The citations of findings whose rating the answer states nowhere. */
 export const UNSTATED = [350, 351, 352, 353, 354];
+
+/**
+ * A second measured answer, kept because it is the control for where the leftover-subject rule
+ * reads its tail.
+ *
+ * Two `(type, drug)` families in one answer, and the last sentence belongs to the SECOND —
+ * `Methylprednisolone is also known to interact with … [355], [356], [357]` — while
+ * Methylprednisolone is also a candidate of the FIRST family. So a leftover-subject rule that
+ * looked at the whole answer read that mention as a subject left over by the Clarithromycin set
+ * and refused all four of its ratings. Measured on the live corpus, that form cost 11 ratings
+ * across four answers; this is one of them, committed so the choice is guarded by a test rather
+ * than only by a scratch corpus.
+ */
+export const ANSWER_TWO_FAMILIES =
+  'Clarithromycin interacts with active order Budesonide, which undergoes extensive first-pass and systemic metabolism [363]. ' +
+  'Clarithromycin interacts with active order Prednisone, which may increase the plasma concentrations and pharmacologic effects of corticosteroids [364]. ' +
+  'Clarithromycin interacts with active order Dexamethasone, which may increase the plasma concentrations and pharmacologic effects of corticosteroids and cause Cushing’s syndrome and adrenal insufficiency [365]. ' +
+  'Clarithromycin interacts with active order Hydrocortisone, which may increase the plasma concentrations and pharmacologic effects of corticosteroids or cause Cushing’s syndrome and adrenal insufficiency [366]. ' +
+  'Methylprednisolone is also known to interact with active orders like Celecoxib, Diclofenac, and Ibuprofen [355], [356], [357].';
+
+/** The references `ANSWER_TWO_FAMILIES` cites, both families. */
+export const TWO_FAMILY_REFS: AiReference[] = [
+  ...[363, 364, 365, 366].map((index) => safetyFindingRef(index)),
+  ...[355, 356, 357].map((index) => safetyFindingRef(index, 'interaction', 'Methylprednisolone')),
+];
+
+/** Both families' rated warnings, in the chart's own ratings. */
+export const TWO_FAMILY_WARNINGS: AiSafetyWarning[] = [
+  ...SAFETY_WARNINGS,
+  interaction('Celecoxib', 'Moderate', 'Celebrex 200mg', 'Methylprednisolone'),
+  interaction('Diclofenac', 'Moderate', undefined, 'Methylprednisolone'),
+  interaction('Ibuprofen', 'Moderate', 'Advil 400mg', 'Methylprednisolone'),
+];

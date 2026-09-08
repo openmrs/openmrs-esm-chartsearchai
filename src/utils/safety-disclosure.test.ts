@@ -16,10 +16,13 @@ import {
   ANSWER_BARE_LIST,
   ANSWER_BY_ORDER_DISPLAY,
   ANSWER_BY_SUBSTANCE,
+  ANSWER_TWO_FAMILIES,
   interaction,
   REFERENCES,
   SAFETY_WARNINGS,
   safetyFindingRef,
+  TWO_FAMILY_REFS,
+  TWO_FAMILY_WARNINGS,
   UNSTATED,
 } from '../__fixtures__/clarithromycin-response';
 
@@ -60,6 +63,60 @@ describe('severityTone', () => {
     // ranking the dataset never stated.
     expect(severityTone('Severe')).toBe('unrated');
     expect(severityTone('')).toBe('unrated');
+  });
+});
+
+describe('a subject left over past the answer’s last marker', () => {
+  it('refuses a rotation whose last forward window a foreign marker emptied', () => {
+    // The residual cycle 10 recorded and could not close. Every contest was silent: the
+    // disagreement gate needs the forward reading to name at every cited index and `[14]`
+    // empties [352]'s window; the NAMED rule is blind to a rotation by construction; and the
+    // block rule reads the same direction as trailing. Rendered {350: Moderate, 352: Major}
+    // against a truth of {350: Major, 352: Moderate} — a swapped pair.
+    const answer =
+      'Hydrocortisone Injection vial 100mg matters less than [350]\nSolu-Medrol 125mg/5ml [352]\n[14] Prednisone Co 5mg';
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 352])]).toEqual([]);
+  });
+
+  it('refuses it when a full stop empties that window instead', () => {
+    // The other way to empty it, through the terminator rule rather than a marker. Same shape,
+    // same outcome, and the tail test cannot be evaded by either because it does not read a
+    // claim window at all.
+    const answer =
+      'Hydrocortisone Injection vial 100mg matters less than [350]\nSolu-Medrol 125mg/5ml [352].\nPrednisone Co 5mg';
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 352])]).toEqual([]);
+  });
+
+  it('still resolves a measured answer whose last sentence belongs to another family', () => {
+    // The control for where the tail begins, and it is a real server answer. Methylprednisolone
+    // is a candidate of the Clarithromycin family AND the subject of the final sentence, which
+    // carries the OTHER family's citations. A leftover-subject rule reading the whole answer
+    // called that a subject left over and refused all four Clarithromycin ratings — measured on
+    // the live corpus, 11 ratings across four answers. Reading only the text after the answer's
+    // last marker keeps them.
+    const resolved = resolveFindingSeverities(
+      ANSWER_TWO_FAMILIES,
+      TWO_FAMILY_REFS,
+      TWO_FAMILY_WARNINGS,
+      [363, 364, 365, 366, 355, 356, 357],
+    );
+    expect(resolved.get(363)).toBe('Major');
+    expect(resolved.get(364)).toBe('Moderate');
+    expect(resolved.get(365)).toBe('Moderate');
+    expect(resolved.get(366)).toBe('Moderate');
+  });
+
+  it('refuses when that drug is named after the last marker instead — the accepted cost', () => {
+    // Stated rather than hidden: this rule cannot tell a leftover SUBJECT from a drug the
+    // answer simply talks about after its last citation, so "…[351]. Prednisone would be the
+    // safer choice." refuses where two correct ratings were available. That is the trade taken
+    // deliberately — the module's whole premise is that a refusal is safe and a rating beside
+    // the wrong citation is not — and it costs nothing on any of the 46 captured live answers.
+    // If it ever needs closing, the missing evidence is grammatical: whether the tail is a
+    // clause with its own verb or a bare noun phrase, which no reading here can tell.
+    const answer =
+      'Clarithromycin interacts with active order Solu-Medrol 125mg/5ml [350], and with active order Pulmicort 90mcg [351]. Prednisone would be the safer choice.';
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 351])]).toEqual([]);
   });
 });
 

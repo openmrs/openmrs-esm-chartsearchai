@@ -762,31 +762,17 @@ function soundSets(reading: ClaimReading): Set<string> {
  * rotation — complete, injective, and wrong in all five positions. Every rating rendered was
  * the neighbouring finding's.
  *
- * KNOWN RESIDUAL, on the record because it is a WRONG RATING and not a refusal. This gate is
- * all-or-nothing over the set: one cited index whose forward window names nobody disqualifies
- * the whole set from objecting anywhere. So a rotation ships wherever the LAST citation's
- * forward window can be emptied. Measured against the shipped fixture:
- *
- *   "Hydrocortisone Injection vial 100mg matters less than [350]
- *    Solu-Medrol 125mg/5ml [352]
- *    [14] Prednisone Co 5mg"
- *
- * renders {350: Moderate, 352: Major} against a truth of {350: Major, 352: Moderate} — a
- * swapped pair. `[14]` truncates [352]'s forward window; a full stop after [352] does the same
- * via the terminator rule below. No exclusion clause, no unusual payload, plausible prose.
- *
- * The obvious fix is wrong, and that is the part worth writing down. Widening the forward
- * window past a marker citing something outside the measurement — exactly what
- * {@link trailingWindowStart} does backward — closes this shape and COSTS three correct live
- * ratings: on `q6_interleaved`, two families interleaved in one comma-separated line, the
- * skipped marker is a genuine sibling citation and crossing it merges two list items. Measured,
- * both directions: live corpus 98 ratings -> 95. It was tried, measured, and reverted.
- *
- * Removing the `.` from the terminator rule below is worse: 98 -> 82.
- *
- * What this needs is a gate that asks "does a candidate name appear anywhere after the set's
- * last marker?" without touching any claim window — which is a different computation from any
- * reading, not a tweak to one.
+ * This gate is all-or-nothing over the set: one cited index whose forward window names nobody
+ * disqualifies the whole set from objecting anywhere, so a rotation used to ship wherever the
+ * LAST citation's forward window could be emptied — by a marker citing something outside the
+ * measurement, or by a full stop. That was a WRONG RATING and not a refusal, and it is closed
+ * now, but NOT here: it is closed by the leftover-subject rule in `resolveFindingSeverities`,
+ * which asks the same "does a subject dangle past the last marker" question of the answer's
+ * TAIL, where no claim window can hide it. Two local repairs to this gate were implemented and
+ * measured first, and both cost correct live ratings — widening the forward window past a
+ * foreign marker (98 -> 95) and removing the `.` from the terminator rule (98 -> 82). Neither
+ * was shipped. That is why the answer to a bad proxy here was a different question elsewhere
+ * rather than a better proxy.
  *
  * Named-completeness is the WHOLE test, and two further restrictions were tried and dropped:
  * requiring the forward elections to be injective, and requiring an election at the index being
@@ -913,6 +899,42 @@ export function resolveFindingSeverities(
     claimedByTrailing.set(setKey, claimed);
   }
 
+  // A candidate the ANSWER names that no citation of its set claims.
+  //
+  // The shift signature, and the only signal measured to separate a rotation from the
+  // interleaved lists that must keep resolving. A trailing-written answer names one subject per
+  // citation; a shifted one leaves one over — that is the same "dangling subject" the gate above
+  // is a proxy for, asked of the whole answer text instead of a single window, so a foreign
+  // marker or a full stop cannot hide it.
+  // The answer's TAIL: everything after the LAST citation marker in it. A candidate named here
+  // has no citation left to claim it, which is what makes it a leftover subject rather than
+  // simply another drug the answer talks about.
+  //
+  // Two narrower tails were measured and are both wrong. The WHOLE answer costs 11 live
+  // ratings — an ordinary answer names other drugs in its mechanism clauses ("various CYP450
+  // 3A4 inhibitors including…") and each read as a leftover. The text after the SET's last
+  // marker costs 6, because an answer may cite other members of the same set with markers this
+  // measurement does not list: `n5_worst_first` is a numbered list of five items of which only
+  // two are unstated, so items 4 and 5 sat in that tail naming candidates they had their own
+  // markers for.
+  const markerRuns = [...answer.matchAll(citationGroupPattern())];
+  const lastRun = markerRuns[markerRuns.length - 1];
+  const tail = lastRun === undefined ? '' : answer.slice((lastRun.index ?? 0) + lastRun[0].length);
+  const tailText = stripExclusions(normalize(tail));
+
+  const namedInTail = new Map<string, Set<AiSafetyWarning>>();
+  for (const setKey of new Set(trailing.setOfIndex.values())) {
+    const set = setCache.get(setKey);
+    if (!set) continue;
+    const found = new Set<AiSafetyWarning>();
+    for (const group of set.groups) {
+      for (const candidate of matchesInGroup(set.candidates, group.leadsPerCandidate, group.shared, tailText)) {
+        found.add(candidate);
+      }
+    }
+    namedInTail.set(setKey, found);
+  }
+
   const contested = new Set<string>();
   for (const [index, setKey] of trailing.setOfIndex) {
     // The forward reading disagrees about THIS index — a permutation within the same findings.
@@ -960,6 +982,26 @@ export function resolveFindingSeverities(
     // correct refusal into a wrong rating.
     for (const named of blockLeading.namedOf.get(index) ?? []) {
       if (!claimedByTrailing.get(setKey)?.has(named)) contested.add(setKey);
+    }
+
+    // Or a candidate of this set is named PAST THE ANSWER'S LAST MARKER and claimed by no
+    // citation of it. That is a subject left over with nothing to cite it — the shift
+    // signature — and asking it of the tail rather than of a claim window is what makes it
+    // proof against the two things that hid it before: a foreign marker truncating a forward
+    // window, and a full stop closing one.
+    //
+    // There was a further condition here — that the trailing reading had claimed something for
+    // every cited index — justified as keeping the rule off an answer that merely MENTIONS a
+    // drug it never cites. It did not do that (the test below shows such an answer refusing
+    // either way), and it changed nothing measurable: with it gone the suite, the 46-answer
+    // corpus (98 ratings) and the sweep are identical. A condition on a rule whose only output
+    // is a refusal makes that refusal fire LESS, so an unjustified one is in the unsafe
+    // direction; it is gone rather than kept as ballast.
+    const claimedHere = claimedByTrailing.get(setKey);
+    if (claimedHere) {
+      for (const named of namedInTail.get(setKey) ?? []) {
+        if (!claimedHere.has(named)) contested.add(setKey);
+      }
     }
 
     // Or the wider, unconfined BACKWARD window no longer singles out what the line-confined one
