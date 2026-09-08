@@ -84,8 +84,15 @@ function commentBlocks(text: string): Array<{ line: number; body: string }> {
 const CURRENT_CORPUS =
   /\bcorpus\b[^.]{0,80}?\b(?:is|renders|stays|unchanged|sits)\b[^.]{0,40}?\b\d{2,3}\b|\b(?:renders|unchanged at|stays at)\s+\d{2,3}\b[^.]{0,30}\bratings?\b/i;
 
-/** Three-digit test counts: "288 tests", "all 310 tests". */
-const TEST_COUNT = /\b\d{3}\s+tests\b/;
+/**
+ * A test count written into prose: "288 tests", "reddens 35 tests", "all 310 tests".
+ *
+ * Two digits and up. It was three-digit-only, and that let "reddens 33 tests" sit in a comment
+ * through three separate re-measurements of the same mutation — the exact class this forbids,
+ * invisible to the check because the number was small. The lesson generalises past this pattern:
+ * a guard keyed on the SHAPE of a number will miss the same claim at a different magnitude.
+ */
+const TEST_COUNT = /\b\d{2,}\s+tests\b/;
 
 describe('measurements written into prose', () => {
   const files = [
@@ -110,6 +117,31 @@ describe('measurements written into prose', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('states the same live-corpus figure in the resolver and the README', () => {
+    // The uniqueness check above cannot help here, and this is the gap that let the figure drift
+    // in the README while the resolver was right. The README has to state the cost — it is the
+    // user-facing disclosure of how many ratings this module declines to render — so a second
+    // home is legitimate, and forbidding it would make the README worse. What must not happen is
+    // the two disagreeing, which they did: the resolver said 80 while the README said 82, for
+    // part of a day, after a rule was reverted in one place and not the other.
+    //
+    // So this asserts AGREEMENT rather than uniqueness. It reads the canonical sentence in the
+    // resolver's THE CORPUS block and every figure the README states about the same quantity, and
+    // requires one value between them. It also fails if either side stops matching, because a
+    // reworded claim this cannot find is a claim it cannot check.
+    const canonical = /renders (\d+) ratings today across (\d+) of those answers/.exec(
+      fs.readFileSync(path.join(__dirname, CANONICAL.replace(/^src\//, '')), 'utf8'),
+    );
+    expect(canonical, 'the resolver no longer states the corpus figure in the shape this reads').not.toBeNull();
+
+    const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
+    const stated = [...readme.matchAll(/That leaves (\d+)|every one of the (\d+) has been read/g)].map(
+      (match) => match[1] ?? match[2],
+    );
+    expect(stated.length, 'the README no longer states the corpus figure in the shape this reads').toBeGreaterThan(1);
+    expect([...new Set(stated)]).toEqual([canonical![1]]);
   });
 
   it('never states a test count in a comment', () => {

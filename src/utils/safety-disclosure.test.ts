@@ -143,10 +143,15 @@ describe('a subject left over BETWEEN the set’s own markers', () => {
 
   it('is why the three spans are not one rule', () => {
     // Head, interior and tail together are the whole answer, so it is tempting to collapse them.
-    // Measured and rejected: one whole-answer scan yields MORE ratings (83) and reddens five
-    // refusal tests, because each span carries a different refinement — the head strips its own
-    // last sentence, the tail exempts the last citation's own election, and the interior is
-    // plain. This asserts the tail exemption survives, which the collapse destroys.
+    // Measured and rejected: one whole-answer scan yields MORE ratings and reddens refusal
+    // tests, because each span carries a different refinement — the head strips its own last
+    // sentence, the tail exempts the last citation's own election, and the interior is plain.
+    // This asserts the tail exemption survives, which the collapse destroys.
+    //
+    // The counts that used to be here did not survive a re-run by someone else, because
+    // "collapse them" does not say whether the head's strip and the tail's exemption are kept.
+    // The resolver's note on the three spans carries that, and the direction rather than the
+    // numbers is what the decision rested on.
     expect(resolveFindingSeverities(ANSWER_RESTATED_SUBJECT, REFERENCES, SAFETY_WARNINGS, [350]).get(350)).toBe(
       'Major',
     );
@@ -288,7 +293,7 @@ describe('a label-separator colon after a marker', () => {
     //
     // That rule was deleted as redundant mid-cycle and put back in the same cycle, once an
     // ordinary sentence-separated list turned out to lose three correct ratings without it and
-    // the deletion turned out to have un-pinned ten other tests silently. So the exclusion this
+    // the deletion turned out to have un-pinned nine other tests silently. So the exclusion this
     // shape pins is live again, and it is the only thing pinning it. The full arc is recorded at
     // the clause itself in the resolver.
     const answer = 'Prednisone is the lesser worry, but the greater one is [350]: Budesonide [351] Budesonide';
@@ -412,7 +417,7 @@ describe('a finding no prose can name', () => {
     // A rated chip with an empty `detail` and no bridges has zero leads in every group, so no
     // window can name it — and every window that mentions its bridged sibling then names exactly
     // one candidate, unanimously, in all three readings. `electCandidate` returns a confident
-    // winner and all four objections agree with it. Measured: Major rendered for the answer's
+    // winner and every objection agrees with it. Measured: Major rendered for the answer's
     // Prednisone sentence against a truth of Minor.
     //
     // Both halves are reachable: `discriminatingLeads` already notes that an operator's dataset
@@ -1458,10 +1463,12 @@ describe('resolveFindingSeverities', () => {
   });
 
   it('refuses where shift-consistency is the ONLY rule that can object', () => {
-    // This shape exists because nothing else in the repo reached it. Disabling the
-    // shift-consistency rule below left the whole suite green and a 200,000-seed sweep green,
-    // while the rule was still load-bearing: it is the only objection on this answer, and
-    // without it a MAJOR interaction renders Moderate beside its own citation.
+    // This shape was written because nothing else in the repo reached the shift-consistency
+    // rule, and it no longer does either: instrumenting every objection site shows the INTERIOR
+    // rule fires on this answer too, so the rule this test is named for is not what makes it
+    // refuse. The interior rule post-dates the test. Kept as a regression — the answer must go
+    // on refusing — but it is not evidence about shift-consistency, which has no witness at all;
+    // the resolver states that beside the rule, with the firing counts.
     //
     // What makes it sole-decisive is a foreign marker AFTER the subject on a marker-first line.
     // `[18]` shortens the unconfined BACKWARD window, so the block rule falls silent; and the
@@ -1485,9 +1492,10 @@ describe('resolveFindingSeverities', () => {
     //
     // Here the layout really is ambiguous: `[350]` sits between "Solu-Medrol 125mg/5ml" and
     // "Hydrocortisone", the latter followed by a chart citation of its own, so nothing in the
-    // prose settles which of the two the marker was offered for. Refusing is correct — and it is
-    // rule 2 that does it. Rules 1 and 4 are both silent: the foreign `[17]` becomes [352]'s
-    // block bound, and the full stop zeroes [352]'s forward claim.
+    // prose settles which of the two the marker was offered for. Refusing is correct. It was
+    // rule 2 that did it when this was written; the interior rule fires here now as well, so
+    // this is no longer the sole witness it is named for — measured by instrumenting all six
+    // objection sites, not inferred.
     const answer = 'Solu-Medrol 125mg/5ml [350] Hydrocortisone [17]. Prednisone Co 5mg [352].';
     expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 352])]).toEqual([]);
   });

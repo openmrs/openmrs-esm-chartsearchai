@@ -442,16 +442,18 @@ export function claimTextByCitation(
       // is evidence about the inputs it ran on and nothing else.
       //
       // Second, and worse, the deletion silently un-pinned OTHER rules. This clause is what
-      // empties a forward window in ten of the tests that discriminate the tail and interior
-      // objections; with it gone those ten stopped exercising what they are named for — the tail
-      // rule's witnesses fell from 11 to 3, the interior rule's from 2 to 1 — and the suite
+      // empties a forward window in NINE of the tests that discriminate the tail and interior
+      // objections; with it gone those nine stopped exercising what they are named for — the
+      // tail rule's witnesses fell from 11 to 3, the interior rule's from 2 to 1 — and the suite
       // reported nothing, because every one of them still refused, for a different reason. A
-      // green suite cannot see coverage it has just lost. Restoring the clause restores all ten,
-      // which is how the number is known.
+      // green suite cannot see coverage it has just lost. Restoring the clause restores all
+      // nine, which is how the number is known. (It read "ten" for a cycle, from adding 8 and 1
+      // and writing down 10, beside the arithmetic that gives 9.)
       //
       // What makes keeping it safe is not this argument but the tail rule. The suppression here
       // once let a rotation ship wherever the last citation's forward window could be emptied
-      // (see the objecting-sets gate above); that hole is now closed in the answer's TAIL, where
+      // (see the objecting-sets gate, further DOWN this file); that hole is now closed in the
+      // answer's TAIL, where
       // no claim window can hide it, and the two tests encoding it still refuse with this line
       // in. Measured on restoration: suite green, corpus byte-identical, a 400,000-seed sweep
       // clean.
@@ -567,7 +569,18 @@ function candidateLeadTiers(warning: AiSafetyWarning): LeadGroups {
  * Needed because the answer often names the finding in a SHORTER form than the module does.
  * Live: asked to list the interactions one line each, the answer wrote just `"Prednisone Co
  * 5mg [352]"`, so the full lead clause appears nowhere and only the two findings carrying a
- * bridge could be identified — leaving the list half-badged, which the backend forbids.
+ * bridge can be named at all.
+ *
+ * Measured, because this paragraph twice described the wrong counterfactual: without this group
+ * `ANSWER_BARE_LIST` resolves NONE of its five, not two of five. Naming two of five is not a
+ * state this module can reach — `soundSets` wants a candidate at every cited index, so the whole
+ * set withdraws together. So what the group buys is five correct ratings where there would
+ * otherwise be five blanks, and "leaving the list half-badged, which the backend forbids" was
+ * wrong about both halves: half-badged is unreachable, and rendering none is what the backend
+ * asks for — *"render them together or render none, because picking one arbitrarily is how a
+ * client ends up showing a different partner's mechanism beside the very citation it is
+ * flagging"* (backend README, the `unstatedFindingSeverities` section). The blanks would have
+ * been correct behaviour; they would just have been five fewer ratings.
  *
  * A narrower slice of the sentence this already parses, not a new dependency on it: where the
  * module's phrase is absent this group yields nothing, and the others are read anyway — all
@@ -663,7 +676,7 @@ interface CandidateSet {
    *
    * Such a set must be refused wholesale. Every window that mentions any sibling then names
    * exactly one candidate, unanimously, in all three readings — so `electCandidate` returns a
-   * confident winner and all four objections agree with it, and the unnameable finding silently
+   * confident winner and every objection agrees with it, and the unnameable finding silently
    * inherits whichever sibling the prose happened to mention. Measured: a rated chip with an
    * empty `detail` and no bridges beside a bridged Methylprednisolone rendered Major for the
    * answer's Prednisone sentence, against a truth of Minor.
@@ -872,8 +885,15 @@ function candidateSetFor(
  *
  * Reachable only where two findings of one group share a rating, which is the live chart's shape
  * (three of five Moderate) and deliberately NOT the property fixture's — see the note above
- * `generateAnswer` there for why that fixture is right anyway, and why this rule's coverage is
- * the three named tests rather than the sweep.
+ * `generateAnswer` there for why that fixture is right anyway, and why this rule's coverage is a
+ * named test rather than the sweep.
+ *
+ * ONE test, not the three the describe block holds, and the difference was measured: neutering
+ * the line that calls this reddens only `refuses where the prose gives nothing but the backend
+ * does — captured live`. Its two neighbours look like coverage and are not — the typo case
+ * states no rating at all, so this never fires on it, and the narrowing case guards against
+ * rebuilding the FILTER rather than against deleting this objection. Three describe-mates are
+ * not three witnesses.
  */
 function answerStatesRating(normalizedAnswer: string, severity: string): boolean {
   return namesLead(normalizedAnswer, normalize(severity));
@@ -1081,9 +1101,16 @@ function objectingSets(reading: ClaimReading): Set<string> {
  * That is the closest this module gets to a principle rather than a patch.
  *
  * They are not one rule, and that was measured rather than assumed: collapsing them into a
- * single whole-answer scan yields MORE ratings (83 against 80) and reddens five refusal tests,
- * because each span needs a different refinement — the head strips its own last sentence, the
- * tail exempts the last citation's own election, and the interior is plain.
+ * single whole-answer scan yields MORE ratings than the three spans do, and reddens refusal
+ * tests, because each span needs a different refinement — the head strips its own last sentence,
+ * the tail exempts the last citation's own election, and the interior is plain.
+ *
+ * The figures this used to carry (83 against 80, five refusal tests) are gone because the
+ * variant was never specified and so the measurement could not be repeated: a reviewer trying it
+ * got a different set of failures, and neither of us can say whether we collapsed the same thing,
+ * since "one whole-answer scan" leaves open whether the head's sentence-strip and the tail's
+ * exemption are retained. If you try it, say which. The direction is what the decision rested
+ * on and it is reproducible under any of those variants; the exact counts were not.
  *
  * Where nothing objects, orientation never mattered — and a single-candidate set resolves the
  * same either way, by the shortcut in `readClaims`.
@@ -1094,14 +1121,16 @@ function objectingSets(reading: ClaimReading): Set<string> {
  *   - Rule 1 is nearly INERT on real answers. Forcing its gate open dropped the corpus from its
  *     then-98 ratings to ONE, which says the forward reading disagrees somewhere almost always
  *     and the gate closing is what allows any rating at all.
- *   - Rule 2 DOES prevent wrong ratings, and this bullet said the opposite until it was
- *     re-measured. Disabling it now reddens two tests, one of them the property sweep, which
- *     reports five seeds rendering a rating that is not the cited finding's — a Major shown as
- *     Minor among them. The earlier "changes nothing measurable" was taken before the sweep's
- *     shifted population was fixed, and the claim outlived the measurement. It is a stale
- *     number that invited deleting a live guard, which is the most dangerous kind of comment
- *     this file can carry.
- *   - Rule 1 survives in exactly one place, and it took a constructed shape to find it: where
+ *   - Rule 2 has NO witness, and this bullet has now been wrong in both directions. It first
+ *     said "changes nothing measurable"; that was corrected to "disabling it reddens two tests,
+ *     one of them the property sweep, with five seeds rendering a wrong rating"; and the
+ *     correction was measured again and is false too. Disabling it leaves the whole suite green,
+ *     the corpus unmoved, and a 400,000-seed sweep clean, and instrumenting every objection site
+ *     shows it is the SOLE objection on nothing the repo can produce. The accurate account, with
+ *     the firing counts, is at the rule itself — a second copy of a measurement is how this one
+ *     drifted, so this bullet now points there instead of restating it. The rule is kept, for
+ *     the reason given there.
+ *   - Rule 1 survives in two places, and it took a constructed shape to find the first: where
  *     rule 3's carve-out stands down because the tail restates the LAST citation's own election,
  *     an earlier citation's forward disagreement is left as the only objection. It was
  *     discriminated by nothing at all until that test was written, and the test NAMED for it had
@@ -1192,17 +1221,24 @@ export function resolveFindingSeverities(
   // citation; a shifted one leaves one over — that is the same "dangling subject" the gate above
   // is a proxy for, asked of the whole answer text instead of a single window, so a foreign
   // marker or a full stop cannot hide it.
-  // The answer's TAIL: everything after the LAST citation marker in it. A candidate named here
-  // has no citation left to claim it, which is what makes it a leftover subject rather than
-  // simply another drug the answer talks about.
+  // The TAIL of a set: the text after the last marker citing one of ITS OWN indices, taking
+  // first occurrences only. A candidate named there has no citation left to claim it, which is
+  // what makes it a leftover subject rather than simply another drug the answer talks about.
   //
-  // Two narrower tails were measured and are both wrong. The WHOLE answer costs 11 live
-  // ratings — an ordinary answer names other drugs in its mechanism clauses ("various CYP450
-  // 3A4 inhibitors including…") and each read as a leftover. The text after the SET's last
-  // marker costs 6, because an answer may cite other members of the same set with markers this
-  // measurement does not list: `n5_worst_first` is a numbered list of five items of which only
-  // two are unstated, so items 4 and 5 sat in that tail naming candidates they had their own
-  // markers for.
+  // THIS PARAGRAPH USED TO DECLARE THE SHIPPED CUT WRONG, which is the worst thing a comment in
+  // this file can do — the alternative it recommended is recorded twelve lines down as dormant
+  // on 35,010 resolving answers of which 35,010 carried a wrong rating. It described two
+  // narrower tails as "both wrong": the WHOLE answer, which costs 11 live ratings because an
+  // ordinary answer names other drugs in its mechanism clauses ("various CYP450 3A4 inhibitors
+  // including…") and each reads as a leftover — that one is still true and still the reason not
+  // to widen — and "the text after the SET's last marker", costing 6, which is what the code
+  // does. Both statements were true when written: the cut was the ANSWER's last marker until a
+  // later cycle moved it per-set and left this paragraph behind.
+  //
+  // The 6-rating cost is real and paid deliberately, and the example is worth keeping because it
+  // is what the cost looks like: `n5_worst_first` is a numbered list of five items of which only
+  // two are unstated, so items 4 and 5 sit in this set's tail naming candidates they have their
+  // own markers for. Paying it buys the 35,010.
   const markerRuns = [...answer.matchAll(citationGroupPattern())];
   // PER SET, after the last marker citing one of ITS indices, with any remaining marker groups
   // left in place rather than treated as a boundary — see the note at the slice below, which is
@@ -1404,17 +1440,25 @@ export function resolveFindingSeverities(
   // A RENDERED RATING IS ALWAYS THE TRAILING READING'S OWN ELECTION. Every rule from here down
   // may only SUPPRESS it. That is exact rather than aspirational: a value is produced in just
   // two places, both inside `readClaims` — the single-candidate shortcut and `electCandidate`'s
-  // winner — and the assembly below re-emits `trailing.resolved` unchanged. All seven objections
-  // do nothing but `contested.add(setKey)`, which is consulted in one place, to skip.
+  // winner — and the assembly below re-emits `trailing.resolved` unchanged.
+  //
+  // The suppression machinery, counted rather than asserted, because the first version of this
+  // paragraph said "all seven objections do nothing but `contested.add`" and that was wrong in
+  // two ways. SIX sites add to `contested` (the two forward rules, the three spans, and the
+  // block rule), and `contested` is read in exactly ONE place. The seventh of the seven
+  // objections enumerated on {@link objectingSets} is "the trailing reading not being sound",
+  // which is a gate on the same line as that read, not an add. And `answerStatesRating` below
+  // is labelled the last objection while touching neither: it drops a single RESOLUTION rather
+  // than withholding a set, which is why it is not one of the seven.
   //
   // So a rule whose JOB is to refuse must not touch the two inputs to that election — the
   // candidate list and the claim text. Suppressing cannot invent a rating; changing an input
   // can, and it does not look like it can, which is the whole problem. Twice now:
   //
   //   - A clause was deleted for making objections fire less often. True, and the direction
-  //     argument was right — but it also emptied the forward windows that ten OTHER tests used
+  //     argument was right — but it also emptied the forward windows that nine OTHER tests used
   //     to discriminate the tail and interior rules, and they all still passed. See the
-  //     terminator clause a few hundred lines up.
+  //     terminator clause, in the forward branch of `claimTextByCitation`.
   //   - `answerStatesRating` was first written to drop findings from the candidate list. Same
   //     class closed, corpus happy, suite and 400,000 seeds green — and a shorter candidate list
   //     changes what `discriminatingLeads` counts as shared by all, so a window that had
@@ -1586,7 +1630,7 @@ export function resolveFindingSeverities(
     // 40-answer subset of the capture (counted before THE CORPUS was fixed at 46), a finding
     // marker sits at end-of-line 54 times and is followed by a sentence
     // terminator 151 times, and a marker closed by a terminator has its forward claim zeroed
-    // outright a few hundred lines up.
+    // outright by the terminator clause in `claimTextByCitation`'s forward branch.
     //
     // Its witness is `refuses a swapped pair only the unconfined backward reading can see`, which
     // renders {351: Moderate, 352: Major} against a truth of {351: Major, 352: Moderate} with

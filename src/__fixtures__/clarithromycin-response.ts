@@ -108,12 +108,15 @@ export const REFERENCES: AiReference[] = [
  * module's broadest guard was proving the safety property about a note format nothing else
  * expected.
  *
- * THE MEASUREMENT LIVES HERE and nowhere else, because it was quoted in two places and both
- * went stale. Re-measured on the current suite: changing this separator to ` :: ` reddens 33
- * tests — 26 in the resolver's own suite, 6 in the panel's, and 1 in the property fuzzer. Before
- * the fuzzer was converted it stayed GREEN. Re-run the probe rather than trusting this
- * paragraph if you add a caller; the counts move with the suite and this is the only note that
- * should carry them.
+ * WHAT THIS SEPARATOR HOLDS UP, stated without a number on purpose. Changing it to ` :: `
+ * reddens tests in all three suites that consume this fixture — the resolver's, the panel's, and
+ * the property fuzzer's. Before the fuzzer was converted it stayed GREEN there, which is the
+ * fact worth keeping.
+ *
+ * The exact count used to live here, "and nowhere else", and it still drifted: 34/27, then
+ * 33/26, then 35/28, three measurements of one mutation. A designated home does not stop a
+ * perishable number going stale, it just localises the staleness — so the number is gone and the
+ * claim that survives is the one that does not move. Re-run the mutation if you add a caller.
  */
 export const interaction = (
   partner: string,
@@ -156,8 +159,11 @@ export const SAFETY_WARNINGS: AiSafetyWarning[] = [
  * only the order, the model wrote a bare list — no module phrasing to quote at all, and only
  * the chart's order displays.
  *
- * Two of the five findings carry a bridge and three do not, so before the partner tier existed
- * this resolved exactly two of five and the list rendered half-badged.
+ * Two of the five findings carry a bridge and three do not, and before the partner tier existed
+ * this resolved NONE of the five — measured, after this note claimed two of five: the soundness
+ * gate wants a candidate at every cited index, so a set that can name only two withdraws whole.
+ * Rendering none is what the backend asks for in that case, so the tier buys five correct
+ * ratings rather than fixing a badging inconsistency that cannot occur.
  */
 export const ANSWER_BARE_LIST =
   'Solu-Medrol 125mg/5ml [350]\nPulmicort 90mcg [351]\nPrednisone Co 5mg [352]\n' +
@@ -183,8 +189,16 @@ export const MISATTRIBUTED = [177, 166, 155];
 export const UNSTATED = [350, 351, 352, 353, 354];
 
 /**
- * A second measured answer, kept because it is the control for where the leftover-subject rule
- * reads its tail.
+ * A second measured answer, kept as a regression: it must go on refusing all four of its
+ * Clarithromycin ratings.
+ *
+ * NOT the control for where the leftover-subject rule reads its tail, which is what this said.
+ * Its test asserts a REFUSAL, and both tail forms refuse it — the whole-answer form for the
+ * reason below, the shipped per-set form because the closing sentence sits in this set's tail
+ * too. A refusal assertion cannot distinguish two rules that both refuse. Verified: collapsing
+ * the spans to a whole-answer scan leaves this test green. What does discriminate the tail form
+ * is a RESOLUTION that the wider form would withdraw — `ANSWER_RESTATED_SUBJECT` under
+ * `is why the three spans are not one rule`.
  *
  * Two `(type, drug)` families in one answer, and the last sentence belongs to the SECOND —
  * `Methylprednisolone is also known to interact with … [355], [356], [357]` — while

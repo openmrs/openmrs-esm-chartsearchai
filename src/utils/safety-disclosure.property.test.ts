@@ -275,8 +275,6 @@ function generateAnswer(random: () => number): Generated {
     const index = INDEX_OF[partnerIndex];
     truth.set(index, partner.severity);
     const name = random() < 0.5 ? partner.substance : partner.order;
-    // In a targeted answer the first line always leads with its marker; the rest vary, which is
-    // what mixes marker-first and marker-last in one answer.
     // A foreign citation dropped between the subject and the finding's marker, in a fragment
     // rather than across a sentence break — which is the shape that truncates the window.
     if (random() < 0.2) {
@@ -285,13 +283,20 @@ function generateAnswer(random: () => number): Generated {
       return `${name} ${foreign} carries more risk than ${other.substance} does [${index}].`;
     }
     // The mirror of that, and the one structural dimension this generator lacked: a foreign
-    // marker AFTER the subject, on a line whose own marker comes FIRST. It is what leaves the
-    // shift-consistency rule as the sole objection — the trailing foreign marker shortens the
-    // unconfined backward window so the block rule falls silent, and a terminator closing the
-    // next line's claim bars the disagreement rule. Measured: with that rule disabled, the whole
-    // suite and a 200,000-seed sweep of this file stayed green while a Major interaction
-    // rendered Moderate. Every objection has to be reachable from here or it is one refactor
-    // from deletion.
+    // marker AFTER the subject, on a line whose own marker comes FIRST. It was added because it
+    // was the shape that left the shift-consistency rule as the sole objection — the trailing
+    // foreign marker shortens the unconfined backward window so the block rule falls silent, and
+    // a terminator closing the next line's claim bars the disagreement rule — and at the time,
+    // with that rule disabled, the suite and a sweep of this file stayed green while a Major
+    // interaction rendered Moderate.
+    //
+    // That is history now: the three leftover-subject rules were added afterwards and object on
+    // these shapes too, so nothing here leaves shift-consistency alone any more. The dimension is
+    // kept because it is a real layout and it exercises the block rule's silence, not because it
+    // still isolates one objection. The standing principle is the reason it was added: every
+    // objection has to be reachable from here or it is one refactor from deletion — and
+    // shift-consistency is, right now, not reachable from here, which the resolver records
+    // beside the rule with its firing counts.
     if (random() < 0.2) {
       const foreign = FOREIGN_MARKERS[Math.floor(random() * FOREIGN_MARKERS.length)];
       const other = PARTNERS[(partnerIndex + 1) % PARTNERS.length];
@@ -355,8 +360,10 @@ describe('the generator reaches the shapes it exists for', () => {
       if (/\[\d+\]\n/.test(answer)) markerAtLineEnd += 1;
       if (/\[\d+\]:/.test(answer)) colonAfterMarker += 1;
       if (FOREIGN_MARKERS.some((marker) => answer.includes(marker))) foreignMarker += 1;
-      // A foreign marker at end-of-line on a marker-first line: the shape that leaves the
-      // shift-consistency rule as the only objection available.
+      // A foreign marker at end-of-line on a marker-first line. Written when that was the shape
+      // that left shift-consistency as the only objection available; the leftover-subject rules
+      // now object on it too, so this counts a LAYOUT the generator must keep reaching rather
+      // than a rule it isolates.
       if (/aside, the worry is \[\d+\][^\n]*\[1[2-8]\]/.test(answer)) foreignAfterSubject += 1;
       if (/\d+(mg|mcg|ml)/.test(answer)) orderVocabulary += 1;
       if (answer.includes('\n')) multiLine += 1;

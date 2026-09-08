@@ -24,10 +24,20 @@ export interface AiReference {
    * supports the claim, false = it does not, null/absent = unverified.
    * Never render null as "verified".
    *
-   * This client renders NO badge for it. The backend asks that null be READ as unverified, and a
-   * neutral badge is the render it asks for; that is not drawn here, and was not at the base
-   * commit either. The harm the backend names — mislabelling an unverified citation as verified —
-   * is avoided either way.
+   * This client renders NO badge for it, and was drawing none at the base commit either. The harm
+   * the backend names — mislabelling an unverified citation as verified — is avoided that way.
+   *
+   * What the backend asks is narrower than this doc used to claim, and it differs by GROUP, which
+   * the single sentence here flattened. For a **chart**-group citation it asks that `false` and
+   * `null` both be surfaced as unverified — and says in the same breath that it withholds the
+   * verdict "because it must not assert what it has not established, not because it is relying on
+   * a particular rendering", so "a neutral badge is the render it asks for" was this file's
+   * invention rather than the backend's request. For a **reference**-group citation, where
+   * `grounded` is ALWAYS null, it asks for the opposite reading: treat null as "grounding does not
+   * apply", not as "unverified evidence" — a client that read it as unverified badged a
+   * deterministic Major-interaction finding *"Unsupported"*, which is the issue that made the
+   * field stop being published there. So a client that renders every null as unverified would be
+   * wrong on exactly the citations this feature is about.
    *
    * `null` does not mean one thing, and two of its causes are not "verification was tried
    * and failed": a {@link group} of `reference` is always null (there is no way to vouch for
@@ -96,7 +106,8 @@ export interface AiSafetyWarning {
    * Published as typed fields rather than left inside {@link detail} so a client is handed two
    * strings instead of a sentence to parse. It is the reason a chip can name `Methylprednisolone`
    * while the answer names the same prescription `Solu-Medrol 125mg/5ml`, and it is what lets
-   * {@link resolveFindingSeverities} recognise a finding in the answer's own words whichever
+   * `resolveFindingSeverities` (in `utils/safety-disclosure.ts`, not imported here, so a
+   * `{@link}` to it would not resolve) recognises a finding in the answer's own words whichever
    * vocabulary the answer used.
    *
    * It is a resolution the MODULE performed — say "resolved from", never that the prescription
@@ -110,10 +121,17 @@ export interface AiSafetyWarning {
  *
  * The backend asks a client to render this beside the chip and not to parse it apart. This one
  * does neither yet, and the doc said the opposite of both: display is deferred (the repo README's
- * *Not rendered* section says so), and {@link shortOrderDisplay} does split `orderDisplay` on
+ * *Not rendered* section says so), and `shortOrderDisplay` (module-private in
+ * `utils/safety-disclosure.ts`) does split `orderDisplay` on
  * whitespace to drop trailing dose tokens, because a live chart's `Vitamin B12 1000mcg` matched
- * nothing as a whole string. It is read here as the strongest of the severity join's leads, in
- * both the full and the dose-stripped form.
+ * nothing as a whole string. The severity join reads it in both the full and the dose-stripped
+ * form.
+ *
+ * Not "the strongest" of that join's leads, which this said for a while: there is no strongest.
+ * The three lead groups are read order-free and can only corroborate or contradict, never outrank
+ * — reversing the array changes no behaviour, and `candidateLeadTiers` says so where they are
+ * built. This group is the one with the best VOCABULARY match, because it carries the chart's
+ * words and the knowledge base's both; that is a different claim from precedence.
  */
 export interface AiChartOrderBridge {
   substance: string;
@@ -174,7 +192,7 @@ export interface AiSearchResponse {
    *
    * The rating is NOT on this key, and the backend is explicit that it "cannot be joined to a
    * chip: chips carry no citation index, and `(type, drug)` does not identify one — a screening
-   * question raises several findings sharing it". {@link resolveFindingSeverities} therefore
+   * question raises several findings sharing it". `resolveFindingSeverities` therefore
    * narrows to that candidate set and requires the answer's own sentence to single one out,
    * declining where it cannot.
    *
