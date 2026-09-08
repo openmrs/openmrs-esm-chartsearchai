@@ -830,7 +830,7 @@ describe('resolveFindingSeverities', () => {
   });
 
   it('refuses a swap the shift-consistency rule cannot see', () => {
-    // The two contest rules are not redundant. Shift-consistency asks whether the leading
+    // The two contest rules are not redundant. Shift-consistency asks whether the forward
     // reading names a finding the trailing reading claims for nobody — so a true 2-cycle SWAP,
     // where both readings elect the same two findings in opposite order, is invisible to it. The
     // disagreement rule is what catches that, and this is the shape that keeps it honest.
