@@ -175,7 +175,7 @@ describe('an exclusion clause in an EARLIER sentence is not about this claim', (
   });
 });
 
-describe('a rating the answer states rules that finding out', () => {
+describe('a rating the answer states cannot be the unstated citation’s', () => {
   it('refuses where the prose gives nothing but the backend does — captured live', () => {
     // The class no reading of the prose could close, and the one the module was most exposed to,
     // because in it all three readings AGREE and every objection is satisfied. The answer names
@@ -188,8 +188,9 @@ describe('a rating the answer states rules that finding out', () => {
     // What closes it is the backend's own published rule read backwards, not a better guess at
     // the prose. A citation lands in `unstatedFindingSeverities` only when the finding's rating
     // word appears NOWHERE in the answer. This answer says "Major", so [352] is not a Major
-    // finding, so it is not Methylprednisolone's — and Methylprednisolone stops being a candidate
-    // whatever the sentence beside the marker looks like.
+    // finding — and a resolution that gives it Major contradicts the payload that listed it, so
+    // it is deleted. The sibling test below is why this deletes a RESOLUTION rather than removing
+    // a candidate, which looks equivalent and is not.
     for (const answer of [
       // Captured verbatim from a running server, at [352].
       'No - Clarithromycin should not be started: it interacts with active order Solu-Medrol 125mg/5ml, a Major interaction, and by the same mechanism [352].',
@@ -222,21 +223,37 @@ describe('a rating the answer states rules that finding out', () => {
     expect(resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [352]).get(352)).toBe('Major');
   });
 
-  it('resolves what the backend’s own list leaves possible — the live recovery', () => {
-    // The other direction, and the first rating this module has ever recovered rather than given
-    // up. Reduced from the live answer `n5_worst_first`: the leading sentence states a Moderate
-    // rating for a citation OUTSIDE the measurement, which rules all three Moderate findings out
-    // of the two citations inside it, leaving exactly the two Major ones for their bridges to
-    // discriminate. Before the elimination both windows named their bridge alongside a field of
-    // five and elected nobody.
+  it('does not narrow the candidate field, which is how this rule went wrong once', () => {
+    // The form this rule shipped as for an hour, and the case that killed it. Reading the
+    // backend's rule as "so those findings are not CANDIDATES" is the obvious implementation and
+    // it is unsafe, because the candidate list is not only what an election chooses FROM — it is
+    // also what `discriminatingLeads` measures "shared by every candidate" against. Remove one
+    // candidate and a lead that told nobody apart can start telling two apart, so a window that
+    // honestly elected NOBODY elects somebody, confidently and wrongly.
+    //
+    // Found by a sweep of 400,000 answers in which every one stated a rating — the shipping
+    // distribution reached this shape a quarter of the time and 400,000 seeds of it found nothing,
+    // so the targeted run is what made it visible. This answer refuses today; under the
+    // candidate-removing form it rendered {352: Contraindicated, 354: Minor} against a truth of
+    // {352: Minor, 354: Contraindicated} — a swapped pair, both wrong.
+    //
+    // The rule is an OBJECTION now: it deletes a resolution the answer contradicts and never
+    // touches an election. That direction cannot invent a rating, which is the whole reason to
+    // prefer it, and the price was the two live ratings the narrowing form recovered.
+    const warnings: AiSafetyWarning[] = [
+      interaction('Methylprednisolone', 'Major', 'Solu-Medrol 125mg/5ml'),
+      interaction('Budesonide', 'Moderate', 'Pulmicort 90mcg'),
+      interaction('Prednisone', 'Minor'),
+      interaction('Dexamethasone', 'Unknown'),
+      interaction('Hydrocortisone', 'Contraindicated'),
+    ];
+    const refs = [350, 351, 352, 353, 354].map((index) => safetyFindingRef(index));
     const answer =
-      'Prednisone Co 5mg [15] is the least concerning active order, with a Moderate interaction [352].\n' +
-      'Clarithromycin interacts with active order Solu-Medrol [350].\n' +
-      'Clarithromycin interacts with active order Pulmicort [351].';
-    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 351])]).toEqual([
-      [350, 'Major'],
-      [351, 'Major'],
-    ]);
+      'Pulmicort 90mcg [351] is the least concerning active order, with a Moderate interaction.\n' +
+      'In addition to Hydrocortisone, the order that matters most is [352] Prednisone | [354] | ' +
+      'Hydrocortisone | Consider Pulmicort 90mcg carefully [351]; the exposure rises. ' +
+      '- Dexamethasone is affected by the same mechanism [353].';
+    expect([...resolveFindingSeverities(answer, refs, warnings, [352, 354, 353])]).toEqual([]);
   });
 });
 

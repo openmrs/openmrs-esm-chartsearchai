@@ -120,14 +120,15 @@ export function parseCitationIndices(group: string): number[] {
 //
 // "The live corpus" always means: 46 answers captured from a running server against the demo
 // chart, of which 22 carry an `unstatedFindingSeverities` measurement this module resolves. It
-// renders 82 ratings today across 19 of those answers. It was 98 before the two
-// leftover-subject rules took 18 — 13 for the tail rule and 5 for the head rule's loss of its
-// exemption — and the two since recovered are the first to come BACK: eliminating candidates
-// whose rating the answer already states cut one answer's field to the two findings that could
-// still be at its citations, and both were then read against the sentence they were drawn from
-// and checked against the payload. All 85 that stood at the tail-rule stage were read the same
-// way and were correct; 80 of today's 82 are a subset of those. This number has now drifted three
-// times, once per cycle that changed a refusal, so re-measure it rather than quoting it. It is
+// renders 80 ratings today across 18 of those answers, down from 98 before the two
+// leftover-subject rules — 13 for the tail rule and 5 for the head rule's loss of its exemption.
+// All 85 that stood at the tail-rule stage were read against the sentence each was drawn from
+// and were correct; today's 80 are a subset of those. It briefly read 82: the stated-rating rule
+// was first built as a candidate FILTER, which recovered two correct ratings here and was then
+// found to manufacture a swapped pair elsewhere, so it became an objection and these two went
+// back to blanks — the only ratings this module has ever recovered, given up on purpose. This
+// number has drifted twice, once per cycle that changed a refusal, so re-measure it rather than
+// quoting it. It is
 // replayed on every change, and a byte-identical result is the regression bar. It is NOT in the
 // repo — it lives in a scratch directory — so a measurement quoted against it cannot be re-run
 // from a clean checkout.
@@ -795,6 +796,14 @@ function candidateSetFor(
       // RATED subset of the chips sharing this (type, drug), which is what makes the
       // single-candidate shortcut sound — the backend never lists a finding whose record
       // states no rating.
+      //
+      // Nothing narrows this list by what the ANSWER says, and that is a constraint rather than
+      // an omission. {@link answerStatesRating} held exactly that job for one cycle and was moved
+      // to the end of `resolveFindingSeverities`, because removing a candidate here changes what
+      // {@link discriminatingLeads} counts as shared by all and can turn an honest refusal into a
+      // confident wrong election — that function's note carries the swapped pair it cost. Keeping
+      // this list the payload's own view is also what lets the cache be keyed on (type, drug)
+      // alone, with no answer in the key.
       typeof warning.severity === 'string' &&
       warning.severity.trim() !== '' &&
       // typeof on these too. Optional chaining guards null, not TYPE — a numeric `type` reaches
@@ -811,51 +820,63 @@ function candidateSetFor(
 }
 
 /**
- * The candidates still eligible at an unstated index, given what the answer says about ratings.
+ * Whether the answer states this rating anywhere in its prose.
  *
- * This is the backend's own published rule read backwards rather than a guess about prose. A
- * citation lands in `unstatedFindingSeverities` when the finding's rating word "appears nowhere in
- * the answer" — the check asks it of the WHOLE answer, not of the citing sentence, so an answer
- * that states the rating anywhere leaves the citation off the list (backend README, the
- * `unstatedFindingSeverities` section, and ADR Decision 78). Contrapositive: a finding whose
- * rating word DOES appear somewhere in the answer cannot be the finding at any index on that
- * list. So it is not a candidate, whatever the prose beside the marker looks like.
+ * The one objection in this file that consults the payload's contract rather than the sentence,
+ * and it is the backend's own published rule read backwards. A citation lands in
+ * `unstatedFindingSeverities` when the finding's rating word "appears nowhere in the answer" —
+ * the check asks it of the WHOLE answer, not of the citing sentence, so an answer that states the
+ * rating anywhere leaves the citation off the list (backend README, the
+ * `unstatedFindingSeverities` section, and ADR Decision 78). Contrapositive: a resolution that
+ * gives an index a rating the answer already states contradicts the payload, because the backend
+ * would not have listed that index at all. So it is refused.
  *
  * That closes a wrong-rating class no reading of the prose could, because in it all three readings
- * AGREE and every objection is satisfied. The answer names the marker's own subject in a form the
- * payload publishes no lead for — an anaphor, or a clause instead of a name — so the window is
- * left naming exactly one drug, the SIBLING, which the readings then elect unanimously; and the
- * head and interior rules are satisfied by the very election they should be doubting, because the
- * wrongly-elected sibling sits in `claimedByTrailing` precisely because it was wrongly elected.
- * Captured live: *"it interacts with active order Solu-Medrol 125mg/5ml, a Major interaction, and
- * by the same mechanism [352]"* badged a MODERATE finding Major. The prose gives nothing to work
- * with — but the answer says "Major", so the backend would not have listed a Major finding at
- * [352], and Methylprednisolone is out.
+ * AGREE and every other objection is satisfied. The answer names the marker's own subject in a
+ * form the payload publishes no lead for — an anaphor, or a clause instead of a name — so the
+ * window is left naming exactly one drug, the SIBLING, which the readings then elect unanimously;
+ * and the head and interior rules are satisfied by the very election they should be doubting,
+ * because the wrongly-elected sibling sits in `claimedByTrailing` precisely BECAUSE it was
+ * wrongly elected. Captured live: *"it interacts with active order Solu-Medrol 125mg/5ml, a Major
+ * interaction, and by the same mechanism [352]"* badged a MODERATE finding Major. The prose gives
+ * nothing to work with — but the answer says "Major", so [352] is not a Major finding.
+ *
+ * IT MUST STAY AN OBJECTION AND NOT A CANDIDATE FILTER, and that distinction cost a swapped pair
+ * to learn. Reading the same rule as "so those findings are not candidates" is the obvious
+ * implementation, it closes the same class, and it is unsafe: the candidate list is not only what
+ * an election chooses FROM, it is also what {@link discriminatingLeads} measures "shared by every
+ * candidate" against. Drop one candidate and a lead that told nobody apart can start telling two
+ * apart, so a window that honestly elected NOBODY elects somebody — confidently and wrongly.
+ * Measured on a payload the backend could have emitted: {352: Contraindicated, 354: Minor}
+ * against a truth of {352: Minor, 354: Contraindicated}. Deleting a resolution cannot invent one,
+ * which is the whole argument for this shape; the filter shape had no such argument, and the
+ * paragraph justifying it read as though it did.
+ *
+ * That case was found only by a sweep in which EVERY answer stated a rating. The shipping
+ * distribution reaches the shape about a quarter of the time and 400,000 seeds of it found
+ * nothing, so the targeted run is what made it visible — a rare interaction between two features
+ * needs the population skewed at it, not enlarged. The same 400,000 skewed answers are clean on
+ * this shape. That population is not committed, because with nothing narrowing the candidate list
+ * the coupling it probed is no longer reachable; what is committed is the one answer, as
+ * `does not narrow the candidate field, which is how this rule went wrong once`, which reddens if
+ * anyone rebuilds the filter.
+ *
+ * The price is two correct ratings, and it is the right price. The filter shape narrowed one live
+ * answer's field to the two findings that were still possible and rendered both, the only ratings
+ * this module has ever recovered rather than given up; the objection shape refuses them again.
+ * The corpus is byte-identical to before either — see THE CORPUS at the top of this file — and a
+ * blank is safe where a swapped pair is not, which is the premise the whole module rests on.
  *
  * Matched with {@link namesLead}, the same boundary test the leads use, so `Minor` cannot be found
- * inside a word and a rating stated in any casing counts. A candidate whose own rating is not a
- * string was already filtered out downstream and is left alone here.
+ * inside a word and a rating stated in any casing counts.
  *
- * It can only REMOVE candidates, and removal has both directions in it: an emptied set refuses,
- * while a set cut to one resolves through the single-candidate shortcut. The second is not a
- * loosening — it is the backend having narrowed the field for us — but it is the direction that
- * could go wrong, so it is measured rather than argued.
- *
- * It fires on the live corpus and it ADDS ratings, which nothing else in this file has done: one
- * answer states *"a Moderate interaction"* for a citation outside the measurement, which rules
- * every Moderate finding out of the two citations inside it and leaves exactly the two Major ones,
- * discriminated by their bridges. Both were hand-checked against the answer's own list before the
- * change was kept — see THE CORPUS at the top of this file for what the corpus renders now. Suite
- * green; a 400,000-seed sweep clean, and the sweep can now express this shape at all, which it
- * could not before: its generated answers stated no rating anywhere, so this ran only in its
- * no-op branch. That gap is closed by `statingOneRating` in the property test, whose coverage
- * bound asserts both that the shape is reached AND that some of it resolves.
+ * Reachable only where two findings of one group share a rating, which is the live chart's shape
+ * (three of five Moderate) and deliberately NOT the property fixture's — see the note above
+ * `generateAnswer` there for why that fixture is right anyway, and why this rule's coverage is
+ * the three named tests rather than the sweep.
  */
-function withoutRatingsTheAnswerStates(answer: string, safetyWarnings: AiSafetyWarning[]): AiSafetyWarning[] {
-  const normalizedAnswer = normalize(answer);
-  return safetyWarnings.filter(
-    (warning) => typeof warning.severity !== 'string' || !namesLead(normalizedAnswer, normalize(warning.severity)),
-  );
+function answerStatesRating(normalizedAnswer: string, severity: string): boolean {
+  return namesLead(normalizedAnswer, normalize(severity));
 }
 
 function readClaims(
@@ -1112,26 +1133,25 @@ export function resolveFindingSeverities(
   if (unstatedFindingSeverities.length === 0 || safetyWarnings.length === 0) return new Map();
 
   const ownIndices = new Set(unstatedFindingSeverities);
-  const eligible = withoutRatingsTheAnswerStates(answer, safetyWarnings);
   // Shared across all three readings on purpose: see {@link candidateSetFor}.
   const setCache = new Map<string, CandidateSet>();
   const trailing = readClaims(
     references,
-    eligible,
+    safetyWarnings,
     unstatedFindingSeverities,
     claimTextByCitation(answer, 'trailing', ownIndices),
     setCache,
   );
   const block = readClaims(
     references,
-    eligible,
+    safetyWarnings,
     unstatedFindingSeverities,
     claimTextByCitation(answer, 'block'),
     setCache,
   );
   const blockLeading = readClaims(
     references,
-    eligible,
+    safetyWarnings,
     unstatedFindingSeverities,
     claimTextByCitation(answer, 'block-leading'),
     setCache,
@@ -1528,10 +1548,17 @@ export function resolveFindingSeverities(
   }
 
   const resolved = new Map<number, string>();
+  const normalizedAnswer = normalize(answer);
   for (const [index, setKey] of trailing.setOfIndex) {
     if (!soundTrailing.has(setKey) || contested.has(setKey)) continue;
     const severity = trailing.resolved.get(index);
-    if (severity !== undefined) resolved.set(index, severity);
+    if (severity === undefined) continue;
+    // Last objection, and the only one that consults the payload's contract rather than the
+    // prose: a rating the answer already states cannot belong to a citation the backend listed as
+    // unstated. Applied HERE, on the resolution, rather than upstream on the candidate list —
+    // see {@link answerStatesRating} for the swapped pair that distinction cost.
+    if (answerStatesRating(normalizedAnswer, severity)) continue;
+    resolved.set(index, severity);
   }
   return resolved;
 }
