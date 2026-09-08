@@ -173,7 +173,7 @@ function referenceTag(ref: AiReference, t: Translate): GroundedTag {
  * things — the decision that `published` renders nothing, and the fallback for a word this
  * client predates — so a fourth verdict someone HAS taught the type system about would fall
  * into the fallback and render silently. Measured: adding `'partial'` to the union type
- * typechecked clean and passed all 279 tests. Here it is a compile error.
+ * typechecked clean and passed the whole suite, rendering silently. Here it is a compile error.
  *
  * `absent` and `unloaded` must not collapse into one sentence — "we looked and there is none"
  * is not "nobody looked". `published` states only that the DATASET can run the arm, never that

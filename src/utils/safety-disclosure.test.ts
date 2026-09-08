@@ -678,7 +678,7 @@ describe('resolveFindingSeverities', () => {
 
   it('still resolves a line whose markers TRAIL their subjects', () => {
     // The mirror case, and the reason the fix is keyed on disagreement rather than on the
-    // leading reading merely working: here the leading reading leaves the last marker with
+    // forward reading merely working: here the forward reading leaves the last marker with
     // nothing after it, so it never identifies the set and the trailing reading stands.
     const resolved = resolveFindingSeverities(ANSWER_BY_SUBSTANCE, REFERENCES, SAFETY_WARNINGS, UNSTATED);
     expect(Object.fromEntries(resolved)).toEqual({
@@ -760,7 +760,7 @@ describe('resolveFindingSeverities', () => {
   it('resolves a prose list whose last marker is followed by another sentence', () => {
     // Live, and withheld before this: in a list where each sentence opens with the module's own
     // phrase and closes with its marker, the LEADING claim of marker N is sentence N+1 — a
-    // complete claim about the next candidate. The leading reading was then a clean shift-by-one
+    // complete claim about the next candidate. The forward reading was then a clean shift-by-one
     // bijection that disagreed with the correct trailing one, so the whole set was contested and
     // four correct ratings were discarded. Whether an answer came out fully badged or fully
     // blank turned on whether the model wrote one more sentence after its last citation.
@@ -771,7 +771,7 @@ describe('resolveFindingSeverities', () => {
       'Clarithromycin interacts with active order Dexamethasone [353]. ' +
       'Clarithromycin interacts with active order Hydrocortisone [354]. ' +
       // The trailing sentence must NAME a candidate, as the live answer's did: that is what let
-      // the leading reading complete as a shift-by-one bijection and contest the correct one.
+      // the forward reading complete as a shift-by-one bijection and contest the correct one.
       'Methylprednisolone is also known to interact with several of her other active orders.';
     const resolved = resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, UNSTATED);
     expect(Object.fromEntries(resolved)).toEqual({
@@ -786,7 +786,7 @@ describe('resolveFindingSeverities', () => {
   it('refuses a multi-line answer with one marker written before its drug', () => {
     // The rotation guard was structurally OFF here. Trailing claims are line-confined, so in any
     // multi-line answer a trailing marker sits at end-of-line and its LEADING claim is empty —
-    // the leading reading is never complete, never sound, and the disagreement rule never fires.
+    // a line-confined forward window is empty, which is why the contest reads the unconfined one.
     // A single marker-before-drug line among trailing ones was then read backwards, uncontested,
     // and the set still passed completeness and injectivity.
     //
@@ -811,7 +811,7 @@ describe('resolveFindingSeverities', () => {
   });
 
   it('still resolves a multi-line answer whose markers all trail their drugs', () => {
-    // The control: the new rule must not fire where the leading reading names nothing outside
+    // The control: the new rule must not fire where the forward reading names nothing outside
     // what the trailing reading already claims. This is the ordinary shape.
     const answer =
       'Clarithromycin interacts with active order Methylprednisolone [350].\n' +
