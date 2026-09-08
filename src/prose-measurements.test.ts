@@ -69,6 +69,29 @@ describe('measurements written into prose', () => {
     expect(offenders).toEqual([]);
   });
 
+  it('has no comment line long enough to be a mid-sentence splice', () => {
+    // The other class this slice has had to repair repeatedly: five comments and one shipped
+    // README sentence spliced mid-thought by anchor-replacement batch edits, where new text
+    // replacing a fragment left the tail of the old sentence attached to it. A splice almost
+    // always shows up as one over-long line, because the editor's own wrapping does not apply to
+    // the join — so a width check catches it cheaply. Prettier does not reflow comments and the
+    // linter does not police their width, which is why nothing else notices.
+    //
+    // The bound is deliberately loose: it is a splice detector, not a style rule.
+    const offenders: string[] = [];
+    for (const file of files) {
+      fs.readFileSync(file, 'utf8')
+        .split('\n')
+        .forEach((raw, i) => {
+          const body = raw.trim();
+          if ((body.startsWith('//') || body.startsWith('*')) && raw.length > 108) {
+            offenders.push(`${path.relative(__dirname, file)}:${i + 1} (${raw.length} chars)`);
+          }
+        });
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it('finds the comments it is meant to be scanning', () => {
     // A sweep that discovered nothing would pass both assertions above while examining nothing.
     const total = files.reduce((n, f) => n + commentLines(fs.readFileSync(f, 'utf8')).length, 0);

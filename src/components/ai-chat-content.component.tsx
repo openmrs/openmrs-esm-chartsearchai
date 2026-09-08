@@ -116,8 +116,11 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
     prevMessagesLengthRef.current = messages.length;
   }, [messages.length]);
 
-  // Re-scrolls per chunk and again when streaming ends — references/feedback mount in that final commit and grow the message past the viewport.
-  // Tracks `reasoning` too: it streams before any answer text exists, so without it the live "Thinking..." scratchpad grows past the viewport and is clipped out of sight.
+  // Re-scrolls per chunk and again when streaming ends — references and the feedback row mount
+  // in that final commit and grow the message past the viewport.
+  //
+  // Tracks `reasoning` too: it streams before any answer text exists, so without it the live
+  // "Thinking..." scratchpad grows past the viewport and is clipped out of sight.
   const lastMessage = messages.length > 0 ? messages[messages.length - 1] : undefined;
   const lastAnswer = lastMessage?.answer ?? '';
   const lastReasoning = lastMessage?.reasoning ?? '';
