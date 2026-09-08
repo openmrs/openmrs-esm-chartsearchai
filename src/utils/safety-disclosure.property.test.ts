@@ -198,8 +198,12 @@ function generateAnswer(random: () => number): Generated {
   // a guard that passes while examining nothing — measured: an earlier version of this file
   // missed a removed guard entirely.
   const targeted = random() < 0.5;
+  // Indexed by the filtered array's own length, not by a hand-copied 3: a fourth named lead-in
+  // would otherwise be unreachable in the targeted half of the generator, silently, which is the
+  // coverage loss this file warns about twice elsewhere.
+  const named = LEAD_INS.filter((candidate) => candidate.names);
   const leadIn = targeted
-    ? LEAD_INS.filter((candidate) => candidate.names)[Math.floor(random() * 3)]
+    ? named[Math.floor(random() * named.length)]
     : LEAD_INS[Math.floor(random() * LEAD_INS.length)];
 
   // Half of the targeted answers now CITE the lead-in's partner as well, and that half is the

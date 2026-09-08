@@ -708,7 +708,11 @@ describe('resolveFindingSeverities', () => {
     const withUncited = [...UNSTATED, 999];
     const refs: AiReference[] = [...REFERENCES, safetyFindingRef(999)];
     const resolved = resolveFindingSeverities(ANSWER_BY_SUBSTANCE, refs, SAFETY_WARNINGS, withUncited);
-    expect(Object.fromEntries(resolved)).toEqual({
+    // `has`, explicitly: vitest's `toEqual` IGNORES keys whose value is `undefined`, so the
+    // assertion below could not see an uncited index arriving as `999: undefined` — which is
+    // exactly what the `severity !== undefined` guard at the render gate exists to prevent.
+    expect(resolved.has(999)).toBe(false);
+    expect(Object.fromEntries(resolved)).toStrictEqual({
       350: 'Major',
       351: 'Major',
       352: 'Moderate',
@@ -1012,6 +1016,22 @@ describe('resolveFindingSeverities', () => {
       '[17] Hydrocortisone aside, the worry is [350] Solu-Medrol 125mg/5ml [18]\nPrednisone is affected by the same mechanism [352].';
     // Truth is {350: Major, 352: Moderate}; with the rule disabled this renders
     // {350: Moderate, 352: Moderate}.
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 352])]).toEqual([]);
+  });
+
+  it('refuses an ambiguous line where shift-consistency is the ONLY objection', () => {
+    // The rule this test exists for was discriminated by NOTHING until this shape was added:
+    // disabling it left the whole suite green and the live corpus unchanged at 98 ratings, and
+    // the three tests NAMED for it had stopped exercising it — `stripExclusions` now removes
+    // their "Hydrocortisone aside," lead-ins, so those answers refuse at the soundness gate
+    // instead. A rule whose only coverage is redundant is one refactor from deletion.
+    //
+    // Here the layout really is ambiguous: `[350]` sits between "Solu-Medrol 125mg/5ml" and
+    // "Hydrocortisone", the latter followed by a chart citation of its own, so nothing in the
+    // prose settles which of the two the marker was offered for. Refusing is correct — and it is
+    // rule 2 that does it. Rules 1 and 4 are both silent: the foreign `[17]` becomes [352]'s
+    // block bound, and the full stop zeroes [352]'s forward claim.
+    const answer = 'Solu-Medrol 125mg/5ml [350] Hydrocortisone [17]. Prednisone Co 5mg [352].';
     expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 352])]).toEqual([]);
   });
 

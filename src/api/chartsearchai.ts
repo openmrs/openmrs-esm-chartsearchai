@@ -100,7 +100,16 @@ export interface AiSafetyWarning {
   chartOrderBridges?: AiChartOrderBridge[] | null;
 }
 
-/** One `(substance, orderDisplay)` correspondence on a safety warning. Render, do not parse apart. */
+/**
+ * One `(substance, orderDisplay)` correspondence on a safety warning.
+ *
+ * The backend asks a client to render this beside the chip and not to parse it apart. This one
+ * does neither yet, and the doc said the opposite of both: display is deferred (the repo README's
+ * *Not rendered* section says so), and {@link shortOrderDisplay} does split `orderDisplay` on
+ * whitespace to drop trailing dose tokens, because a live chart's `Vitamin B12 1000mcg` matched
+ * nothing as a whole string. It is read here as the strongest of the severity join's leads, in
+ * both the full and the dose-stripped form.
+ */
 export interface AiChartOrderBridge {
   substance: string;
   orderDisplay: string;

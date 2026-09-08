@@ -114,6 +114,19 @@ export function parseCitationIndices(group: string): number[] {
   return group.split(/\s*,\s*/).map(Number);
 }
 
+/**
+ * THE CORPUS, named once because five notes in this file quoted it and two of them had drifted
+ * (94 where the others said 98, with nothing to say whether that was an older measurement or a
+ * mistake).
+ *
+ * "The live corpus" below always means the same thing: 46 answers captured from a running
+ * server against the demo chart, of which 22 carry an `unstatedFindingSeverities` measurement
+ * this module resolves, for 98 ratings in total. It is replayed on every change and a
+ * byte-identical result is the regression bar. It is NOT in the repo — it lives in a scratch
+ * directory — so a measurement quoted against it cannot be re-run from a clean checkout. Where
+ * one of its answers turned out to decide a design choice, that answer is committed as a fixture
+ * instead ({@link ANSWER_TWO_FAMILIES} is the case in point).
+ */
 function normalize(text: string): string {
   return text.replace(/\s+/g, ' ').trim().toLowerCase();
 }
@@ -184,7 +197,7 @@ const EXCLUSION_CLAUSES = [
  * entry would make a rotation resolve.
  *
  * No verbs. Nine were here ('known', 'interacts', 'affected', 'raise', 'watch'…) and removing all
- * nine changed nothing — suite green, live corpus 98 ratings — because an English clause that
+ * nine changed nothing — suite green, live corpus unchanged — because an English clause that
  * carries a verb carries a determiner or a preposition too. They were nine more chances to be
  * wrong in the direction that resolves a rotation, for no coverage.
  *
@@ -372,7 +385,8 @@ function trailingWindowStart(breaks: number[], ownEnd: number, markerStart: numb
  *
  * A marker's claim is the prose running back to the previous marker — but adjacent markers
  * (`[177] [350]`) cite ONE claim between them, so a run of marker groups separated by nothing
- * but whitespace is treated as a single attachment point and they all share the text before
+ * but whitespace, a comma or a semicolon is treated as a single attachment point and they all
+ * share the text before
  * the run. Without that, `[350]` in `Methylprednisolone [177] [350]` would see a claim text of
  * just `" "` and could never be resolved.
  *
@@ -529,7 +543,7 @@ function shortOrderDisplay(display: string): string {
   // group, so nothing contradicted it and one index elected one candidate.
   let nameEnd = tokens.length;
   while (nameEnd > 0 && /^\d/.test(tokens[nameEnd - 1])) nameEnd -= 1;
-  if (nameEnd <= 0 || nameEnd === tokens.length) return '';
+  if (nameEnd === tokens.length) return '';
   return tokens.slice(0, nameEnd).join(' ');
 }
 
@@ -611,7 +625,7 @@ function discriminatingLeads(leads: string[], drug: string): string[] {
 /** Word-ish characters, for boundary testing. `/` and `-` count so a lead cannot match half of a
  *  combination product (`aspirin` inside `aspirin/dipyridamole`) or half a hyphenated brand. */
 function isWordish(character: string): boolean {
-  return character !== '' && /[a-z0-9/-]/.test(character);
+  return /[a-z0-9/-]/.test(character);
 }
 
 /**
@@ -826,7 +840,6 @@ function readClaims(
   return { resolved, setOfIndex, citedIndices, electedOf, namedOf };
 }
 
-/** The candidate sets this reading identified COMPLETELY and INJECTIVELY. */
 /**
  * Each candidate set's citation indices, in one place.
  *
@@ -847,6 +860,7 @@ function indicesBySet(reading: ClaimReading): Map<string, number[]> {
   return grouped;
 }
 
+/** The candidate sets this reading identified COMPLETELY and INJECTIVELY. */
 function soundSets(reading: ClaimReading): Set<string> {
   const sound = new Set<string>();
   for (const [setKey, indices] of indicesBySet(reading)) {
@@ -900,7 +914,7 @@ function soundSets(reading: ClaimReading): Set<string> {
  * requiring the forward elections to be injective, and requiring an election at the index being
  * contested. Both make an objection fire LESS often, which is the unsafe direction for a rule
  * whose only output is a refusal — and neither is justified by anything measurable. With both
- * removed the 288-test suite, the 46-answer live corpus (94 ratings) and a 150,000-seed sweep
+ * removed the suite, the live corpus and a 150,000-seed sweep
  * (269 resolving answers) are byte-identical to with them. So they were noise in the direction
  * of resolving more, and are gone rather than left for the next change to delete for free.
  */
@@ -947,12 +961,22 @@ function objectingSets(reading: ClaimReading): Set<string> {
  * first place. Where nothing objects, orientation never mattered — and a single-candidate set
  * resolves the same either way, by the shortcut in `readClaims`.
  *
- * Their weights are very unequal and it is worth knowing which. Forcing the first rule's gate
- * open drops the live corpus from 98 ratings to ONE, which says that on real answers the
- * forward reading disagrees somewhere almost always and that rule is nearly inert; what
- * actually protects a real answer is the second and fourth. The third exists because the first
- * two are both blind to a ROTATION — a permutation is invisible to a per-finding check, and the
- * first rule's gate closes on exactly the answers a rotation needs.
+ * Their weights are very unequal and it is worth knowing which, because the shape of this thing
+ * is not what its rule list suggests. Measured on the live corpus:
+ *
+ *   - Rule 1 is nearly INERT on real answers. Forcing its gate open drops the corpus from 98
+ *     ratings to ONE, which says the forward reading disagrees somewhere almost always and the
+ *     gate closing is what allows any rating at all.
+ *   - Rule 2 changes NOTHING measurable. Disabling it leaves the suite green and the corpus at
+ *     98, and a 400,000-shape adversarial search found no answer where it prevents a wrong
+ *     rating rather than only withholding a correct one. Its original justification — a
+ *     lead-in's partner scavenged by a marker-first line — is now handled earlier by
+ *     {@link stripExclusions}. It is kept because "no case was found" is not "no case exists",
+ *     and an objection can only ever refuse; but it is pinned by exactly one constructed test
+ *     and nothing else, and that is the honest description of it.
+ *   - Rules 3 and 4 are what actually protect a real answer, and rule 3 exists because 1 and 2
+ *     are both blind to a ROTATION: a permutation is invisible to a per-finding check, and rule
+ *     1's gate closes on exactly the answers a rotation needs.
  *
  * What no rule here can do is prefer one orientation on its merits. For any list the forward
  * reading is a rotation of the trailing one, so disagreement between them is the ordinary case
@@ -1015,7 +1039,7 @@ export function resolveFindingSeverities(
   // was removed in the same cycle for its own reasons, and this fell out.
   //
   // Measured alongside the proof, before removal: dropping the confined reading from either
-  // contest left the suite, the 46-answer corpus (94 ratings), a 150,000-seed sweep and a
+  // contest left the suite, the live corpus, a 150,000-seed sweep and a
   // 60,000-answer rotation search all unchanged.
   const objectingBlockLeading = objectingSets(blockLeading);
 
@@ -1190,7 +1214,7 @@ export function resolveFindingSeverities(
     // terminator 151 times, and a marker closed by a terminator has its forward claim zeroed
     // outright a few hundred lines up.
     const confined = trailing.electedOf.get(index);
-    if (confined && block.electedOf.get(index) !== confined) contested.add(setKey);
+    if (block.electedOf.get(index) !== confined) contested.add(setKey);
   }
 
   const resolved = new Map<number, string>();
