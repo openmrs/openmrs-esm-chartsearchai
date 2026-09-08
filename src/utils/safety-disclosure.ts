@@ -189,7 +189,15 @@ const EXCLUSION_CLAUSES = [
   new RegExp(String.raw`\b${EXCLUDED_NAME}[^\S\n]+aside[^\S\n]*[,;:]`, 'g'),
 ];
 
-function stripExclusions(claim: string): string {
+/**
+ * EXPORTED FOR TESTS ONLY, like {@link claimTextByCitation} and for a sharper reason: the
+ * property test's shifted population became VACUOUS when this function landed, because every
+ * lead-in it generated used a word removed here — 0 of 20,000 shifted answers resolved anything
+ * for three cycles while "150,000 seeds clean" was reported against them. The generator now
+ * asserts its own population is still capable of closing a rotation, and it cannot ask that
+ * question without applying this.
+ */
+export function stripExclusions(claim: string): string {
   let stripped = claim;
   for (const pattern of EXCLUSION_CLAUSES) stripped = stripped.replace(pattern, ' ');
   return stripped;
@@ -981,9 +989,38 @@ export function resolveFindingSeverities(
   // two are unstated, so items 4 and 5 sat in that tail naming candidates they had their own
   // markers for.
   const markerRuns = [...answer.matchAll(citationGroupPattern())];
-  const lastRun = markerRuns[markerRuns.length - 1];
-  const tail = lastRun === undefined ? '' : answer.slice((lastRun.index ?? 0) + lastRun[0].length);
-  const tailText = stripExclusions(normalize(tail));
+  // PER SET, after the last marker citing one of ITS indices, with any remaining marker groups
+  // DELETED rather than treated as a boundary.
+  //
+  // Cutting at the ANSWER's last marker left the tail empty whenever any citation followed the
+  // dangling name — ` [14]`, ` [17].`, `, an active order [14]` — and on this chart a trailing
+  // chart citation is the ORDINARY form, measured on two live answers. So the rule was not merely
+  // evadable; it was dormant on a large share of real answers. Swept: 35,010 resolving answers of
+  // that family, 35,010 carrying a wrong rating.
+  //
+  // FIRST occurrences only, which is the same rule `claimTextByCitation` applies to a repeated
+  // marker. Without it, repeating one of the set's own markers after the dangling name — a live
+  // shape, "— see [350] above" — pushed the tail start past the leftover and the rule went
+  // silent again.
+  const firstRunEndOfIndex = new Map<number, number>();
+  for (const run of markerRuns) {
+    for (const index of parseCitationIndices(run[1])) {
+      if (!firstRunEndOfIndex.has(index)) firstRunEndOfIndex.set(index, (run.index ?? 0) + run[0].length);
+    }
+  }
+
+  const tailTextOfSet = new Map<string, string>();
+  for (const setKey of new Set(trailing.setOfIndex.values())) {
+    let from = -1;
+    for (const [index, end] of firstRunEndOfIndex) {
+      if (trailing.setOfIndex.get(index) === setKey) from = Math.max(from, end);
+    }
+    // Markers left in place. Deleting them from the tail was tried and nothing discriminates it:
+    // the only case it could serve is a marker splitting a candidate's order display, and
+    // `shortOrderDisplay` already offers the dose-stripped form as a lead, which matches either
+    // way. The tail START skipping repeated markers is what actually mattered, above.
+    tailTextOfSet.set(setKey, normalize(from < 0 ? '' : answer.slice(from)));
+  }
 
   // Which index of each set its LAST marker cites. A tail that restates the last citation's own
   // subject is an ordinary flourish; a tail naming a candidate an EARLIER citation claimed is a
@@ -1007,7 +1044,8 @@ export function resolveFindingSeverities(
     if (!set) continue;
     const found = new Set<AiSafetyWarning>();
     for (const group of set.groups) {
-      for (const candidate of matchesInGroup(set.candidates, group.leadsPerCandidate, group.shared, tailText)) {
+      const text = tailTextOfSet.get(setKey) ?? '';
+      for (const candidate of matchesInGroup(set.candidates, group.leadsPerCandidate, group.shared, text)) {
         found.add(candidate);
       }
     }

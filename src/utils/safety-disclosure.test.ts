@@ -128,23 +128,32 @@ describe('a subject left over past the answer’s last marker', () => {
     expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 352])]).toEqual([]);
   });
 
-  it('still resolves a measured answer whose last sentence belongs to another family', () => {
-    // The control for where the tail begins, and it is a real server answer. Methylprednisolone
-    // is a candidate of the Clarithromycin family AND the subject of the final sentence, which
-    // carries the OTHER family's citations. A leftover-subject rule reading the whole answer
-    // called that a subject left over and refused all four Clarithromycin ratings — measured on
-    // the live corpus, 11 ratings across four answers. Reading only the text after the answer's
-    // last marker keeps them.
+  it('refuses a measured answer whose last sentence belongs to another family — 13 ratings', () => {
+    // This asserted a RESOLUTION until the tail became per-set and marker-transparent, and the
+    // reversal is the price of closing the rotation class. Methylprednisolone is a candidate of
+    // the Clarithromycin family AND the subject of the closing sentence, which carries the OTHER
+    // family's citations — so it sits in this set's tail and reads as a subject left over.
+    //
+    // Measured cost across the whole live corpus: 98 ratings to 85, on three answers
+    // (`n5_worst_first`, `q14_dropone`, `q4_screen_all`), all lost for this same reason. Against
+    // that: cutting the tail at the ANSWER's last marker instead left the rule DORMANT wherever
+    // any citation followed the dangling name, which is the ordinary form on this chart — and
+    // that family resolved 35,010 answers of which 35,010 carried a wrong rating.
+    //
+    // 13 blanks against a class that is wrong every time it fires. The premise this module rests
+    // on decides it, and the premise is not a preference: a clinician reading a Major finding
+    // badged Moderate has been actively misled, where a missing badge sends them to the chart.
     const resolved = resolveFindingSeverities(
       ANSWER_TWO_FAMILIES,
       TWO_FAMILY_REFS,
       TWO_FAMILY_WARNINGS,
       [363, 364, 365, 366, 355, 356, 357],
     );
-    expect(resolved.get(363)).toBe('Major');
-    expect(resolved.get(364)).toBe('Moderate');
-    expect(resolved.get(365)).toBe('Moderate');
-    expect(resolved.get(366)).toBe('Moderate');
+    expect([...resolved]).toEqual([]);
+    // The second family never resolved here either, for an unrelated and correct reason: its
+    // three markers sit in one adjacent run, so they share one claim that names all three
+    // candidates and elects none. Asserted so the empty result above is not read as this rule's
+    // doing on both families.
   });
 
   it('refuses when the closing sentence merely NAMES a candidate — the accepted cost', () => {
@@ -181,6 +190,35 @@ describe('a subject left over past the answer’s last marker', () => {
     const answer =
       'Hydrocortisone Injection vial 100mg is the lesser worry, but the greater one is [350], per her active orders [17]\nSolu-Medrol 125mg/5ml [354]\nHydrocortisone Injection vial 100mg';
     expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 354])]).toEqual([]);
+  });
+
+  it('refuses a closed rotation whose dangling name is followed by a citation', () => {
+    // The tail used to begin after the ANSWER's last marker, so ANY citation after the dangling
+    // name emptied it and this rule went silent. That is not a contrivance: two live answers end
+    // with a chart citation after the finding marker, so the rule was DORMANT on a large share of
+    // real answers. Swept: 35,010 resolving answers of this family, 35,010 carrying a wrong
+    // rating. The tail is now per-set and deletes markers instead of stopping at them.
+    const head =
+      'Hydrocortisone Injection vial 100mg is the lesser worry, but the greater one is [350].\nSolu-Medrol 125mg/5ml [354]\nHydrocortisone Injection vial 100mg';
+    for (const suffix of [' [14]', ' [17].', ', an active order [14]', ' — see [350] above']) {
+      expect([...resolveFindingSeverities(head + suffix, REFERENCES, SAFETY_WARNINGS, [350, 354])]).toEqual([]);
+    }
+  });
+
+  it('refuses a closed rotation whose dangling name sits in an exclusion clause', () => {
+    // `stripExclusions` was being applied to the tail as well as to the claim, which deleted the
+    // leftover subject before this rule could see it — a seven-word escape hatch on the rule, in
+    // a file whose own README said it "does not care what the closing text says about that drug".
+    const head =
+      'Hydrocortisone Injection vial 100mg is the lesser worry, but the greater one is [350].\nSolu-Medrol 125mg/5ml [354]\n';
+    for (const tail of [
+      'Hydrocortisone Injection vial 100mg aside, that is the list.',
+      'Apart from Hydrocortisone Injection vial 100mg, that is the list.',
+      'Unlike Hydrocortisone Injection vial 100mg, these matter.',
+      'Except Hydrocortisone Injection vial 100mg, that is all.',
+    ]) {
+      expect([...resolveFindingSeverities(head + tail, REFERENCES, SAFETY_WARNINGS, [350, 354])]).toEqual([]);
+    }
   });
 
   it('refuses a closed rotation whose dangling name is written as a sentence', () => {

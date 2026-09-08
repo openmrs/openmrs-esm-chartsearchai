@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AiReference, AiSafetyWarning } from '../api/chartsearchai';
-import { resolveFindingSeverities } from './safety-disclosure';
+import { claimTextByCitation, resolveFindingSeverities, stripExclusions } from './safety-disclosure';
 import { interaction, safetyFindingRef } from '../__fixtures__/clarithromycin-response';
 
 /**
@@ -125,6 +125,15 @@ const LEAD_INS: Array<{ text: string; names: string | null }> = [
   { text: 'Apart from Prednisone, the interacting orders are', names: 'Prednisone' },
   { text: 'Hydrocortisone aside, the order that matters most is', names: 'Hydrocortisone' },
   { text: 'Unlike Methylprednisolone, the following carry a lesser risk:', names: 'Methylprednisolone' },
+  // NON-EXCLUSION lead-ins, and they are the load-bearing half now. Every named entry above uses
+  // a word `stripExclusions` removes, so from the cycle that added that strip until this one the
+  // ENTIRE shifted population resolved nothing: 0 of 20,000 measured. A generator whose hazard
+  // shape cannot resolve cannot catch a mis-attribution in it, and "150,000 seeds clean" was
+  // being reported against it for three cycles. These name a partner without excluding it.
+  { text: 'Besides Prednisone, the interacting orders are', names: 'Prednisone' },
+  { text: 'In addition to Hydrocortisone, the order that matters most is', names: 'Hydrocortisone' },
+  { text: 'Methylprednisolone is the lesser worry, but the greater one is', names: 'Methylprednisolone' },
+  { text: 'Compared with Budesonide, the bigger problem is', names: 'Budesonide' },
 ];
 
 interface Generated {
@@ -151,7 +160,16 @@ interface Generated {
 function shiftedAnswer(random: () => number, chosen: number[]): Generated {
   const nameOf = (i: number) => (random() < 0.5 ? PARTNERS[i].substance : PARTNERS[i].order);
   const last = chosen[chosen.length - 1];
-  const lead = `${PARTNERS[last].substance} aside, the order that matters most is`;
+  // NOT "X aside,": that is an exclusion clause and `stripExclusions` deletes it, which is what
+  // made this whole shape resolve nothing for three cycles. The lead must name the last partner
+  // WITHOUT excluding it, or the rotation never closes and the generator tests nothing.
+  const LEADS = [
+    (n: string) => `${n} is the lesser worry, but the greater one is`,
+    (n: string) => `Besides ${n}, the one that matters most is`,
+    (n: string) => `In addition to ${n}, the greater worry is`,
+    (n: string) => `Compared with ${n}, the bigger problem is`,
+  ];
+  const lead = LEADS[Math.floor(random() * LEADS.length)](PARTNERS[last].substance);
 
   const truth = new Map<number, string>();
   for (const i of chosen) truth.set(INDEX_OF[i], PARTNERS[i].severity);
@@ -293,6 +311,11 @@ describe('the generator reaches the shapes it exists for', () => {
     let multiLine = 0;
     let shifted = 0;
     let shiftedAmbiguousTail = 0;
+    // The guard against the regression that made three cycles of sweeps meaningless: a shifted
+    // answer whose FIRST claim no longer names a candidate cannot close a rotation, so the whole
+    // hazard shape becomes unreachable and the property test passes while examining nothing. This
+    // counts shifted answers whose first claim still names a partner AFTER stripping.
+    let shiftedClosable = 0;
     let leadInPartnerCited = 0;
 
     for (let seed = 1; seed <= 4000; seed++) {
@@ -309,8 +332,18 @@ describe('the generator reaches the shapes it exists for', () => {
       if (answer.includes('\n')) multiLine += 1;
       // The shifted list: a marker ending the FIRST line with the lead-in, and a final line
       // carrying a name and no marker at all.
-      if (/aside, the order that matters most is \[\d+\]\n/.test(answer) && !/\[\d+\]\s*$/.test(answer)) {
+      if (
+        /(?:the greater one is|matters most is|greater worry is|bigger problem is) \[\d+\]\n/.test(answer) &&
+        !/\[\d+\]\s*$/.test(answer)
+      ) {
         shifted += 1;
+        const firstClaim = claimTextByCitation(answer, 'trailing', new Set(INDEX_OF)).get(
+          Number(/\[(\d+)\]/.exec(answer)?.[1]),
+        );
+        const stripped = stripExclusions((firstClaim ?? '').toLowerCase());
+        if (PARTNERS.some((p) => stripped.includes(p.substance.toLowerCase()))) {
+          shiftedClosable += 1;
+        }
         // And the harder half: a shift whose DANGLING last line names two partners, so the
         // forward reading's completeness — the only tell a shift leaves — is destroyed.
         if (/(and also|as well as|plus|alongside|rather than)[^\n[]*$/.test(answer)) shiftedAmbiguousTail += 1;
@@ -335,6 +368,7 @@ describe('the generator reaches the shapes it exists for', () => {
       multiLine: multiLine > 200,
       shifted: shifted > 200,
       shiftedAmbiguousTail: shiftedAmbiguousTail > 100,
+      shiftedClosable: shiftedClosable > 200,
       leadInPartnerCited: leadInPartnerCited > 200,
     }).toEqual({
       contrast: true,
@@ -347,6 +381,7 @@ describe('the generator reaches the shapes it exists for', () => {
       multiLine: true,
       shifted: true,
       shiftedAmbiguousTail: true,
+      shiftedClosable: true,
       leadInPartnerCited: true,
     });
   });
@@ -357,7 +392,7 @@ describe('resolveFindingSeverities property: it may refuse, but never mis-attrib
     const violations: string[] = [];
     let resolvedAtLeastOnce = 0;
 
-    for (let seed = 1; seed <= 6000; seed++) {
+    for (let seed = 1; seed <= 9000; seed++) {
       const random = makeRandom(seed);
       const { answer, truth, unstated } = generateAnswer(random);
       const resolved = resolveFindingSeverities(answer, REFS, WARNINGS, unstated);
