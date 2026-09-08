@@ -92,6 +92,28 @@ describe('measurements written into prose', () => {
     expect(offenders).toEqual([]);
   });
 
+  it('has no javadoc block that documents another javadoc block', () => {
+    // The most-repeated repair in this slice: FIVE insertion-orphaned javadocs, every one caused
+    // by an edit landing between a doc comment and the declaration it described. The orphan then
+    // documents nothing, and the declaration it belonged to is left bare — twice the orphan was a
+    // 45-line block carrying the measurements that justified a rule.
+    //
+    // The tell is mechanical: a `*/` immediately followed by a `/**`. Nothing else in the
+    // toolchain looks for it, and it is invisible in review because both blocks read correctly on
+    // their own.
+    const offenders: string[] = [];
+    for (const file of files) {
+      const lines = fs.readFileSync(file, 'utf8').split('\n');
+      lines.forEach((raw, i) => {
+        if (raw.trim() !== '*/') return;
+        if (lines[i + 1]?.trim().startsWith('/**')) {
+          offenders.push(`${path.relative(__dirname, file)}:${i + 1} — doc block followed by another`);
+        }
+      });
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it('finds the comments it is meant to be scanning', () => {
     // A sweep that discovered nothing would pass both assertions above while examining nothing.
     const total = files.reduce((n, f) => n + commentLines(fs.readFileSync(f, 'utf8')).length, 0);
