@@ -119,10 +119,15 @@ function normalize(text: string): string {
 }
 
 /**
- * Which way {@link claimTextByCitation} reads a marker's claim: back to the previous marker
- * (`trailing`) or forward to the next (`leading`), each either line-confined or not (`block`).
+ * Which way {@link claimTextByCitation} reads a marker's claim: back to the previous marker,
+ * line-confined (`trailing`) or not (`block`), or forward to the next, unconfined
+ * (`block-leading`).
+ *
+ * There is no confined-forward member. `'leading'` was one until the reading itself was proved
+ * redundant — see the note beside `objectingBlockLeading` — and leaving it in the union would
+ * offer a caller a reading this module has established says nothing the unconfined one does not.
  */
-export type ClaimDirection = 'trailing' | 'leading' | 'block' | 'block-leading';
+export type ClaimDirection = 'trailing' | 'block' | 'block-leading';
 
 /**
  * A sentence terminator that is not a decimal point inside a dose.
@@ -276,23 +281,24 @@ export function claimTextByCitation(
       const lineStart = direction === 'block' ? -1 : preceding.lastIndexOf('\n');
       claim = lineStart < 0 ? preceding : preceding.slice(lineStart + 1);
     } else {
-      // The prose AFTER the marker, up to the next marker: confined to this line for `leading`,
-      // unconfined for `block-leading`. The unconfined one is what survives a marker written at
-      // the END of its line with its subject on the next — there the confined forward window is
-      // empty and the confined backward window holds only the preamble, so nothing contests an
-      // election made from the preamble's partner.
-      const following = answer.slice(run.end, runs[i + 1]?.start ?? answer.length);
-      const lineEnd = direction === 'block-leading' ? -1 : following.indexOf('\n');
-      claim = lineEnd < 0 ? following : following.slice(0, lineEnd);
+      // The prose AFTER the marker, up to the next marker, and never line-confined. Unconfined
+      // is what survives a marker written at the END of its line with its subject on the next:
+      // there a confined forward window is empty and the confined backward window holds only the
+      // preamble, so nothing contests an election made from the preamble's partner.
+      //
+      // It used to be confined for `'leading'`, whose removal took the only branch that could
+      // reach the confinement with it.
+      claim = answer.slice(run.end, runs[i + 1]?.start ?? answer.length);
+      const following = claim;
       // ...but a marker immediately followed by a sentence terminator CLOSES its claim: nothing
       // after it can be its subject. Without this, an ordinary trailing-marker list self-
-      // contested — the leading claim of marker N was sentence N+1, a complete claim about the
-      // next candidate, so the leading reading was a clean shift-by-one bijection that disagreed
+      // contested — the forward claim of marker N was sentence N+1, a complete claim about the
+      // next candidate, so the forward reading was a clean shift-by-one bijection that disagreed
       // with the correct trailing one and every rating was withheld. Live, four correct ratings
       // were discarded; whether an answer came out fully badged or fully blank turned on whether
       // the model happened to write one more sentence after its last citation.
       // `:` is deliberately NOT in this set: a colon after a marker is a LABEL separator, not a
-      // sentence close, so zeroing the leading claim there silenced the contest on
+      // sentence close, so zeroing the forward claim there silenced the contest on
       // "…the one to watch is [350]: Solu-Medrol 125mg/5ml". Removing `.` as well was measured
       // and regresses — it loses four correct ratings on a live answer — so the rest is
       // load-bearing.
@@ -482,13 +488,13 @@ interface CandidateSet {
  * Everything about a candidate set that does NOT depend on the claim being read.
  *
  * Split out because it was being rebuilt for every citation of the set and again for each of the
- * four readings — the same leads re-derived and re-`normalize`d 4 × (citations of the set) times,
+ * readings — the same leads re-derived and re-`normalize`d once per reading per citation of the
  * which is quadratic in the size of the set. Measured on a 12-member `(interaction, drug)` family
  * — the size the live corpus reaches — `resolveFindingSeverities` ran 2.50 ms and dropped to
  * 0.18 ms once this was computed once per set; a 20-member family went 4.80 ms to 0.40 ms.
  *
  * Nothing here may be given a claim: the moment this depends on which sentence is being read it
- * stops being shareable across the four readings, and the readings must stay independent.
+ * stops being shareable across the readings, and the readings must stay independent.
  */
 function buildCandidateSet(candidates: AiSafetyWarning[]): CandidateSet {
   // A single candidate resolves by the shortcut in `readClaims` and its leads are never asked
@@ -778,7 +784,7 @@ export function resolveFindingSeverities(
   if (unstatedFindingSeverities.length === 0 || safetyWarnings.length === 0) return new Map();
 
   const ownIndices = new Set(unstatedFindingSeverities);
-  // Shared across the four readings on purpose: see {@link candidateSetFor}.
+  // Shared across all three readings on purpose: see {@link candidateSetFor}.
   const setCache = new Map<string, CandidateSet>();
   const trailing = readClaims(
     references,
@@ -832,40 +838,29 @@ export function resolveFindingSeverities(
 
   const contested = new Set<string>();
   for (const [index, setKey] of trailing.setOfIndex) {
-    // A forward reading identifies the set and disagrees — a permutation within the same
-    // findings.
+    // The forward reading disagrees about THIS index — a permutation within the same findings.
     //
-    // Both forward readings, not just the confined one, and the unconfined one is the load-
-    // bearing half. Trailing claims are line-confined, so on a MULTI-LINE answer a trailing
-    // marker sits at end-of-line and its leading claim is empty: `leading` is then never
-    // complete, never sound, and this rule never fires. The NAMED rule below does not cover the
-    // gap either — a permutation is invisible to it by construction, because every finding the
-    // forward reading names IS claimed by trailing, merely for a different index. So on a
-    // multi-line answer both rules were off at once, and `block` agreed with `trailing` because
-    // it reads the same direction.
+    // It has to be the UNCONFINED forward reading, and this rule has to exist separately from
+    // the NAMED one below, because on a multi-line answer nothing else can object. A trailing
+    // marker there sits at end-of-line, so a line-confined forward window is empty; and a
+    // permutation is invisible to the NAMED rule by construction, since every finding the
+    // forward reading names IS claimed by trailing, merely for a different index. `block` reads
+    // the same direction as trailing and agrees with it.
     //
-    // Measured, against the shipped fixture:
+    // Two answers were measured resolving wrong with this rule missing or too strict, both
+    // against the shipped fixture and both a SWAPPED PAIR or worse — never a missing badge:
+    //
     //   "Hydrocortisone aside, the order that matters most is [350]
     //    Solu-Medrol 125mg/5ml [354]
     //    Hydrocortisone Injection vial 100mg"
-    // resolved {350: Moderate, 354: Major} against a truth of {350: Major, 354: Moderate} — the
-    // Major Methylprednisolone interaction badged Moderate and the Moderate Hydrocortisone one
-    // badged Major, a swapped PAIR, both shown confidently beside their citations. It is the
-    // existing "refuses a multi-line answer with one marker written before its drug" sentence
-    // with one change: the lead-in's partner is itself cited.
-    // On `leading`'s place in both this loop and the NAMED one below: measured undiscriminated.
-    // Dropping it from either leaves 286 tests green and a 150,000-seed sweep clean; dropping
-    // `blockLeading` reddens both. That is what the geometry predicts — a line-confined forward
-    // window is a SUBSET of the unconfined one, so everything `leading` names `blockLeading`
-    // names too, and the NAMED rule cannot tell them apart even in principle.
+    //     -> {350: Moderate, 354: Major}, truth {350: Major, 354: Moderate}
     //
-    // Kept rather than deleted, and not out of caution about a clause nothing pins. A contest
-    // can only ADD refusals; it can never produce a rating. So an undiscriminated contest
-    // member is safe in a way an undiscriminated GUARD is not, and there is one shape where it
-    // would earn its place: a permutation in which the unconfined window names two candidates
-    // (unsound, so it cannot object) while the confined one names exactly one. That is the
-    // residual class this cycle's fix does not close, so removing the only rule that could
-    // reach part of it would be the wrong way to tidy up.
+    //   the same shape at five items with a dangling last line naming two partners
+    //     -> all five ratings the neighbouring finding's
+    //
+    // The first needed the rule to consult the unconfined reading at all; the second needed
+    // {@link objectingSets}, because the forward reading elected correctly for four of five
+    // citations and losing completeness on the fifth had been barring it from objecting.
     if (soundTrailing.has(setKey) && objectingBlockLeading.has(setKey)) {
       // No `forwardElected` guard: on a reading that named a candidate at every cited citation,
       // an index that still elected NOBODY named two, and that ambiguity is itself a reason to
@@ -873,18 +868,14 @@ export function resolveFindingSeverities(
       if (trailing.electedOf.get(index) !== blockLeading.electedOf.get(index)) contested.add(setKey);
     }
 
-    // Or the leading reading names a finding the trailing reading claims for NO citation of this
+    // Or the forward reading NAMES a finding the trailing reading claims for no citation of this
     // set. That is not a shift artifact; it is a genuine alternative parse, so the layout does
-    // not determine the mapping.
+    // not determine the mapping. Live: a single marker-written-before-its-drug line among
+    // trailing ones was read backwards, uncontested — "Hydrocortisone aside, the order that
+    // matters most is [350] Solu-Medrol 125mg/5ml…" badged the MAJOR Methylprednisolone finding
+    // as Moderate, scavenging Hydrocortisone's rating from the lead-in, next to a correctly-
+    // badged Major.
     //
-    // This is the check that survives a MULTI-LINE answer, and it is why the one above is not
-    // enough. Trailing claims are line-confined, so in any multi-line answer a trailing marker
-    // sits at end-of-line and its leading claim is empty — the leading reading is then never
-    // complete, never sound, and the disagreement rule above is structurally off. Live, a single
-    // marker-written-before-its-drug line among trailing ones was read backwards, uncontested:
-    // "Hydrocortisone aside, the order that matters most is [350] Solu-Medrol 125mg/5ml…" badged
-    // the MAJOR Methylprednisolone finding as Moderate, scavenging Hydrocortisone's rating from
-    // the lead-in, next to a correctly-badged Major.
     // NAMED, not elected. `electCandidate` returns null both for "this window named nobody" and
     // for "this window named two candidates", so keying the contest on an ELECTION silenced it
     // in exactly the second case — and the trailing reading's election, scavenged from a
@@ -894,12 +885,12 @@ export function resolveFindingSeverities(
       if (!claimedByTrailing.get(setKey)?.has(named)) contested.add(setKey);
     }
 
-    // Or the wider, unconfined window no longer singles out what the line-confined one elected.
-    // This is the check that survives a SILENT leading reading — and it is silent in exactly the
-    // layouts that break the confined one: across 40 live answers a finding marker sits at
-    // end-of-line 54 times and is followed by a sentence terminator 151 times, and in every one
-    // of those the leading reading has no evidence, which the contest above reads as no
-    // objection.
+    // Or the wider, unconfined BACKWARD window no longer singles out what the line-confined one
+    // elected. This is the check that survives a forward reading with nothing to say, and it has
+    // nothing to say in exactly the layouts that break the confined backward one: across 40 live
+    // answers a finding marker sits at end-of-line 54 times and is followed by a sentence
+    // terminator 151 times, and a marker closed by a terminator has its forward claim zeroed
+    // outright a few hundred lines up.
     const confined = trailing.electedOf.get(index);
     if (confined && block.electedOf.get(index) !== confined) contested.add(setKey);
   }
