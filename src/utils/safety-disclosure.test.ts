@@ -158,7 +158,8 @@ describe('an exclusion clause in an EARLIER sentence is not about this claim', (
     // LAST sentence — the part that is the first citation's claim window — rather than the whole
     // head. "except for Solu-Medrol 125mg/5ml" sits in an earlier sentence, so it is not about
     // [350]'s claim; stripping it there deleted the subject and rendered Prednisone's rating.
-    // Closing it cost nothing: the corpus is unchanged at 80 ratings. The alternative measured
+    // Closing it cost nothing — the live corpus does not move; see THE CORPUS in the resolver
+    // for what it currently renders. The alternative measured
     // four live ratings.
     const answer =
       'No corticosteroid is safe here, except for Solu-Medrol 125mg/5ml, which is the worst of them. The rise is above what Prednisone Co 5mg gives [350].';
@@ -329,7 +330,7 @@ describe('a finding no prose can name', () => {
 
 describe('the two contest rules that survive the tail rule', () => {
   it('refuses where the forward-disagreement rule is the ONLY objection', () => {
-    // Rule 1 was discriminated by NOTHING until this shape: disabling it left all 310 tests
+    // Rule 1 was discriminated by NOTHING until this shape: disabling it left the whole suite
     // green, and the test named for it ("refuses a swap the shift-consistency rule cannot see")
     // had been caught up with by the tail rule, which now refuses that answer earlier.
     //
@@ -1351,7 +1352,8 @@ describe('resolveFindingSeverities', () => {
 
   it('refuses an ambiguous line where shift-consistency is the ONLY objection', () => {
     // The rule this test exists for was discriminated by NOTHING until this shape was added:
-    // disabling it left the whole suite green and the live corpus unchanged at 98 ratings, and
+    // disabling it left the whole suite green and the live corpus unmoved (then at 98 ratings,
+    // before the leftover-subject rules), and
     // the three tests NAMED for it had stopped exercising it — `stripExclusions` now removes
     // their "Hydrocortisone aside," lead-ins, so those answers refuse at the soundness gate
     // instead. A rule whose only coverage is redundant is one refactor from deletion.
