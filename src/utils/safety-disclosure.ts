@@ -936,17 +936,24 @@ function objectingSets(reading: ClaimReading): Set<string> {
  * objecting until it is decisive everywhere would fall silent on exactly the ambiguous answers
  * that need it, which is measured, not hypothetical — it shipped five rotated ratings.
  *
- * A set is withheld on any of SIX objections: a forward reading that identified a candidate at
+ * A set is withheld on any of SEVEN objections: a forward reading that identified a candidate at
  * every cited citation and elects a different one here; a forward reading that NAMES a finding
  * the trailing reading claims for no citation of the set; a candidate named past the SET's last
  * own-index marker that is not the last citation's own election; a candidate named BEFORE the
- * set's first marker that no citation claims; the unconfined backward window no longer singling
+ * set's first marker that no citation claims; a candidate named BETWEEN two of the set's own
+ * markers that no citation claims; the unconfined backward window no longer singling
  * out what the confined one elected; or the trailing reading not being sound in the first place.
  *
- * The third and fourth are a mirrored pair and were added two cycles apart, each for a live
- * wrong rating and each after a word list had failed at the same job. Together they say: every
- * candidate this answer names must have a citation willing to claim it, whichever side of the
- * markers it sits on. That is the closest this module gets to a principle rather than a patch.
+ * The third, fourth and fifth are the three spans of one answer — after the set's last own
+ * marker, before its first, and between them — added across three cycles, each for a live or
+ * measured wrong rating and each after a word list had failed at the same job. Together they say:
+ * EVERY candidate this answer names must have a citation willing to claim it, wherever it sits.
+ * That is the closest this module gets to a principle rather than a patch.
+ *
+ * They are not one rule, and that was measured rather than assumed: collapsing them into a
+ * single whole-answer scan yields MORE ratings (83 against 80) and reddens five refusal tests,
+ * because each span needs a different refinement — the head strips its own last sentence, the
+ * tail exempts the last citation's own election, and the interior is plain.
  *
  * Where nothing objects, orientation never mattered — and a single-candidate set resolves the
  * same either way, by the shortcut in `readClaims`.
@@ -1186,6 +1193,44 @@ export function resolveFindingSeverities(
     namedInHead.set(setKey, found);
   }
 
+  // The INTERIOR: between the set's first and last own markers. Head, interior and tail together
+  // are the whole answer, and that is the point — the mirrored pair covered only OUTSIDE the
+  // markers, and a leftover subject named BETWEEN two of them fell in the hole between the two
+  // rules, where the two per-window objections that would otherwise see it are each switched off
+  // by one ordinary feature of real prose: the unconfined backward window is bounded at the
+  // previous marker of ANY kind, so a chart citation shields the subject from it, and the forward
+  // claim is zeroed when the preceding own marker is closed by a full stop.
+  //
+  // Both of those are documented in this file as the ORDINARY live form. Only their conjunction
+  // was untested, and it renders a rating with no objection firing at all — measured, "…active
+  // order Dexamethasone [353]. She is also on Hydrocortisone Injection vial 100mg [14]. The
+  // mechanism is the same CYP450 3A4 inhibition that raises Budesonide exposure [354]." puts
+  // Budesonide's Major beside a sentence about Hydrocortisone. A 7,776-answer enumeration of the
+  // class resolved 7,776 and every one carried a wrong rating.
+  const namedInside = new Map<string, Set<AiSafetyWarning>>();
+  for (const setKey of new Set(trailing.setOfIndex.values())) {
+    const set = setCache.get(setKey);
+    if (!set) continue;
+    let lo = -1;
+    let hi = -1;
+    for (const [index, start] of firstRunStartOfIndex) {
+      if (trailing.setOfIndex.get(index) !== setKey) continue;
+      lo = lo < 0 ? start : Math.min(lo, start);
+    }
+    for (const [index, end] of firstRunEndOfIndex) {
+      if (trailing.setOfIndex.get(index) !== setKey) continue;
+      hi = Math.max(hi, end);
+    }
+    const text = lo < 0 || hi <= lo ? '' : normalize(answer.slice(lo, hi));
+    const found = new Set<AiSafetyWarning>();
+    for (const group of set.groups) {
+      for (const candidate of matchesInGroup(set.candidates, group.leadsPerCandidate, group.shared, text)) {
+        found.add(candidate);
+      }
+    }
+    namedInside.set(setKey, found);
+  }
+
   const namedInTail = new Map<string, Set<AiSafetyWarning>>();
   for (const setKey of new Set(trailing.setOfIndex.values())) {
     const set = setCache.get(setKey);
@@ -1322,6 +1367,9 @@ export function resolveFindingSeverities(
     // claim it.
     const claimedAnywhere = claimedByTrailing.get(setKey);
     for (const named of namedInHead.get(setKey) ?? []) {
+      if (!claimedAnywhere?.has(named)) contested.add(setKey);
+    }
+    for (const named of namedInside.get(setKey) ?? []) {
       if (!claimedAnywhere?.has(named)) contested.add(setKey);
     }
 

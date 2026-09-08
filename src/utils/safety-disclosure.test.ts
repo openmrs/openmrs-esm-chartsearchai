@@ -109,6 +109,49 @@ describe('stripExclusions must not delete the cited finding’s own subject', ()
   });
 });
 
+describe('a subject left over BETWEEN the set’s own markers', () => {
+  it('refuses a mechanism clause that names a sibling the citations do not account for', () => {
+    // The hole between the mirrored head and tail rules: they cover only OUTSIDE the set's
+    // markers, so a leftover named BETWEEN two of them was seen by neither — and the two
+    // per-window objections that would otherwise catch it are each switched off by one ordinary
+    // feature of real prose. The unconfined backward window is bounded at the previous marker of
+    // ANY kind, so the chart citation `[14]` shields the subject from it; and the forward claim
+    // is zeroed because the preceding own marker is closed by a full stop. Both of those are
+    // documented in the resolver as the ordinary live form; only their conjunction was untested.
+    //
+    // Measured: no objection fires at all, and Budesonide's Major renders beside a sentence about
+    // Hydrocortisone. A 7,776-answer enumeration of the class resolved 7,776 and every one
+    // carried a wrong rating — no correct resolutions, like every leftover-subject class before
+    // it. Closing it cost nothing: the corpus is unchanged at 80.
+    for (const answer of [
+      'Clarithromycin interacts with active order Dexamethasone [353]. She is also on Hydrocortisone Injection vial 100mg [14]. The mechanism is the same CYP450 3A4 inhibition that raises Budesonide exposure [354].',
+      'Clarithromycin interacts with active order Dexamethasone [353]. She is also on Hydrocortisone Injection vial 100mg [14]. The rise there is smaller than what Budesonide sees [354].',
+    ]) {
+      expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [353, 354])]).toEqual([]);
+    }
+  });
+
+  it('refuses when the shield is a REPEAT of the set’s own marker', () => {
+    // No foreign index needed: repeating one of the set's own markers shields the subject just as
+    // well, and the resolver elsewhere records that repeat-trailing-a-mechanism-clause shape as
+    // live.
+    const answer =
+      'Clarithromycin interacts with active order Methylprednisolone [350], because coadministration with potent inhibitors of CYP450 3A4 increases plasma concentrations [350]. She is also on Prednisone Co 5mg, and the same mechanism applies [350]. The rise there is well below what Hydrocortisone gives [352].';
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 352])]).toEqual([]);
+  });
+
+  it('is why the three spans are not one rule', () => {
+    // Head, interior and tail together are the whole answer, so it is tempting to collapse them.
+    // Measured and rejected: one whole-answer scan yields MORE ratings (83) and reddens five
+    // refusal tests, because each span carries a different refinement — the head strips its own
+    // last sentence, the tail exempts the last citation's own election, and the interior is
+    // plain. This asserts the tail exemption survives, which the collapse destroys.
+    expect(resolveFindingSeverities(ANSWER_RESTATED_SUBJECT, REFERENCES, SAFETY_WARNINGS, [350]).get(350)).toBe(
+      'Major',
+    );
+  });
+});
+
 describe('an exclusion clause in an EARLIER sentence is not about this claim', () => {
   it('refuses when the strip would otherwise delete the subject out of the head', () => {
     // The last recorded open residual of the head-rule class, closed by stripping only the head's
