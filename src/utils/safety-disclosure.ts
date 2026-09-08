@@ -528,7 +528,7 @@ interface CandidateSet {
  * Everything about a candidate set that does NOT depend on the claim being read.
  *
  * Split out because it was being rebuilt for every citation of the set and again for each of the
- * readings — the same leads re-derived and re-`normalize`d once per reading per citation of the
+ * readings — the same leads re-derived and re-`normalize`d once per reading per citation of the set,
  * which is quadratic in the size of the set. Measured on a 12-member `(interaction, drug)` family
  * — the size the live corpus reaches — `resolveFindingSeverities` ran 2.50 ms and dropped to
  * 0.18 ms once this was computed once per set; a 20-member family went 4.80 ms to 0.40 ms.
@@ -614,7 +614,7 @@ interface ClaimReading {
  * The candidate set for one finding, built at most once per `(type, drug)` per resolve.
  *
  * Keyed on the same `setKey` the readings and {@link soundSets} use, so a cache hit is by
- * construction the same set the uncached path would have selected. The cache spans all four
+ * construction the same set the uncached path would have selected. The cache spans all three
  * readings deliberately: which chips share a finding's `(type, drug)`, and what they can be
  * named by, is a fact about the payload, not about the direction the answer is being read in.
  */
@@ -705,14 +705,29 @@ function readClaims(
 }
 
 /** The candidate sets this reading identified COMPLETELY and INJECTIVELY. */
-function soundSets(reading: ClaimReading): Set<string> {
-  const indicesBySet = new Map<string, number[]>();
+/**
+ * Each candidate set's citation indices, in one place.
+ *
+ * The two bars below — the right to RESOLVE and the right to OBJECT — are meant to differ by
+ * one word, and each kept its own copy of this grouping and its own `citedIndices` filter. That
+ * is one word plus two hand-copied preambles: a change to how an index is assigned to a set, or
+ * to which indices count as cited, made once would silently give the two bars different
+ * POPULATIONS, so a set could qualify to object under one grouping while being judged sound
+ * under another. (Also drops the quadratic array copy the grouping loops both used.)
+ */
+function indicesBySet(reading: ClaimReading): Map<string, number[]> {
+  const grouped = new Map<string, number[]>();
   for (const [index, setKey] of reading.setOfIndex) {
-    indicesBySet.set(setKey, [...(indicesBySet.get(setKey) ?? []), index]);
+    const own = grouped.get(setKey);
+    if (own) own.push(index);
+    else grouped.set(setKey, [index]);
   }
+  return grouped;
+}
 
+function soundSets(reading: ClaimReading): Set<string> {
   const sound = new Set<string>();
-  for (const [setKey, indices] of indicesBySet) {
+  for (const [setKey, indices] of indicesBySet(reading)) {
     // Completeness over the CITED members only — an index the prose never carries renders
     // nothing either way. Injectivity over EVERY member: two citations of one set electing the
     // same finding cannot both be right, and an uncited index still consumes a candidate.
@@ -756,13 +771,8 @@ function soundSets(reading: ClaimReading): Set<string> {
  * of resolving more, and are gone rather than left for the next change to delete for free.
  */
 function objectingSets(reading: ClaimReading): Set<string> {
-  const indicesBySet = new Map<string, number[]>();
-  for (const [index, setKey] of reading.setOfIndex) {
-    indicesBySet.set(setKey, [...(indicesBySet.get(setKey) ?? []), index]);
-  }
-
   const qualified = new Set<string>();
-  for (const [setKey, indices] of indicesBySet) {
+  for (const [setKey, indices] of indicesBySet(reading)) {
     const named = indices
       .filter((i) => reading.citedIndices.has(i))
       .every((i) => (reading.namedOf.get(i)?.size ?? 0) > 0);
@@ -787,9 +797,10 @@ function objectingSets(reading: ClaimReading): Set<string> {
  * by one, rendering the Major Methylprednisolone interaction as Moderate. Completeness and
  * injectivity cannot see a rotation, because a rotation is both.
  *
- * So the answer is read FOUR ways — trailing and leading, each line-confined or not — and only
- * the trailing reading may ever resolve a set, which it must identify completely and
- * injectively ({@link soundSets}). The other three exist to CONTEST it, and the bar to contest
+ * So the answer is read THREE ways — backward line-confined (`trailing`), backward unconfined
+ * (`block`), and forward unconfined (`block-leading`) — and only the trailing reading may ever
+ * resolve a set, which it must identify completely and injectively ({@link soundSets}). The
+ * other two exist to CONTEST it, and the bar to contest
  * is deliberately lower than the bar to resolve ({@link objectingSets}): a reading barred from
  * objecting until it is decisive everywhere would fall silent on exactly the ambiguous answers
  * that need it, which is measured, not hypothetical — it shipped five rotated ratings.

@@ -924,6 +924,26 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     );
   });
 
+  it('routes a visit and an encounter to the same tab as a diagnosis', () => {
+    // `diagnosis` was mapped and its own encounter was not, so a citation of an encounter and a
+    // citation of a diagnosis FROM that encounter landed on two different tabs. Measured on the
+    // live server: one question returned 113 chart citations, of which encounter x45 and
+    // visit x6 fell through to the default tab.
+    renderPanel({
+      references: [
+        { index: 20, resourceType: 'visit', resourceUuid: 'v-1', date: '2024-09-09', group: 'chart' },
+        { index: 21, resourceType: 'encounter', resourceUuid: 'e-1', date: '2024-09-09', group: 'chart' },
+        { index: 22, resourceType: 'diagnosis', resourceUuid: 'd-1', date: '2024-09-09', group: 'chart' },
+      ],
+      misattributedOrderCitations: [],
+      unstatedFindingSeverities: [],
+    });
+    const visits = `/openmrs/spa/patient/${patientUuid}/chart/Visits`;
+    expect(screen.getByText('[20] visit — 2024-09-09')).toHaveAttribute('href', visits);
+    expect(screen.getByText('[21] encounter — 2024-09-09')).toHaveAttribute('href', visits);
+    expect(screen.getByText('[22] diagnosis — 2024-09-09')).toHaveAttribute('href', visits);
+  });
+
   it('navigates a module-injected active order like any other chart citation', () => {
     // It is injected but is the patient's own order with a real Order uuid, so it groups as
     // chart and must not land on the default tab under its raw wire type.

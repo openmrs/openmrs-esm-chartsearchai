@@ -55,6 +55,13 @@ const RESOURCE_TYPE_TO_CHART_PAGE: Record<string, string> = {
   allergy: 'Allergies',
   condition: 'Conditions',
   diagnosis: 'Visits',
+  // `visit` and `encounter` alongside `diagnosis`, which was already here. Without them a
+  // citation of an encounter and a citation of a diagnosis FROM that encounter landed on two
+  // different tabs. Measured on the live server: "Summarise her recent visits and encounters
+  // and any diagnoses" returned 113 chart citations, of which encounter x45 and visit x6 fell
+  // through to the default tab — 51 of 113.
+  visit: 'Visits',
+  encounter: 'Visits',
   program: 'Programs',
   medication_dispense: 'Medications',
 };
@@ -136,13 +143,24 @@ function notGroundedTitle(t: Translate): string {
 /**
  * The wording for a citation that cannot be the drug order its sentence names.
  *
- * Says the EVIDENCE is wrong, not the finding — the interaction itself came from a
- * deterministic check and is typically sound. Shared by the inline marker and the chip.
+ * Says the EVIDENCE is in doubt, and stops there. It must not read as a verdict on the finding
+ * in EITHER direction: not "this warning is bogus", which the backend calls a miscarriage of
+ * the same kind as badging a correct citation Unsupported; and not "the finding is unaffected",
+ * which this said until it was checked against the whole contract rather than half of it.
+ *
+ * Both halves are in the README. The finding "is deterministic and, on the reported answer,
+ * clinically correct — it is the chart evidence attached to it that is wrong". But also:
+ * "Responses are reachable in which this key and its neighbours disagree, and in each the
+ * neighbour may be the one that is right" — the order-currency arm fires on the chart's
+ * out-of-force mark, while the chip's own `OrderService` read is taken at a different instant,
+ * so a chip can say "active order X" about an order this key says the citation cannot be. The
+ * backend leaves that unresolved; a tooltip that resolves it is overclaiming whichever side it
+ * picks. Shared by the inline marker and the chip.
  */
 function misattributedTitle(t: Translate): string {
   return t(
     'misattributedCitationTitle',
-    'The module reports that this citation may not be the medication order this sentence names, so it is not offered as a link. The safety finding itself is unaffected.',
+    'The module reports that this citation may not be the medication order this sentence names, so it is not offered as a link. This is a report about the citation, not a verdict on the safety finding.',
   );
 }
 
@@ -159,12 +177,6 @@ function referenceTag(ref: AiReference, t: Translate): GroundedTag {
   };
 }
 
-/**
- * The label for a reference-group citation, keyed on the same classification the predicate uses
- * so the two cannot disagree. `other` is reachable and deliberately neutral: a citation whose
- * `group` is `reference` but whose type this client predates must not be called a drug
- * reference, which would tell a clinician it came from a drug's reference entry.
- */
 /**
  * What each coverage verdict says, or `null` where it must say nothing.
  *
@@ -197,6 +209,12 @@ const COVERAGE_SENTENCE: Record<ConditionRuleCoverage, ((t: Translate) => string
   published: null,
 };
 
+/**
+ * The label for a reference-group citation, keyed on the same classification the predicate uses
+ * so the two cannot disagree. `other` is reachable and deliberately neutral: a citation whose
+ * `group` is `reference` but whose type this client predates must not be called a drug
+ * reference, which would tell a clinician it came from a drug's reference entry.
+ */
 const REFERENCE_KIND_LABEL: Record<ReferenceKind, (t: Translate) => string> = {
   safety_finding: (t) => t('safetyFindingLabel', 'Safety finding'),
   drug_reference: (t) => t('drugReferenceLabel', 'Drug reference'),
@@ -614,16 +632,19 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                       {t('notTheOrderNamed', 'Not the order named')}
                     </span>
                   )}
-                  {/* The module attached this citation from the safety finding it fired on, so the
-                      answer's prose carries no [N] marker for it. Saying so is the only way a
-                      clinician can tell why the number appears nowhere above — and the chip is the
+                  {/* This citation IS the chart record the cited safety finding fired on — the
+                      recorded allergy or condition whose match raised it — so the answer's prose
+                      carries no [N] marker for it. (Not "attached from the finding": the finding
+                      fires on the record, and the wording said it the other way round until the
+                      README's own sentence was read against it.) Saying so is the only way a
+                      clinician can tell why the number appears nowhere above, and the chip is the
                       only place it appears at all. */}
                   {ref.attachedByTheModule === true && (
                     <span
                       className={styles.attachedTag}
                       title={t(
                         'attachedByTheModuleTitle',
-                        'The module supplied this citation from the safety finding it fired on, so the answer’s text carries no marker for it. Opening it goes to the record.',
+                        'The module supplied this citation — it is the chart record the cited safety finding fired on, so the answer’s text carries no marker for it. Opening it goes to the record.',
                       )}
                     >
                       {t('attachedByTheModule', 'Added by the module')}

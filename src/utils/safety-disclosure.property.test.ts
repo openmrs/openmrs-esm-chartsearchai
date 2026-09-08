@@ -178,12 +178,18 @@ function shiftedAnswer(random: () => number, chosen: number[]): Generated {
 }
 
 function generateAnswer(random: () => number): Generated {
-  // One in five answers is the shifted shape above. It needs at least two findings for the
-  // rotation to exist, so a one-element draw falls through to the shapes below.
+  // One in five answers is the shifted shape above. `count` starts at 2 because the rotation
+  // needs at least two findings to exist — it is a floor, not a filter, and there was an
+  // `if (count >= 2)` here reading as one. It could never be false (`2 + floor(r * 4)` is 2..5,
+  // confirmed over 200,000 seeds: 40,031 taken, 0 fell through), so it looked like live
+  // protection while protecting nothing. The hazard is real if it stays: an edit lowering the
+  // floor to match the sibling draw below would be made believing one-element draws were still
+  // routed away, and `shiftedAnswer` with a single finding emits a lead-in and a bare name with
+  // no rotation at all — silently diluting the 20% population the coverage bound rests on.
   if (random() < 0.2) {
     const pool = [...PARTNERS.keys()].sort(() => random() - 0.5);
     const count = 2 + Math.floor(random() * (pool.length - 1));
-    if (count >= 2) return shiftedAnswer(random, pool.slice(0, count));
+    return shiftedAnswer(random, pool.slice(0, count));
   }
 
   // Half the time, build the hazard deliberately: a lead-in naming a partner whose OWN index is
