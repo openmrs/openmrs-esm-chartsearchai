@@ -167,6 +167,26 @@ export interface AiInteractionPairs {
  */
 export type ConditionRuleCoverage = 'absent' | 'published' | 'unloaded';
 
+/**
+ * How many claims about the patient's ACTIVE ORDERS the answer made, and how many of them
+ * offered no chart record as evidence.
+ *
+ * This is what makes {@link AiSearchResponse.misattributedOrderCitations} readable, and the
+ * backend says so: without it that key's `[]` is two responses a client cannot tell apart — an
+ * answer whose active-order claims all cited chart records that were accepted, and an answer
+ * that cited no chart record for any of them. Both have been recorded on one patient and one
+ * question, with `misattributedOrderCitations` reading `[]` in each.
+ *
+ * So `uncited` is the number that carries the warning, and `stated` is what makes it a ratio
+ * rather than a bare count. `uncited === 0` says every such claim offered SOME chart record —
+ * never that the record was the right one, which is the neighbouring key's business and which it
+ * cannot certify either.
+ */
+export interface AiActiveOrderClaims {
+  stated: number;
+  uncited: number;
+}
+
 export interface AiSearchResponse {
   answer: string;
   references: AiReference[];
@@ -213,17 +233,28 @@ export interface AiSearchResponse {
   conditionRuleCoverage?: ConditionRuleCoverage | (string & {}) | null;
   /** @see AiInteractionPairs */
   interactionPairs?: AiInteractionPairs | null;
+  /** @see AiActiveOrderClaims */
+  activeOrderClaims?: AiActiveOrderClaims | null;
   questionId?: string;
 }
 
 /**
- * The four response fields that state what a bounded safety answer did not cover. Declared once
- * here, on the wire type, and referenced by the chat message and the panel props so the three
- * cannot drift — in particular the reading that an empty array is not a certificate.
+ * The response fields that state what a bounded safety answer did not cover. Declared once here,
+ * on the wire type, and referenced by the chat message and the panel props so the three cannot
+ * drift — in particular the reading that an empty array is not a certificate.
+ *
+ * FIVE now, not four. `activeOrderClaims` was added to the backend after this client's work on
+ * the other four began, and it is not a sixth nice-to-have: it is the key that separates the two
+ * readings of `misattributedOrderCitations: []`, so leaving it out left an already-rendered field
+ * ambiguous in exactly the way that field's own doc warns about.
  */
 export type AiAnswerLimits = Pick<
   AiSearchResponse,
-  'misattributedOrderCitations' | 'unstatedFindingSeverities' | 'conditionRuleCoverage' | 'interactionPairs'
+  | 'misattributedOrderCitations'
+  | 'unstatedFindingSeverities'
+  | 'conditionRuleCoverage'
+  | 'interactionPairs'
+  | 'activeOrderClaims'
 >;
 
 /**

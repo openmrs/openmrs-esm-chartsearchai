@@ -115,6 +115,25 @@ export function parseCitationIndices(group: string): number[] {
 }
 
 // -----------------------------------------------------------------------------------------------
+// WHY THIS FILE EXISTS, AND WHAT WOULD DELETE IT.
+//
+// The backend publishes `unstatedFindingSeverities` as a list of citation indices and publishes
+// the ratings on `safetyWarnings[]`, with no key joining the two: a chip carries no citation index
+// and `(type, drug)` does not identify one, because a single screening question raises several
+// findings sharing it — five on the demo chart, all `(interaction, Clarithromycin)`. So everything
+// below reconstructs that join from the model's prose and refuses wherever the reading is
+// ambiguous.
+//
+// The backend already HAS the join. `SafetyFindingSeverityFidelityCheck` builds a
+// `Map<citation index, rating>` in order to decide what to publish, and then publishes the key set
+// while dropping the values. Publishing them per citation is filed as
+// openmrs-module-chartsearchai#387, and that is the change that lets this file be DELETED rather
+// than maintained — every refusal below, and the 18 ratings they cost, exists only because the
+// values are dropped on the wire. Read that issue before extending anything here; a new rule is
+// worth adding only if it is worth adding to code with a known exit.
+// -----------------------------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------------------------
 // THE CORPUS. Named once because notes throughout this file quote it and several had drifted —
 // 94 where others said 98, and separately a 62-answer and a 40-answer count for the same phrase.
 //
@@ -1600,6 +1619,17 @@ export function resolveFindingSeverities(
   // -----------------------------------------------------------------------------------------
   // THE ONE RULE ABOUT RULES, before the objections start, because a maintainer adding one
   // reads this line and I did not have it to read.
+  //
+  // AND HOW TO MEASURE ONE, which is the other half and has cost more than the rules have. A
+  // clean sweep is evidence about the inputs it ran on and nothing else. Twice on this file a
+  // 400,000-seed run of the shipping distribution found nothing while a population SKEWED at the
+  // shape found a wrong rating immediately — enlarging bought nothing, skewing bought both. And
+  // the population that matters is often one the generator cannot express at all: the worst
+  // defect here was invisible to every sweep because no generated answer ever wrote a rating word
+  // into its prose. So before believing a clean result, say out loud what these inputs could not
+  // have produced. That applies to a measurement as much as to a generator — a truth map keyed on
+  // citation index is wrong by construction, because which finding an index refers to is exactly
+  // what the prose decides.
   //
   // A RENDERED RATING IS ALWAYS THE TRAILING READING'S OWN ELECTION. Every rule from here down
   // may only SUPPRESS it. That is exact rather than aspirational: a value is produced in just

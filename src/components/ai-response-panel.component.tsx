@@ -445,6 +445,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   unstatedFindingSeverities,
   conditionRuleCoverage,
   interactionPairs,
+  activeOrderClaims,
   questionId,
   error,
   isLoading,
@@ -534,6 +535,44 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   );
 
   /**
+   * What the answer's claims about her active orders offered as evidence.
+   *
+   * Rendered because it is what makes the struck-through markers above readable. The backend is
+   * explicit that `misattributedOrderCitations: []` is two different responses a client cannot
+   * tell apart — every active-order claim cited a chart record and none was rejected, or NO claim
+   * cited a chart record at all — and that both have been recorded on one patient and one
+   * question. Drawing the first four fields without this one left that ambiguity on the screen.
+   *
+   * `bounded` is the uncited case, so it takes the same amber treatment as a withheld pair count.
+   * The zero-uncited sentence deliberately says a record was OFFERED and stops there: whether the
+   * record was the right one is the neighbouring check's business, and the backend says that check
+   * cannot certify it either. Nothing renders when the answer made no such claim (`stated: 0`) or
+   * when no measurement was stated (`null`) — a count of zero claims is not a limit, and a null is
+   * not a completeness claim.
+   */
+  const orderClaimsSentence = useMemo(() => {
+    // typeof on both, not a truthy check: a non-numeric value here would reach `toLocaleString`
+    // inside this memo and take the whole panel down, and `0` is a meaningful value for each.
+    if (typeof activeOrderClaims?.stated !== 'number' || typeof activeOrderClaims?.uncited !== 'number') return null;
+    const { stated, uncited } = activeOrderClaims;
+    if (stated <= 0) return null;
+    if (uncited <= 0) {
+      return {
+        bounded: false,
+        text: t('activeOrderClaimsAllCited', 'Every statement about her active orders cites a chart record.'),
+      };
+    }
+    return {
+      bounded: true,
+      text: t(
+        'activeOrderClaimsUncited',
+        'Statements about her active orders citing no chart record: {{uncited}} of {{stated}}.',
+        { uncited, stated },
+      ),
+    };
+  }, [activeOrderClaims, t]);
+
+  /**
    * Whether this answer carries any drug-safety output at all — a warning, a stated pair
    * extent, or a cited reference record. Named for what it measures rather than for "a screen
    * ran", which is more than any of the three establish. (It said "these two fields" until the
@@ -576,7 +615,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   // mid-stream leaves `isLoading` true forever — the panel is gone, so nothing re-renders it,
   // but the message stays in the store and comes back on reopen. (Not because a trailing
   // `grounded` lands on it: the unmount effect aborts the stream unconditionally, so it cannot.)
-  const showLimits = !isLoading && (pairsSentence !== null || coverageNote !== null);
+  const showLimits = !isLoading && (pairsSentence !== null || coverageNote !== null || orderClaimsSentence !== null);
 
   // The API layer emits a code (not display text) for session expiry so the wording can be localized
   // here; every other error is already a human-readable string from the server or browser.
@@ -707,6 +746,16 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
         <div className={styles.limitsSection}>
           <span className={styles.limitsLabel}>{t('checkCoverage', 'What the safety checks covered')}</span>
           <ul className={styles.limitsList}>
+            {orderClaimsSentence && (
+              <li className={orderClaimsSentence.bounded ? styles.limitItemBounded : styles.limitItem}>
+                <Information size={16} className={styles.limitIcon} />
+                <span>
+                  {orderClaimsSentence.text}
+                  {orderClaimsSentence.bounded &&
+                    ` ${t('activeOrderClaimsUncitedWhy', 'A statement with no chart record behind it cannot be checked against the chart at all.')}`}
+                </span>
+              </li>
+            )}
             {pairsSentence && (
               <li className={pairsSentence.bounded ? styles.limitItemBounded : styles.limitItem}>
                 <Information size={16} className={styles.limitIcon} />

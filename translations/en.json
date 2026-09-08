@@ -1,4 +1,7 @@
 {
+  "activeOrderClaimsAllCited": "Every statement about her active orders cites a chart record.",
+  "activeOrderClaimsUncited": "Statements about her active orders citing no chart record: {{uncited}} of {{stated}}.",
+  "activeOrderClaimsUncitedWhy": "A statement with no chart record behind it cannot be checked against the chart at all.",
   "aiChartSearch": "AI Chart Search",
   "aiDisclaimerText": "This response is AI-generated and may not be accurate. It is not a substitute for clinical judgment. Always verify against the patient's medical records.",
   "aiSearch": "AI Search",

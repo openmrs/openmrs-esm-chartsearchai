@@ -524,12 +524,83 @@ describe('AiResponsePanel copy-to-clipboard', () => {
 });
 
 /**
- * The five backend fields that state a bounded safety answer's limits (issue #26), rendered
+ * The backend fields that state a bounded safety answer's limits (issue #26), rendered
  * against the measured response in `src/__fixtures__/clarithromycin-response.ts` — shared with
  * the resolver's own tests, because the ratings asserted here are that resolver's OUTPUT over
  * the fixture's prose and warnings and so depend on dataset-format details only the fixture
  * states.
  */
+describe('activeOrderClaims', () => {
+  function renderClaims(activeOrderClaims: unknown, misattributedOrderCitations: number[] | null = []) {
+    return render(
+      <AiResponsePanel
+        answer={ANSWER_BY_SUBSTANCE}
+        references={FIXTURE_REFERENCES}
+        safetyWarnings={SAFETY_WARNINGS}
+        misattributedOrderCitations={misattributedOrderCitations}
+        unstatedFindingSeverities={UNSTATED}
+        conditionRuleCoverage="published"
+        interactionPairs={null}
+        activeOrderClaims={activeOrderClaims as never}
+        questionId="q-379"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+  }
+
+  it('is what separates the two readings of an empty misattributed list', () => {
+    // The reason this field is drawn at all. The backend states that
+    // `misattributedOrderCitations: []` is two different responses a client cannot tell apart —
+    // every active-order claim cited a chart record and none was rejected, or NO claim cited one —
+    // and that both have been recorded on one patient and one question. The `[]` is the same in
+    // both halves below; only this field distinguishes them, which is why drawing the other four
+    // without it left an ambiguity on screen that their own docs warn about.
+    const view = renderClaims({ stated: 5, uncited: 0 }, []);
+    expect(screen.getByText(/Every statement about her active orders cites a chart record\./)).toBeInTheDocument();
+    view.unmount();
+
+    renderClaims({ stated: 5, uncited: 5 }, []);
+    expect(screen.getByText(/Statements about her active orders citing no chart record: 5 of 5\./)).toBeInTheDocument();
+  });
+
+  it('says why an uncited claim matters', () => {
+    renderClaims({ stated: 4, uncited: 3 });
+    expect(screen.getByText(/citing no chart record: 3 of 4\./)).toBeInTheDocument();
+    expect(screen.getByText(/cannot be checked against the chart at all/)).toBeInTheDocument();
+  });
+
+  it('does not claim the cited records were the RIGHT ones', () => {
+    // `uncited: 0` says a record was offered for every claim and stops there. Whether the record
+    // was the order the sentence named is the neighbouring check's business, and the backend says
+    // that check cannot certify it either — so this must not read as "citations verified", and it
+    // must not carry the caveat clause that belongs to the uncited case.
+    renderClaims({ stated: 5, uncited: 0 });
+    expect(screen.getByText(/Every statement about her active orders cites a chart record\./)).toBeInTheDocument();
+    expect(screen.queryByText(/verified|confirmed|sound/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/cannot be checked against the chart at all/)).not.toBeInTheDocument();
+  });
+
+  it('renders nothing for a null measurement or an answer that made no such claim', () => {
+    for (const value of [null, undefined, { stated: 0, uncited: 0 }]) {
+      const view = renderClaims(value);
+      expect(screen.queryByText(/active orders/)).not.toBeInTheDocument();
+      view.unmount();
+    }
+  });
+
+  it('survives a malformed measurement rather than taking the panel down', () => {
+    // Guarded per FIELD, not just on the object: this renders inside a memo with no error boundary
+    // above it, and a non-numeric count would reach the interpolation.
+    for (const value of [{ stated: '5', uncited: 2 }, { stated: 5 }, { uncited: 2 }, 'nonsense', 5]) {
+      const view = renderClaims(value);
+      expect(screen.queryByText(/active orders/)).not.toBeInTheDocument();
+      view.unmount();
+    }
+  });
+});
+
 describe('AiResponsePanel answer-limit disclosure', () => {
   function renderPanel(overrides: Record<string, unknown> = {}) {
     return render(

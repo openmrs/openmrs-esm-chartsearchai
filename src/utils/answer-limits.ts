@@ -1,7 +1,7 @@
 import type { AiAnswerLimits, AiSearchResponse } from '../api/chartsearchai';
 
 /**
- * The four answer-limit measurements as a chat message carries them: every key present, and null
+ * The answer-limit measurements as a chat message carries them: every key present, and null
  * until stated.
  *
  * `Required` only makes them present — their semantics, including that an empty array is not a
@@ -15,6 +15,7 @@ export const NO_ANSWER_LIMITS: MessageAnswerLimits = {
   unstatedFindingSeverities: null,
   conditionRuleCoverage: null,
   interactionPairs: null,
+  activeOrderClaims: null,
 };
 
 /**
@@ -29,7 +30,7 @@ export const NO_ANSWER_LIMITS: MessageAnswerLimits = {
  * value DOES replace an earlier one — including `[]` replacing null, which is the whole
  * distinction between "the check ran and named none" and "no measurement stated".
  *
- * One of two enumerations of the four keys — {@link NO_ANSWER_LIMITS} above is the other — and
+ * One of two enumerations of these keys — {@link NO_ANSWER_LIMITS} above is the other — and
  * those two are the WHOLE of the compile-time backstop. Verified with `tsc`: adding a fifth key
  * to {@link AiAnswerLimits} reddens exactly these two functions and nothing else. It does NOT
  * redden the `ChatMessage` literals or the hook, because each literal spreads
@@ -43,6 +44,7 @@ export function mergeDisclosure(previous: MessageAnswerLimits, source: Partial<A
     unstatedFindingSeverities: source.unstatedFindingSeverities ?? previous.unstatedFindingSeverities,
     conditionRuleCoverage: source.conditionRuleCoverage ?? previous.conditionRuleCoverage,
     interactionPairs: source.interactionPairs ?? previous.interactionPairs,
+    activeOrderClaims: source.activeOrderClaims ?? previous.activeOrderClaims,
   };
 }
 

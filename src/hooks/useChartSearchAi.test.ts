@@ -554,6 +554,11 @@ describe('useChartSearchAi answer-limit measurements', () => {
     unstatedFindingSeverities: [350, 351],
     conditionRuleCoverage: 'absent',
     interactionPairs: { found: 18, reported: 10 },
+    // The fifth measurement, added to the backend after the other four. It rides the same merge,
+    // so listing it HERE is what gives it end-to-end streaming coverage: every test below that
+    // asserts on `disclosure` now asserts this key survives the early-`done`-then-`grounded`
+    // path, refuses to be erased by a later null, and is refused after a stop.
+    activeOrderClaims: { stated: 5, uncited: 3 },
   };
 
   it('starts a message with no measurement stated', () => {
