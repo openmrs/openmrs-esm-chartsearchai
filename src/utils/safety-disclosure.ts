@@ -682,16 +682,16 @@ function isWordish(character: string): boolean {
  * its mirror. The premise above — "a lead at the HEAD of a compound is normally that drug in
  * adjectival form" — fails when the hyphen joins two DRUG names, and then this boundary exposes
  * the head, which is a sibling, while the `-` before the tail keeps the marker's own subject
- * hidden. {@link hyphenJoinsASibling} is the other half; the two tests named for this pair of
- * classes each redden under the other's boundary setting, which is the evidence that neither
- * setting alone can serve both.
+ * hidden. {@link hyphenHiddenCandidates} is the other half — it gives the tail back — and the two
+ * tests named for this pair of classes each redden under the other's rule, which is the evidence
+ * that neither half alone can serve both.
  *
- * No counts here on purpose. The first figures written for this class said "every one of them
- * under-warned", which was an artefact of sweeping only the two Major indices — where a wrong
- * rating can only under-warn. Re-run across all five it is close to an even split, and that is
- * structural: for a pair `(A,B)` and `(B,A)` with different ratings, one ordering under-warns and
- * the other over-warns, so no pair sweep of this fixture can be one-directional. The direction is
- * what the safety argument rested on, so getting it wrong mattered more than the count did.
+ * No counts in this paragraph on purpose. The first figures written for the class said "every one
+ * of them under-warned", which was an artefact of sweeping only the two Major indices, where a
+ * wrong rating can only under-warn. Across all five it is close to an even split, structurally:
+ * for a pair `(A,B)` and `(B,A)` with different ratings, one ordering under-warns and the other
+ * over-warns. The direction was what the safety argument rested on, so getting it wrong mattered
+ * more than the count did.
  */
 function isWordishAfter(character: string): boolean {
   return /[a-z0-9/]/.test(character);
@@ -711,14 +711,9 @@ function matchesInGroup(
   leadsPerCandidate: string[][],
   shared: ReadonlySet<string>,
   claim: string,
-  siblingLeads: readonly string[][] = [],
 ): AiSafetyWarning[] {
   return candidates.filter((_candidate, i) =>
-    // `siblingLeads[i]` is every OTHER candidate's leads, across all groups — see
-    // {@link hyphenJoinsASibling}, which is the only thing that reads it. Another candidate's,
-    // not this one's: `Solu-Medrol` holds `Medrol`, and a compound made of one candidate's own
-    // two names is still one drug.
-    leadsPerCandidate[i].some((lead) => !shared.has(lead) && namesLead(claim, lead, siblingLeads[i])),
+    leadsPerCandidate[i].some((lead) => !shared.has(lead) && namesLead(claim, lead)),
   );
 }
 
@@ -733,24 +728,16 @@ interface CandidateSet {
   candidates: AiSafetyWarning[];
   groups: CandidateGroup[];
   /**
-   * Per candidate, every lead belonging to a DIFFERENT candidate of this set, across all groups.
+   * Per candidate, every lead it carries, across all groups — flattened once here because
+   * {@link hyphenPairedCandidates} walks all of them for every claim and the readings share it.
    *
-   * Computed once here for the same reason the groups are — it is quadratic in the set size and
-   * the readings must be able to share it. Read only by {@link hyphenJoinsASibling}, to tell a
-   * hyphen joining two drug names from one joining a drug to an English suffix. Cheap even where
-   * it fires on every lead: timed on a 20-member family whose every claim carries a hyphen token,
-   * the check adds about 0.03 ms to a 0.64 ms call.
-   *
-   * Includes leads that are SHARED across the set, and nothing measured discriminates that. The
-   * variant excluding them leaves the suite green and the corpus byte-identical, so this is a
-   * judgement rather than a measurement: the question this feeds is "is there a second DRUG NAME
-   * in this token", and a shared lead — an order display several findings bridge to, which is a
-   * shape the live chart has produced — is a drug name even though it singles out no particular
-   * sibling. Excluding them would miss `prednisone-<that shared display>`. Stated because the
-   * argument the other way is real: a shared lead cannot tell candidates apart anywhere else in
-   * this file, and this is the one place it is allowed to speak.
+   * Includes leads that are SHARED across the set, deliberately. Everywhere else a shared lead is
+   * discarded because it cannot tell candidates apart; here the question is whether a second DRUG
+   * NAME sits on the other side of a hyphen, and an order display several findings bridge to —
+   * a shape the live chart has produced — is a name even though it singles out nobody. Nothing
+   * measured discriminates the variant that excludes them.
    */
-  siblingLeads: string[][];
+  allLeads: string[][];
   /**
    * True when some candidate has NO discriminating lead in any group, so no prose can name it.
    *
@@ -791,7 +778,7 @@ function buildCandidateSet(candidates: AiSafetyWarning[]): CandidateSet {
   // `readClaims` calls this BEFORE its own `candidates.length === 0` check, and the live payload
   // has a `contraindication:Clarithromycin` finding with `severity: null`, which yields zero
   // RATED candidates on every real answer of that shape.
-  if (candidates.length <= 1) return { candidates, groups: [], siblingLeads: [], unnameable: false };
+  if (candidates.length <= 1) return { candidates, groups: [], allLeads: [], unnameable: false };
   const leadsPerCandidate = candidates.map(candidateLeadTiers);
   const groups = leadsPerCandidate[0].map((_unused, group) => {
     const leads = candidates.map((candidate, i) => discriminatingLeads(leadsPerCandidate[i][group], candidate.drug));
@@ -801,10 +788,8 @@ function buildCandidateSet(candidates: AiSafetyWarning[]): CandidateSet {
   const unnameable = candidates.some((_candidate, i) =>
     groups.every((group) => group.leadsPerCandidate[i].length === 0),
   );
-  const siblingLeads = candidates.map((_candidate, i) =>
-    groups.flatMap((group) => group.leadsPerCandidate.flatMap((leads, j) => (j === i ? [] : leads))),
-  );
-  return { candidates, groups, siblingLeads, unnameable };
+  const allLeads = candidates.map((_candidate, i) => groups.flatMap((group) => group.leadsPerCandidate[i]));
+  return { candidates, groups, allLeads, unnameable };
 }
 
 /**
@@ -815,7 +800,7 @@ function buildCandidateSet(candidates: AiSafetyWarning[]): CandidateSet {
  * — while the `leadClause` group, anchored by the *"interacts with active order …"* phrase, got
  * the same case right.
  */
-export function namesLead(claim: string, lead: string, siblingLeads: readonly string[] = []): boolean {
+export function namesLead(claim: string, lead: string): boolean {
   // An empty lead is not merely uninformative — `indexOf('')` returns `from` for every `from`, so
   // the scan below would never advance and never terminate. It is filtered out upstream, but a
   // guard whose failure mode is a frozen render thread does not get to rely on that.
@@ -826,76 +811,9 @@ export function namesLead(claim: string, lead: string, siblingLeads: readonly st
     const before = at === 0 ? '' : claim[at - 1];
     const end = at + lead.length;
     const after = end >= claim.length ? '' : claim[end];
-    if (!isWordish(before) && !isWordishAfter(after) && !hyphenJoinsASibling(claim, end, after, siblingLeads)) {
-      return true;
-    }
+    if (!isWordish(before) && !isWordishAfter(after)) return true;
     from = at;
   }
-}
-
-/**
- * Whether the `-` that ended this match is joining this drug's name to a SIBLING'S, rather than to
- * an English suffix.
- *
- * {@link isWordishAfter} makes `-` a boundary after a lead on the premise that a lead at the HEAD
- * of a compound is normally that drug in adjectival form — `methylprednisolone-containing`. That
- * premise fails exactly when the hyphen joins two DRUG names, and then the asymmetry does the
- * wrong thing twice over: it EXPOSES the head, which is a sibling, and leaves the tail — the
- * marker's own subject — hidden by the `-` before it. One candidate is named, unanimously in all
- * three readings, and every objection is satisfied because the wrongly-elected sibling is in
- * `claimedByTrailing` precisely BECAUSE it was wrongly elected.
- *
- * Measured on the shipped fixture, under-warning every time — the direction that reaches a
- * patient: *"Clarithromycin interacts with active order Dexamethasone Injection vial 8mg [353],
- * with active order Hydrocortisone Injection vial 100mg [354], and with her
- * prednisone-to-Solu-Medrol switch [350]"* rendered all three badges and got [350] wrong, MAJOR
- * shown as Moderate. Swept over every ordered pair of the fixture's own published names joined by
- * six hyphen forms in five carrier sentences, with this check disabled: nearly every answer
- * resolves, none refuses, and a large share carry a wrong rating in BOTH directions depending on
- * the pair's ordering. The real-world shape is a combination product carrying two findings —
- * `Sulfamethoxazole-Trimethoprim`, `Carbidopa-Levodopa`, `Amoxicillin-Clavulanate`.
- *
- * KNOWN RESIDUAL, found by two independent reviews and verified: this reads the remainder only as
- * far as the next SPACE, so it cannot see a sibling whose lead contains one, and it never fires at
- * all unless the matched lead is itself hyphen-adjacent. Both escapes are live:
- *
- *   "…her Solu-Medrol 125mg/5ml-Prednisone switch [350]."   -> renders Major, over-warning
- *   "…with her metformin-Insulin Glargine regimen [350]."    -> renders the sibling's rating
- *
- * In the first the dose-stripped short form `Solu-Medrol` matches cleanly with a SPACE after it,
- * so nothing here looks at the hyphen further along the token; in the second the sibling's lead
- * (`insulin glargine`) spans a space and the space-bounded remainder cannot contain it. The
- * fixture has no multi-word substance, which is why the second needs a constructed payload.
- *
- * Left open rather than patched, and the design constraint is the reason: every candidate rule
- * tried fails one of the committed cases. Anchoring both sides at the hyphen misses
- * `prednisone-to-methylprednisolone`, because the connector breaks the adjacency. Treating the
- * whole space-bounded run as one unit misses the first case above, whose hyphen is in a different
- * run from the match. Allowing overlapping leads inside a run breaks the `Medrol`-inside-
- * `Solu-Medrol` mirror, which must keep resolving. What looks most likely to work is a window
- * after each HYPHEN in the claim — a lead ending at it, another candidate's lead beginning within
- * a short no-space distance — which needs its own cycle with the corpus and a skewed sweep behind
- * it rather than a hurried third boundary rule.
- *
- * REVERTING `isWordishAfter` IS NOT THE FIX, and that is why this exists instead. Putting `-` back
- * on both sides refuses these answers and re-opens their mirror, where the compound is a drug plus
- * a suffix and the drug it names is the marker's own subject — measured as two MAJOR interactions
- * shown Moderate. The two classes are mirror images; the branch fixed one and measured only that.
- *
- * The signal that separates them is in the payload rather than in a word list: ask whether the
- * rest of the hyphenated TOKEN carries another candidate's lead. `methylprednisolone-containing`
- * → "containing" is nobody's lead, so the head really is the drug in adjectival form and the
- * match stands. `prednisone-to-methylprednisolone` → the remainder holds a sibling's lead, so
- * BOTH drugs are named, `electCandidate` gets two candidates and elects nobody, and the set
- * refuses. Bounded to the token, not the rest of the claim: an ordinary sentence names other
- * drugs later on, and taking the whole remainder would refuse every adjectival form that happens
- * to be followed by a comparison.
- */
-function hyphenJoinsASibling(claim: string, end: number, after: string, siblingLeads: readonly string[]): boolean {
-  if (after !== '-' || siblingLeads.length === 0) return false;
-  const space = claim.indexOf(' ', end);
-  const rest = space < 0 ? claim.slice(end) : claim.slice(end, space);
-  return siblingLeads.some((sibling) => sibling !== '' && rest.includes(sibling));
 }
 
 /**
@@ -913,9 +831,70 @@ function hyphenJoinsASibling(claim: string, end: number, after: string, siblingL
  * safety property (a group can corroborate or contradict, never outrank), and it is why nothing
  * anywhere may describe these groups as a precedence ladder.
  */
+
 function electCandidate(perGroupMatches: AiSafetyWarning[][]): AiSafetyWarning | null {
   const named = new Set(perGroupMatches.flat());
   return named.size === 1 ? [...named][0] : null;
+}
+
+/**
+ * The candidates a HYPHEN hides, and that the claim therefore names after all.
+ *
+ * {@link isWordish} counts `-` before a lead so that a lead cannot match the TAIL of a compound —
+ * `Medrol` must not match inside `Solu-Medrol`, a different product. The cost is that a full drug
+ * name glued to something by a hyphen becomes invisible, and when that name is the marker's own
+ * subject the window is left naming only a sibling, which every reading then elects unanimously.
+ * Measured on the shipped fixture, under-warning: *"…and with her prednisone-to-Solu-Medrol switch
+ * [350]"* rendered Prednisone's Moderate for a MAJOR finding.
+ *
+ * So: a lead that BEGINS just after a hyphen names its candidate — unless another candidate's lead
+ * SPANS that hyphen, which is what tells `Solu-Medrol` apart from `prednisone-to-Solu-Medrol`. In
+ * the first, one lead covers both sides of the hyphen and the compound is one product's name; in
+ * the second nothing does, and the hyphen is joining two names. That single test replaces two
+ * earlier attempts — one anchored on the matched lead, which could not see a hyphen further along
+ * the token, and one requiring a lead to END at the hyphen, which missed a chart order display
+ * whose last token is a dose (`Prednisone Co 5mg-Methylprednisolone`).
+ *
+ * "Just after" runs to the next SPACE, which admits the connector forms without a word list —
+ * `prednisone-to-methylprednisolone` puts its second name three characters past a hyphen with no
+ * space between, so `-to-`, `-and-`, `-versus-` are covered by shape rather than enumeration. A
+ * lead may contain spaces once it has started, which is what makes a multi-word substance
+ * readable (`metformin-Insulin Glargine`).
+ */
+function hyphenHiddenCandidates(
+  candidates: AiSafetyWarning[],
+  leadsPerCandidate: string[][],
+  claim: string,
+): AiSafetyWarning[] {
+  const hidden = new Set<AiSafetyWarning>();
+  for (let at = claim.indexOf('-'); at >= 0; at = claim.indexOf('-', at + 1)) {
+    // A lead covering both sides of this hyphen means the compound IS one candidate's name.
+    const spanned = leadsPerCandidate.some((leads) =>
+      leads.some((lead) => {
+        if (lead === '' || !lead.includes('-')) return false;
+        for (let from = claim.indexOf(lead); from >= 0; from = claim.indexOf(lead, from + 1)) {
+          if (from < at && at < from + lead.length) return true;
+        }
+        return false;
+      }),
+    );
+    if (spanned) continue;
+
+    const space = claim.indexOf(' ', at + 1);
+    const limit = space < 0 ? claim.length : space;
+    for (const [i, leads] of leadsPerCandidate.entries()) {
+      for (const lead of leads) {
+        if (lead === '') continue;
+        for (let from = at + 1; from <= limit; from += 1) {
+          if (claim.startsWith(lead, from) && candidates[i]) {
+            hidden.add(candidates[i]);
+            break;
+          }
+        }
+      }
+    }
+  }
+  return [...hidden];
 }
 
 /** Splits a safety finding's synthetic uuid (`interaction:Clarithromycin`) into type and drug. */
@@ -1143,8 +1122,20 @@ function readClaims(
     // by `electCandidate`, which refuses on every disagreement — group order decides nothing.
     const claim = normalize(stripExclusions(normalizeKeepingLines(claims.get(index) ?? '')));
     const perGroupMatches = set.groups.map((group) =>
-      matchesInGroup(candidates, group.leadsPerCandidate, group.shared, claim, set.siblingLeads),
+      matchesInGroup(candidates, group.leadsPerCandidate, group.shared, claim),
     );
+    // Appended as one more group rather than merged into any of them, because it is not evidence
+    // of the same kind: the groups say "this lead names this candidate", and this says "a hyphen
+    // hid a name that is in here too". `electCandidate` unions the groups, so an entry that takes
+    // the union past one is exactly a claim that singles nobody out.
+    //
+    // Pushed ONLY when it takes the union to two or more, which is what keeps this on the safe
+    // side of the invariant above: it can then delete an election and never create one. Adding a
+    // lone name to a window that named nobody would turn a refusal into a resolution, and a
+    // refusal there is the honest answer — the window found no candidate at all.
+    const hidden = hyphenHiddenCandidates(candidates, set.allLeads, claim);
+    const union = new Set([...perGroupMatches.flat(), ...hidden]);
+    if (hidden.length > 0 && union.size > 1) perGroupMatches.push(hidden);
     namedOf.set(index, new Set(perGroupMatches.flat()));
     const winner = electCandidate(perGroupMatches);
     if (winner) {

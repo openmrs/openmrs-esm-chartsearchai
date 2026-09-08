@@ -1017,12 +1017,13 @@ describe('resolveFindingSeverities', () => {
     // satisfied because the wrongly-elected sibling is claimed precisely BECAUSE it was wrongly
     // elected.
     //
-    // Under-warning every time, which is the direction that reaches a patient. Swept over every
-    // ordered pair of this fixture's own published names joined by six hyphen forms in five
-    // carrier sentences: 2,520 answers, 2,448 resolved and 1,008 wrong WITHOUT the sibling check,
-    // all 1,008 under-warned and not one refused; with it, 840 still resolve and none is wrong.
-    // The real-world shape is a combination product carrying two findings —
-    // `Sulfamethoxazole-Trimethoprim`, `Carbidopa-Levodopa`, `Amoxicillin-Clavulanate`.
+    // Swept over every ordered pair of this fixture's published names and order displays, joined
+    // by seven hyphen forms in five carrier sentences, with truth taken from the PROSE rather than
+    // the citation index: 16,800 answers name two DIFFERENT candidates and every one of them now
+    // refuses, while all 2,450 that name ONE candidate twice (a substance beside its own order
+    // display) still resolve. Without the rule every one of the 16,800 resolved. The real-world
+    // shape is a combination product carrying two findings — `Sulfamethoxazole-Trimethoprim`,
+    // `Carbidopa-Levodopa`, `Amoxicillin-Clavulanate`.
     for (const answer of [
       'Clarithromycin interacts with active order Dexamethasone Injection vial 8mg [353], with active order Hydrocortisone Injection vial 100mg [354], and with her prednisone-to-Solu-Medrol switch [350].',
       'Clarithromycin interacts with active order Dexamethasone Injection vial 8mg [353], and with her prednisone-to-methylprednisolone conversion [350].',
@@ -1032,6 +1033,64 @@ describe('resolveFindingSeverities', () => {
       // Each rendered its Major finding as Moderate before the sibling check — and the first
       // rendered all three badges, so two correct ratings sat beside the wrong one.
       expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [353, 354, 350, 351])]).toEqual([]);
+    }
+  });
+
+  it('refuses where the hyphen is not touching the name that matched', () => {
+    // The residual two reviews found in the first version of this rule, which anchored itself on
+    // the lead that matched and so could only see a hyphen adjacent to it. Here the dose-stripped
+    // `Solu-Medrol` matches with a SPACE after it, and the hyphen that hides `Prednisone` is
+    // further along the token — invisible from that match. It rendered Methylprednisolone's Major
+    // for a sentence naming two drugs.
+    //
+    // Closed by asking the CLAIM about its hyphens rather than asking a match about its
+    // neighbours. The second shape is the one that defeated the intermediate fix, which required
+    // a lead to END at the hyphen: `Prednisone Co 5mg` is a chart order display whose last token
+    // is a dose, so nothing ends there, and it still rendered Prednisone's Moderate.
+    for (const answer of [
+      'Clarithromycin interacts with her Solu-Medrol 125mg/5ml-Prednisone switch [350].',
+      'Her Prednisone Co 5mg-Methylprednisolone [350] is the one to review before starting clarithromycin.',
+    ]) {
+      expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350])]).toEqual([]);
+    }
+  });
+
+  it('refuses a multi-word drug name a hyphen hid', () => {
+    // Needs a constructed payload: this fixture has no substance or brand containing a space, and
+    // that gap is why the shape survived two rounds of review. `insulin glargine` spans a space,
+    // so the earlier rule — which read the remainder only as far as the next space — could not
+    // hold it. `Insulin Glargine`, `Sodium Valproate`, `Ferrous Sulfate` and `Bactrim DS` are all
+    // ordinary, and a combination product is exactly where two findings share a chart order.
+    const warnings: AiSafetyWarning[] = [
+      { ...interaction('Insulin Glargine', 'Major', 'Lantus SoloStar 100units/ml') },
+      { ...interaction('Sodium Valproate', 'Moderate') },
+      { ...interaction('Metformin', 'Minor') },
+    ];
+    const refs = [350, 351, 352].map((index) => safetyFindingRef(index));
+    const answer =
+      'Clarithromycin interacts with active order Sodium Valproate [351] and with her metformin-Insulin Glargine regimen [350]';
+    // Rendered {350: Minor, 351: Moderate} before — Metformin's rating on a sentence whose own
+    // drug is Insulin Glargine, and under-warning, since that finding is Major.
+    expect([...resolveFindingSeverities(answer, refs, warnings, [350, 351])]).toEqual([]);
+  });
+
+  it('will not elect a name whose only evidence is that a hyphen preceded it', () => {
+    // The guard that keeps this rule on the safe side of the invariant above, and it is a real
+    // trade rather than a free one. `isWordish` counts `-` before a lead so `Medrol` cannot match
+    // inside `Solu-Medrol` — a different product — and the hyphen rule overrides that only where
+    // a SECOND candidate is named, because there the answer is ambiguous and refusing is right
+    // whichever reading you take.
+    //
+    // Where the post-hyphen name is the ONLY evidence, the override would stand alone, and it
+    // would re-open exactly what `isWordish` protects: `Medrol` inside a hyphenated brand that
+    // denotes something else. So these refuse, and the cost is visible — each one arguably names
+    // its drug, and each is a rating given up. Removing the guard resolves all three to Major and
+    // leaves the rest of the suite green, so this test is the only thing pinning the choice.
+    for (const answer of [
+      'Clarithromycin interacts with her 5mg-methylprednisolone dose [350].',
+      'The order at issue is her once-methylprednisolone regimen [350].',
+    ]) {
+      expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350])]).toEqual([]);
     }
   });
 
