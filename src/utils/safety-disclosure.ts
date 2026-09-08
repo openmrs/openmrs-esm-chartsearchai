@@ -762,6 +762,32 @@ function soundSets(reading: ClaimReading): Set<string> {
  * rotation — complete, injective, and wrong in all five positions. Every rating rendered was
  * the neighbouring finding's.
  *
+ * KNOWN RESIDUAL, on the record because it is a WRONG RATING and not a refusal. This gate is
+ * all-or-nothing over the set: one cited index whose forward window names nobody disqualifies
+ * the whole set from objecting anywhere. So a rotation ships wherever the LAST citation's
+ * forward window can be emptied. Measured against the shipped fixture:
+ *
+ *   "Hydrocortisone Injection vial 100mg matters less than [350]
+ *    Solu-Medrol 125mg/5ml [352]
+ *    [14] Prednisone Co 5mg"
+ *
+ * renders {350: Moderate, 352: Major} against a truth of {350: Major, 352: Moderate} — a
+ * swapped pair. `[14]` truncates [352]'s forward window; a full stop after [352] does the same
+ * via the terminator rule below. No exclusion clause, no unusual payload, plausible prose.
+ *
+ * The obvious fix is wrong, and that is the part worth writing down. Widening the forward
+ * window past a marker citing something outside the measurement — exactly what
+ * {@link trailingWindowStart} does backward — closes this shape and COSTS three correct live
+ * ratings: on `q6_interleaved`, two families interleaved in one comma-separated line, the
+ * skipped marker is a genuine sibling citation and crossing it merges two list items. Measured,
+ * both directions: live corpus 98 ratings -> 95. It was tried, measured, and reverted.
+ *
+ * Removing the `.` from the terminator rule below is worse: 98 -> 82.
+ *
+ * What this needs is a gate that asks "does a candidate name appear anywhere after the set's
+ * last marker?" without touching any claim window — which is a different computation from any
+ * reading, not a tweak to one.
+ *
  * Named-completeness is the WHOLE test, and two further restrictions were tried and dropped:
  * requiring the forward elections to be injective, and requiring an election at the index being
  * contested. Both make an objection fire LESS often, which is the unsafe direction for a rule
