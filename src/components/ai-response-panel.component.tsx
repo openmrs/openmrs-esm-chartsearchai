@@ -42,6 +42,8 @@ interface AiResponsePanelProps extends AiAnswerLimits {
   answer: string;
   /** Live reasoning scratchpad, present only while the turn is still answering. */
   reasoning?: string;
+  /** Provisional preview reasoning; rendered as a labelled preview, never as the answer. */
+  preliminaryReasoning?: string;
   references: AiReference[];
   safetyWarnings?: AiSafetyWarning[];
   /** checked/limited/unavailable — surfaced even when safetyWarnings is empty, so a clean check
@@ -635,6 +637,7 @@ const InDepthReviewDraft: React.FC<{
 const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   answer,
   reasoning,
+  preliminaryReasoning,
   references,
   safetyWarnings,
   safetyStatus,
@@ -866,6 +869,11 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
         <div className={styles.answerSection}>
           {phase === 'answering' ? (
             <>
+              {preliminaryReasoning && !reasoning && (
+                <p className={styles.preliminaryReasoningText} data-testid="ai-response-preliminary">
+                  {t('preliminaryReasoning', 'Reviewing the most relevant records…')} {preliminaryReasoning}
+                </p>
+              )}
               {reasoning && (
                 <p className={styles.reasoningText} data-testid="ai-response-reasoning">
                   {reasoning}

@@ -18,6 +18,7 @@ import {
 import { chatSessionStore } from '../store/chat-session.store';
 import { type TurnPhase, isAwaitingAnswer as phaseIsAwaitingAnswer, isAnswerSettled, isTerminal } from './turn-phase';
 import { type MessageAnswerLimits, mergeDisclosure, NO_ANSWER_LIMITS } from '../utils/answer-limits';
+import { citationStripPattern } from '../utils/safety-disclosure';
 
 export interface ChatMessage extends MessageAnswerLimits {
   id: string;
@@ -42,6 +43,13 @@ export interface ChatMessage extends MessageAnswerLimits {
    * turn is still answering and cleared the moment the answer arrives. Never persisted.
    */
   reasoning?: string;
+  /**
+   * The optional progressive PREVIEW reasoning (`preliminary_delta`), with its citation markers
+   * stripped: they index a top-K chart of their own, not the records the answer cites. Provisional
+   * and replaced by the first committed reasoning or answer token, so it can never be read as the
+   * reasoning behind the answer the clinician sees. Never persisted.
+   */
+  preliminaryReasoning?: string;
   /**
    * The hub product profile that produced this answer. Surfaced as a subtle
    * per-response tag. Undefined for older rows or system notices.
@@ -177,6 +185,18 @@ function interruptAnswerValidation(
 
 type TurnEnvelope = Partial<AiSearchResponse> & { messageId?: string; inDepth?: AiInDepth };
 
+/**
+ * Removes citation markers ([3], [1, 2], …) from the PREVIEW text only. The preview reasons over an
+ * independently-numbered top-K chart, so its markers do not line up with the committed answer's
+ * records and showing them would mislead. Applied to the whole accumulated preview rather than to
+ * each frame, so a marker whose brackets arrive in different frames is still removed. Shares the
+ * resolver's pattern, so marker syntax has one home, and does NOT trim: the preview accumulates
+ * chunk by chunk and a trailing space must survive between them.
+ */
+function stripPreviewCitations(text: string): string {
+  return text.replace(citationStripPattern(), '');
+}
+
 function applyTurnEnvelope(message: ChatMessage, payload: TurnEnvelope, phase: TurnPhase): ChatMessage {
   return {
     ...message,
@@ -200,8 +220,9 @@ function applyTurnEnvelope(message: ChatMessage, payload: TurnEnvelope, phase: T
     // Answer-limit statements accumulate across the turn's events: a later event that states
     // nothing about a measurement leaves an earlier statement standing.
     ...mergeDisclosure(message, payload),
-    // The scratchpad served its purpose as a live indicator once the answer exists.
+    // Both scratchpads served their purpose as live indicators once the answer exists.
     reasoning: phase === 'answering' ? message.reasoning : '',
+    preliminaryReasoning: phase === 'answering' ? message.preliminaryReasoning : '',
     phase,
   };
 }
@@ -604,7 +625,20 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
                 const idx = prev.findIndex((m) => m.id === messageId);
                 if (idx === -1 || prev[idx].phase !== 'answering') return prev;
                 const updated = [...prev];
-                updated[idx] = { ...updated[idx], answer: updated[idx].answer + chunk };
+                // The answer supersedes the provisional preview.
+                updated[idx] = { ...updated[idx], answer: updated[idx].answer + chunk, preliminaryReasoning: '' };
+                return updated;
+              });
+            },
+            onPreliminary: (chunk) => {
+              updateMessages(patientUuid, (prev) => {
+                const idx = prev.findIndex((m) => m.id === messageId);
+                if (idx === -1 || prev[idx].phase !== 'answering') return prev;
+                const updated = [...prev];
+                updated[idx] = {
+                  ...updated[idx],
+                  preliminaryReasoning: stripPreviewCitations((updated[idx].preliminaryReasoning ?? '') + chunk),
+                };
                 return updated;
               });
             },
@@ -613,7 +647,12 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
                 const idx = prev.findIndex((m) => m.id === messageId);
                 if (idx === -1 || prev[idx].phase !== 'answering') return prev;
                 const updated = [...prev];
-                updated[idx] = { ...updated[idx], reasoning: (updated[idx].reasoning ?? '') + chunk };
+                // Committed reasoning REPLACES the preview rather than continuing it.
+                updated[idx] = {
+                  ...updated[idx],
+                  reasoning: (updated[idx].reasoning ?? '') + chunk,
+                  preliminaryReasoning: '',
+                };
                 return updated;
               });
             },

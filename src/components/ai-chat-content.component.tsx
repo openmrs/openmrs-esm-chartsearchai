@@ -267,6 +267,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({
               <AiResponsePanel
                 answer={msg.answer}
                 reasoning={msg.reasoning}
+                preliminaryReasoning={msg.preliminaryReasoning}
                 references={msg.references}
                 safetyWarnings={msg.safetyWarnings}
                 safetyStatus={msg.safetyStatus}

@@ -1477,6 +1477,56 @@ describe('useChartSearchAi token streaming', () => {
     expect(result.current.messages[0].reasoning).toBe('');
   });
 
+  it('accumulates preliminary preview reasoning on its own channel', async () => {
+    const { result, callbacks } = await startTurn();
+    act(() => {
+      callbacks.onPreliminary('Scanning ');
+      callbacks.onPreliminary('recent records');
+    });
+    expect(result.current.messages[0].preliminaryReasoning).toBe('Scanning recent records');
+    // The preview is NOT committed reasoning: keeping them apart is what lets the panel render one
+    // as provisional and replace it with the other.
+    expect(result.current.messages[0].reasoning ?? '').toBe('');
+  });
+
+  it('strips a preview citation marker even when it is split across frames', async () => {
+    // The preview reasons over an independently-numbered top-K chart, so its [N] markers index
+    // records the committed answer does not cite. Stripping after concatenation is what catches a
+    // marker whose brackets arrive in different frames.
+    const { result, callbacks } = await startTurn();
+    act(() => {
+      callbacks.onPreliminary('Aspirin [');
+      callbacks.onPreliminary('2] looks relevant');
+    });
+    // The shared strip pattern consumes one space before the marker, so removing it leaves no
+    // double space behind.
+    expect(result.current.messages[0].preliminaryReasoning).toBe('Aspirin looks relevant');
+  });
+
+  it('lets committed reasoning replace the preview rather than continue it', async () => {
+    const { result, callbacks } = await startTurn();
+    act(() => {
+      callbacks.onPreliminary('Provisional guess');
+    });
+    act(() => {
+      callbacks.onReasoning('Checking the chart');
+    });
+    expect(result.current.messages[0].preliminaryReasoning).toBe('');
+    expect(result.current.messages[0].reasoning).toBe('Checking the chart');
+  });
+
+  it('lets the first answer token replace the preview too', async () => {
+    const { result, callbacks } = await startTurn();
+    act(() => {
+      callbacks.onPreliminary('Provisional guess');
+    });
+    act(() => {
+      callbacks.onToken('The answer');
+    });
+    expect(result.current.messages[0].preliminaryReasoning).toBe('');
+    expect(result.current.messages[0].answer).toBe('The answer');
+  });
+
   it('ignores a token that arrives after the user stopped the turn', async () => {
     const { result, callbacks } = await startTurn();
     act(() => {

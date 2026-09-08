@@ -501,8 +501,16 @@ export function chatPatientChartStream(
      * whole answer. A provider that streams no tokens (the hub) never fires it.
      */
     onToken?: (chunk: string) => void;
-    /** One `reasoning_delta` frame: scratchpad text shown before any answer exists. */
+    /** One `reasoning_delta` frame: committed reasoning, shown before any answer exists. */
     onReasoning?: (chunk: string) => void;
+    /**
+     * One `preliminary_delta` frame: the optional progressive PREVIEW reasoning
+     * (`chartsearchai.progressiveReasoning.enabled`, default off). Provisional and separate from
+     * `onReasoning` for two reasons the text cannot carry: its `[N]` markers index an
+     * independently-numbered top-K chart rather than the records the answer cites, so they must be
+     * stripped; and committed reasoning REPLACES it rather than continuing it.
+     */
+    onPreliminary?: (chunk: string) => void;
     onAnswerDone?: (response: AiSearchResponse) => void;
     onAnswerValidation?: (response: AiSearchResponse) => void;
     onEvidenceUpdated?: (response: AiSearchResponse) => void;
@@ -605,7 +613,9 @@ export function chatPatientChartStream(
           dataLines = [];
           return;
         }
-        if (eventType === 'answer_delta') {
+        if (eventType === 'preliminary_delta') {
+          callbacks.onPreliminary?.(data);
+        } else if (eventType === 'answer_delta') {
           // Raw text, not JSON: the server frames each token as one `data:` line per text line.
           callbacks.onToken?.(data);
         } else if (eventType === 'reasoning_delta') {

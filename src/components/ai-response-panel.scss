@@ -723,3 +723,12 @@
   font-style: italic;
   white-space: pre-wrap;
 }
+
+// The progressive preview: provisional, and visibly more tentative than committed reasoning, which
+// replaces it. Never styled as the answer.
+.preliminaryReasoningText {
+  @include type.type-style('label-01');
+  color: colors.$gray-50;
+  font-style: italic;
+  white-space: pre-wrap;
+}

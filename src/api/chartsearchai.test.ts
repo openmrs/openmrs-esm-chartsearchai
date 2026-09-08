@@ -68,6 +68,7 @@ describe('chatPatientChartStream', () => {
     return {
       onSession: vi.fn(),
       onToken: vi.fn(),
+      onPreliminary: vi.fn(),
       onReasoning: vi.fn(),
       onAnswerDone: vi.fn(),
       onAnswerValidation: vi.fn(),
@@ -122,6 +123,7 @@ describe('chatPatientChartStream', () => {
     fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(
       mockStreamResponse([
         'event:turn_started\ndata: {"session":"sess-1","messageId":"m1","provider":"bundled"}\n\n',
+        'event:preliminary_delta\ndata: Scanning records\n\n',
         'event:reasoning_delta\ndata: Checking the chart\n\n',
         'event:answer_delta\ndata: Hello\n\n',
         // the token " world" is framed as "data:  world": the SSE space plus the token's own space
@@ -134,6 +136,7 @@ describe('chatPatientChartStream', () => {
     chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled');
     await flushPromises();
 
+    expect(cb.onPreliminary.mock.calls.map((c) => c[0])).toEqual(['Scanning records']);
     expect(cb.onReasoning.mock.calls.map((c) => c[0])).toEqual(['Checking the chart']);
     expect(cb.onToken.mock.calls.map((c) => c[0])).toEqual(['Hello', ' world']);
     expect(cb.onAnswerDone).toHaveBeenCalledOnce();

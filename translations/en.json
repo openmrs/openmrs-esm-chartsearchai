@@ -59,6 +59,7 @@
   "originalModelAnswerNeedsReviewNotice": "This was the model output before checking. The current answer above remains flagged for review.",
   "originalModelAnswerNotice": "This answer or its supporting citations was changed by the answer check. The checked answer above is the current result.",
   "otherProfiles": "Other profiles",
+  "preliminaryReasoning": "Reviewing the most relevant records…",
   "profilesUnavailable": "AI profiles unavailable",
   "providers": "Providers",
   "reference": "Reference",
