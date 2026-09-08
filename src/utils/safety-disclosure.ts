@@ -866,31 +866,51 @@ function hyphenHiddenCandidates(
   leadsPerCandidate: string[][],
   claim: string,
 ): AiSafetyWarning[] {
+  // Behaviour-neutral fast path, and stated as such because no test pins it: with no hyphen in
+  // the claim the loops below find nothing anyway, so deleting this line leaves the suite green.
+  // That is a proof rather than a coverage gap — unlike the guard further down, which is also
+  // unpinned-looking and is not, and has a test of its own for exactly that reason.
+  if (!claim.includes('-')) return [];
+
+  // Both scans are hoisted out of the hyphen loop, and that is not premature. Doing them per
+  // hyphen cost an `indexOf` for every lead of every candidate at every hyphen: measured on a
+  // 20-member family with a hyphen-dense answer, 0.95 ms without this rule and 4.80 ms with it —
+  // and 4.80 ms is precisely the figure this file records `buildCandidateSet`'s own hoist as
+  // having REMOVED, so the first version of this handed that whole optimisation back. Hoisting
+  // takes the same case to 1.21 ms, and an ordinary 20-member answer from 1.45 to 0.83 against a
+  // 0.68 baseline. Re-measure rather than trusting these; they are wall-clock on one machine and
+  // the shape of the answer moves them more than the family size does.
+  //
+  // `startsAt` maps a position to the candidates whose lead begins there; `spanned` holds the
+  // hyphen positions strictly inside some hyphenated lead's occurrence, which is the
+  // `Solu-Medrol` exception.
+  const startsAt = new Map<number, Set<number>>();
+  const spanned = new Set<number>();
+  for (const [i, leads] of leadsPerCandidate.entries()) {
+    for (const lead of leads) {
+      if (lead === '') continue;
+      const hyphenated = lead.includes('-');
+      for (let from = claim.indexOf(lead); from >= 0; from = claim.indexOf(lead, from + 1)) {
+        const here = startsAt.get(from) ?? new Set<number>();
+        here.add(i);
+        startsAt.set(from, here);
+        if (!hyphenated) continue;
+        for (let k = from + 1; k < from + lead.length; k += 1) {
+          if (claim[k] === '-') spanned.add(k);
+        }
+      }
+    }
+  }
+
   const hidden = new Set<AiSafetyWarning>();
   for (let at = claim.indexOf('-'); at >= 0; at = claim.indexOf('-', at + 1)) {
     // A lead covering both sides of this hyphen means the compound IS one candidate's name.
-    const spanned = leadsPerCandidate.some((leads) =>
-      leads.some((lead) => {
-        if (lead === '' || !lead.includes('-')) return false;
-        for (let from = claim.indexOf(lead); from >= 0; from = claim.indexOf(lead, from + 1)) {
-          if (from < at && at < from + lead.length) return true;
-        }
-        return false;
-      }),
-    );
-    if (spanned) continue;
-
+    if (spanned.has(at)) continue;
     const space = claim.indexOf(' ', at + 1);
     const limit = space < 0 ? claim.length : space;
-    for (const [i, leads] of leadsPerCandidate.entries()) {
-      for (const lead of leads) {
-        if (lead === '') continue;
-        for (let from = at + 1; from <= limit; from += 1) {
-          if (claim.startsWith(lead, from) && candidates[i]) {
-            hidden.add(candidates[i]);
-            break;
-          }
-        }
+    for (let from = at + 1; from <= limit; from += 1) {
+      for (const i of startsAt.get(from) ?? []) {
+        if (candidates[i]) hidden.add(candidates[i]);
       }
     }
   }
