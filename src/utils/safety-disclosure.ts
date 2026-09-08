@@ -745,6 +745,7 @@ export function resolveFindingSeverities(
   );
   const soundTrailing = soundSets(trailing);
   const soundLeading = soundSets(leading);
+  const soundBlockLeading = soundSets(blockLeading);
 
   // Which findings the trailing reading claims for SOME citation of each set.
   const claimedByTrailing = new Map<string, Set<AiSafetyWarning>>();
@@ -758,9 +759,34 @@ export function resolveFindingSeverities(
 
   const contested = new Set<string>();
   for (const [index, setKey] of trailing.setOfIndex) {
-    // Both readings identify the set and disagree — a permutation within the same findings.
-    if (soundTrailing.has(setKey) && soundLeading.has(setKey)) {
-      if (trailing.electedOf.get(index) !== leading.electedOf.get(index)) contested.add(setKey);
+    // A forward reading identifies the set and disagrees — a permutation within the same
+    // findings.
+    //
+    // Both forward readings, not just the confined one, and the unconfined one is the load-
+    // bearing half. Trailing claims are line-confined, so on a MULTI-LINE answer a trailing
+    // marker sits at end-of-line and its leading claim is empty: `leading` is then never
+    // complete, never sound, and this rule never fires. The NAMED rule below does not cover the
+    // gap either — a permutation is invisible to it by construction, because every finding the
+    // forward reading names IS claimed by trailing, merely for a different index. So on a
+    // multi-line answer both rules were off at once, and `block` agreed with `trailing` because
+    // it reads the same direction.
+    //
+    // Measured, against the shipped fixture:
+    //   "Hydrocortisone aside, the order that matters most is [350]
+    //    Solu-Medrol 125mg/5ml [354]
+    //    Hydrocortisone Injection vial 100mg"
+    // resolved {350: Moderate, 354: Major} against a truth of {350: Major, 354: Moderate} — the
+    // Major Methylprednisolone interaction badged Moderate and the Moderate Hydrocortisone one
+    // badged Major, a swapped PAIR, both shown confidently beside their citations. It is the
+    // existing "refuses a multi-line answer with one marker written before its drug" sentence
+    // with one change: the lead-in's partner is itself cited.
+    for (const [forward, soundForward] of [
+      [leading, soundLeading],
+      [blockLeading, soundBlockLeading],
+    ] as const) {
+      if (soundTrailing.has(setKey) && soundForward.has(setKey)) {
+        if (trailing.electedOf.get(index) !== forward.electedOf.get(index)) contested.add(setKey);
+      }
     }
 
     // Or the leading reading names a finding the trailing reading claims for NO citation of this

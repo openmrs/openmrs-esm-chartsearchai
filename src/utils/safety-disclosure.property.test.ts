@@ -133,7 +133,47 @@ interface Generated {
   unstated: number[];
 }
 
+/**
+ * A SHIFTED list: every marker sits at end-of-line and the name it belongs to leads the NEXT
+ * line, with the lead-in naming the last partner so the shift closes into a permutation.
+ *
+ * This shape, not the marker-first one, is what defeats both forward contests at once. Trailing
+ * claims are line-confined, so each marker's own line carries the PREVIOUS partner's name and
+ * the whole answer resolves rotated by one — every rating wrong, and every finding the forward
+ * reading names still claimed by the trailing reading for some other index, which is what makes
+ * the NAMED contest blind to it. Measured on the shipped fixture before the fix: a Major
+ * interaction badged Moderate and a Moderate one badged Major in the same answer.
+ *
+ * `MARKER_FIRST_SHAPES` cannot produce it — those put the marker before its drug on ONE line,
+ * where the confined window still contains the right subject. This puts the line break between
+ * them.
+ */
+function shiftedAnswer(random: () => number, chosen: number[]): Generated {
+  const nameOf = (i: number) => (random() < 0.5 ? PARTNERS[i].substance : PARTNERS[i].order);
+  const last = chosen[chosen.length - 1];
+  const lead = `${PARTNERS[last].substance} aside, the order that matters most is`;
+
+  const truth = new Map<number, string>();
+  for (const i of chosen) truth.set(INDEX_OF[i], PARTNERS[i].severity);
+
+  const lines = [`${lead} [${INDEX_OF[chosen[0]]}]`];
+  for (let j = 1; j < chosen.length; j++) {
+    lines.push(`${nameOf(chosen[j - 1])} [${INDEX_OF[chosen[j]]}]`);
+  }
+  lines.push(nameOf(last));
+
+  return { answer: lines.join('\n'), truth, unstated: chosen.map((i) => INDEX_OF[i]) };
+}
+
 function generateAnswer(random: () => number): Generated {
+  // One in five answers is the shifted shape above. It needs at least two findings for the
+  // rotation to exist, so a one-element draw falls through to the shapes below.
+  if (random() < 0.2) {
+    const pool = [...PARTNERS.keys()].sort(() => random() - 0.5);
+    const count = 2 + Math.floor(random() * (pool.length - 1));
+    if (count >= 2) return shiftedAnswer(random, pool.slice(0, count));
+  }
+
   // Half the time, build the hazard deliberately: a lead-in naming a partner whose OWN index is
   // then excluded from the citations, plus a first line whose marker precedes its drug. Left to
   // chance that combination is rare, and a fuzzer that never reaches the shape it exists for is
@@ -144,8 +184,17 @@ function generateAnswer(random: () => number): Generated {
     ? LEAD_INS.filter((candidate) => candidate.names)[Math.floor(random() * 3)]
     : LEAD_INS[Math.floor(random() * LEAD_INS.length)];
 
+  // Half of the targeted answers now CITE the lead-in's partner as well, and that half is the
+  // whole point of this line. Excluding it unconditionally — which is what this did — made the
+  // generator unable to express the shape the strongest hazard turns on: where the lead-in names
+  // a finding that is itself cited, every finding a forward reading names is also claimed by the
+  // trailing reading, just for a different index, so the NAMED contest is blind to it by
+  // construction and the answer resolves as a PERMUTATION. Measured on the shipped fixture: a
+  // Major interaction badged Moderate and a Moderate one badged Major, in the same answer.
+  // Ten review rounds ran against this filter and none of them could have found that.
+  const permuting = targeted && random() < 0.5;
   const eligible = [...PARTNERS.keys()].filter((i) => !leadIn.names || PARTNERS[i].substance !== leadIn.names);
-  const pool = targeted ? eligible : [...PARTNERS.keys()];
+  const pool = targeted && !permuting ? eligible : [...PARTNERS.keys()];
   const count = 1 + Math.floor(random() * pool.length);
   const chosen = [...pool].sort(() => random() - 0.5).slice(0, count);
 
@@ -206,6 +255,8 @@ describe('the generator reaches the shapes it exists for', () => {
     let foreignMarker = 0;
     let orderVocabulary = 0;
     let multiLine = 0;
+    let shifted = 0;
+    let leadInPartnerCited = 0;
 
     for (let seed = 1; seed <= 4000; seed++) {
       const { answer } = generateAnswer(makeRandom(seed));
@@ -216,6 +267,18 @@ describe('the generator reaches the shapes it exists for', () => {
       if (FOREIGN_MARKERS.some((marker) => answer.includes(marker))) foreignMarker += 1;
       if (/\d+(mg|mcg|ml)/.test(answer)) orderVocabulary += 1;
       if (answer.includes('\n')) multiLine += 1;
+      // The shifted list: a marker ending the FIRST line with the lead-in, and a final line
+      // carrying a name and no marker at all.
+      if (/aside, the order that matters most is \[\d+\]\n/.test(answer) && !/\[\d+\]\s*$/.test(answer)) {
+        shifted += 1;
+      }
+      // And, separately, that a lead-in's own partner reaches the citations — the filter that
+      // forbade this is why ten rounds ran without reaching the permutation class.
+      const named = LEAD_INS.map((l) => l.names).find((n) => n && answer.startsWith(n));
+      if (named) {
+        const i = PARTNERS.findIndex((p) => p.substance === named);
+        if (i >= 0 && answer.includes(`[${INDEX_OF[i]}]`)) leadInPartnerCited += 1;
+      }
     }
 
     expect({
@@ -226,6 +289,8 @@ describe('the generator reaches the shapes it exists for', () => {
       foreignMarker: foreignMarker > 200,
       orderVocabulary: orderVocabulary > 200,
       multiLine: multiLine > 200,
+      shifted: shifted > 200,
+      leadInPartnerCited: leadInPartnerCited > 200,
     }).toEqual({
       contrast: true,
       markerFirst: true,
@@ -234,6 +299,8 @@ describe('the generator reaches the shapes it exists for', () => {
       foreignMarker: true,
       orderVocabulary: true,
       multiLine: true,
+      shifted: true,
+      leadInPartnerCited: true,
     });
   });
 });
@@ -243,7 +310,7 @@ describe('resolveFindingSeverities property: it may refuse, but never mis-attrib
     const violations: string[] = [];
     let resolvedAtLeastOnce = 0;
 
-    for (let seed = 1; seed <= 4000; seed++) {
+    for (let seed = 1; seed <= 6000; seed++) {
       const random = makeRandom(seed);
       const { answer, truth, unstated } = generateAnswer(random);
       const resolved = resolveFindingSeverities(answer, REFS, WARNINGS, unstated);
@@ -263,6 +330,11 @@ describe('resolveFindingSeverities property: it may refuse, but never mis-attrib
     expect(violations.slice(0, 5)).toEqual([]);
     // And the sweep must not be vacuous — a resolver that refused everything would satisfy the
     // property while rendering nothing, which is the fail-open this whole file exists to catch.
+    //
+    // The seed count went 4000 -> 6000 rather than this bound coming DOWN when the shifted shape
+    // was added. A fifth of the population now refuses by design (correctly — a rotated list
+    // does not determine its own mapping), so the ratio fell; lowering the bound to match would
+    // have quietly weakened the one assertion standing between this file and a vacuous pass.
     expect(resolvedAtLeastOnce).toBeGreaterThan(200);
   });
 });
