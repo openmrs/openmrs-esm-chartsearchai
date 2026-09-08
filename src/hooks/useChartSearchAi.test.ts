@@ -765,6 +765,47 @@ describe('useChartSearchAi late events', () => {
 });
 
 describe('useChartSearchAi trailing grounded event', () => {
+  it('does not let a trailing grounded event dress up an answer the user stopped', () => {
+    // The `done` twin of this is above. `grounded` is the same hazard and worse: it carries the
+    // four measurements, so a message whose answer is half a sentence would grow severity badges
+    // resolved against that fragment and a "What the safety checks covered" block stating the
+    // extent of a screen over an answer the reader never saw.
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Safe to start clarithromycin?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+    act(() => {
+      callbacks.onToken('Clarithromycin inter');
+    });
+    act(() => {
+      result.current.stopCurrent();
+    });
+
+    act(() => {
+      callbacks.onGrounded({
+        references: [
+          { index: 350, resourceType: 'safety_finding', resourceUuid: 'interaction:Clarithromycin', date: null },
+        ],
+        safetyWarnings: [{ type: 'interaction', drug: 'Clarithromycin', severity: 'Major', message: 'x' }],
+        interactionPairs: { found: 5, reported: 5 },
+        conditionRuleCoverage: 'absent',
+        unstatedFindingSeverities: [350],
+        misattributedOrderCitations: [],
+      });
+    });
+
+    const msg = result.current.messages[0];
+    expect(msg.answer).toBe('Clarithromycin inter');
+    expect(msg.references).toHaveLength(0);
+    expect(msg.safetyWarnings).toEqual([]);
+    expect(msg.interactionPairs).toBeNull();
+    expect(msg.conditionRuleCoverage).toBeNull();
+    expect(msg.unstatedFindingSeverities).toBeNull();
+  });
+
   it('does not blank the citation list when the event carries no references', () => {
     // The API layer coerces a missing/null `references` to `[]` before calling back, so an
     // event that parses without the key arrives as an empty array — and assigning it would

@@ -64,6 +64,35 @@ describe('severityTone', () => {
 });
 
 describe('claimTextByCitation', () => {
+  it('begins a claim at its own sentence, not at the foreign marker that preceded it', () => {
+    // The widening past a foreign marker (a citation outside this measurement) must not carry
+    // the tail of the PREVIOUS sentence in with it. Bounding at the marker did, and a partner
+    // named after that marker was then read as a second candidate for this claim — the set was
+    // refused for a sentence that names exactly one.
+    const answer =
+      'Clarithromycin was reviewed [12] against Prednisone Co 5mg. It also interacts with Solu-Medrol 125mg/5ml [350].';
+    const own = new Set([350, 351, 352, 353, 354]);
+    const claim = claimTextByCitation(answer, 'trailing', own).get(350);
+    expect(claim).toBe(' It also interacts with Solu-Medrol 125mg/5ml ');
+    expect(claim).not.toContain('Prednisone');
+  });
+
+  it('takes the LAST sentence break before the marker, not the first', () => {
+    // With several sentences between the bound and the marker, only the one the marker sits in
+    // is this claim. Taking the first break would leave two whole sentences in the window.
+    const answer = 'One thing [12]. Prednisone Co 5mg was reviewed. It interacts with Solu-Medrol 125mg/5ml [350].';
+    const claim = claimTextByCitation(answer, 'trailing', new Set([350])).get(350);
+    expect(claim).toBe(' It interacts with Solu-Medrol 125mg/5ml ');
+  });
+
+  it('still keeps a claim whole across a decimal point when widening past a foreign marker', () => {
+    // The sentence bound and the decimal-point exclusion have to agree: reading `0.125mg` as a
+    // break here would start the window inside the dose and cut the subject out again.
+    const answer = 'Solu-Medrol [12] at 0.125mg is the order that interacts [350].';
+    const claim = claimTextByCitation(answer, 'trailing', new Set([350])).get(350);
+    expect(claim).toContain('Solu-Medrol');
+  });
+
   it('gives adjacent markers the claim that precedes the whole run', () => {
     // [177] and [350] cite ONE sentence between them; keyed per marker, [350] would otherwise
     // see a claim text of just a space.

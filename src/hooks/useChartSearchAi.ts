@@ -70,6 +70,17 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
   const messages: ChatMessage[] = patientUuid ? (messagesByPatient[patientUuid] ?? EMPTY_MESSAGES) : EMPTY_MESSAGES;
   const abortControllerRef = useRef<AbortController | null>(null);
   const inFlightMessageIdRef = useRef<string | null>(null);
+  /**
+   * Messages the user pressed Stop on, by id.
+   *
+   * `done` decides the same question from `inFlightMessageIdRef` and cannot lend that test to
+   * `grounded`: `done` clears the ref itself, so by the time a trailing `grounded` arrives the
+   * ref is null for a perfectly normal answer too, and mirroring the test there would discard
+   * every legitimate measurement instead of the one case it is for. So the fact is recorded
+   * rather than inferred. Bounded by the number of times a user presses Stop, and emptied with
+   * the history.
+   */
+  const stoppedMessageIdsRef = useRef<Set<string>>(new Set());
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -87,6 +98,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       abortControllerRef.current = null;
     }
     inFlightMessageIdRef.current = null;
+    stoppedMessageIdsRef.current.clear();
   }, [patientUuid]);
 
   const stopCurrent = useCallback(() => {
@@ -96,6 +108,9 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
     }
     const stoppedId = inFlightMessageIdRef.current;
     inFlightMessageIdRef.current = null;
+    if (stoppedId) {
+      stoppedMessageIdsRef.current.add(stoppedId);
+    }
     if (stoppedId && patientUuid) {
       updateMessages(patientUuid, (prev) => {
         const idx = prev.findIndex((m) => m.id === stoppedId);
@@ -272,6 +287,13 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
               // verdicts that arrive after the user closed it must still land so badges are
               // correct when the panel reopens.
               onGrounded: (update) => {
+                // `done` has the same guard, and the reason is the same: abort() cannot unwind a
+                // chunk already in hand. This one carries more, which is why the asymmetry was
+                // worth closing rather than reasoning away — `grounded` brings the four
+                // measurements, so a message whose answer is half a sentence would grow severity
+                // badges resolved against that fragment and a "What the safety checks covered"
+                // block stating the extent of a screen over an answer the reader never saw.
+                if (stoppedMessageIdsRef.current.has(messageId)) return;
                 updateMessages(patientUuid, (prev) => {
                   const idx = prev.findIndex((m) => m.id === messageId);
                   if (idx === -1) return prev;

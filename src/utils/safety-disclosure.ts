@@ -152,17 +152,35 @@ export type ClaimDirection = 'trailing' | 'leading' | 'block' | 'block-leading';
 const SENTENCE_END = /(?<!\d)[.;!?]|[.;!?](?!\d)/;
 
 /**
+ * The same terminator, global, for finding the LAST break in a span rather than asking whether
+ * one exists. Declared from {@link SENTENCE_END} rather than retyped so the two cannot drift —
+ * a decimal-point exclusion present in one and missing in the other would show up only as a
+ * window that disagrees with itself depending on which question was asked of it.
+ */
+const SENTENCE_END_GLOBAL = new RegExp(SENTENCE_END.source, 'g');
+
+/**
  * Where a trailing claim's window begins.
  *
- * Back to the previous marker — but a marker that cites something OUTSIDE this measurement is
- * not evidence about where a claim starts, and letting it bound the window cuts the subject out.
- * Live, in 4 of 62 cached answers and 7 times in all: *"Solu-Medrol 125mg/5ml [17] carries more
- * risk than Prednisone does [350]"* left only the contrast partner in the window, and `[350]`
- * elected it. The block reading cannot help — on one line its window is the same one.
+ * Two things bound it, and a marker citing something OUTSIDE this measurement is neither.
+ * Letting a foreign marker bound the window cuts the subject out — live, in 4 of 62 cached
+ * answers and 7 times in all: *"Solu-Medrol 125mg/5ml [17] carries more risk than Prednisone
+ * does [350]"* left only the contrast partner in the window, and `[350]` elected it. The block
+ * reading cannot help; on one line its window is the same one.
  *
- * A foreign marker DOES still bound the window once a sentence has ended between it and this
- * marker: that is what separates a live answer's *"… [16]. Additionally, it interacts with
- * Prednisone Co 5mg [352]"* — a new sentence, correctly bounded — from the defect's fragment.
+ * What does bound it:
+ *
+ * 1. The nearest earlier marker that cites an index of THIS measurement. Past that marker the
+ *    text is another finding's claim, and the renderer badges each index at its own first
+ *    marker, so borrowing across one would show a rating beside a sentence it was not read from.
+ * 2. The last sentence break after that — a claim cannot begin before its own sentence does.
+ *
+ * The break is a TIGHTER bound than the marker that was previously returned in its place, and
+ * that mattered: bounding at the marker left the tail of the previous sentence in the window, so
+ * a partner named there was read as a second candidate for this claim and the set was refused.
+ * *"Clarithromycin was reviewed [12] against Prednisone. It also interacts with Solu-Medrol
+ * [350]."* resolved nothing, because Prednisone leaked across the full stop. Whichever bound
+ * sits later wins, so neither can widen the window the other narrowed.
  */
 function trailingWindowStart(
   answer: string,
@@ -170,14 +188,21 @@ function trailingWindowStart(
   index: number,
   ownIndices: ReadonlySet<number>,
 ): number {
+  let start = 0;
   for (let j = index - 1; j >= 0; j--) {
     const carriesOwn = runs[j].groups.some((group) =>
       parseCitationIndices(group[1]).some((cited) => ownIndices.has(cited)),
     );
-    if (carriesOwn) return runs[j].end;
-    if (SENTENCE_END.test(answer.slice(runs[j].end, runs[index].start))) return runs[j].end;
+    if (carriesOwn) {
+      start = runs[j].end;
+      break;
+    }
   }
-  return 0;
+  // Last, not first: with several sentences in between, only the one this marker sits in is
+  // this claim.
+  const breaks = [...answer.slice(start, runs[index].start).matchAll(SENTENCE_END_GLOBAL)];
+  const last = breaks[breaks.length - 1];
+  return last === undefined ? start : start + (last.index ?? 0) + last[0].length;
 }
 
 export function claimTextByCitation(
