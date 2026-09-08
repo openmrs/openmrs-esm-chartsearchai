@@ -1107,11 +1107,23 @@ export function resolveFindingSeverities(
       if (trailing.setOfIndex.get(index) !== setKey) continue;
       upto = upto < 0 ? end : Math.min(upto, end);
     }
-    // Stripped like a CLAIM is, unlike the tail. The head contains the first citation's own claim
-    // window, so an exclusion or comparison clause in it is about that claim and must come out —
-    // without this, "Hydrocortisone aside, the order that matters is Solu-Medrol … [350]" reads
-    // Hydrocortisone as a leftover subject and refuses an answer the strip exists to resolve.
-    headTextOfSet.set(setKey, stripExclusions(normalize(upto < 0 ? '' : answer.slice(0, upto))));
+    // Stripped like a CLAIM is, unlike the tail — but only the LAST SENTENCE of the head, which
+    // is the part that is the first citation's claim window.
+    //
+    // The strip has to reach that sentence: "Hydrocortisone aside, the order that matters is
+    // Solu-Medrol … [350]" reads Hydrocortisone as a leftover subject otherwise, and refuses an
+    // answer the strip exists to resolve. It must NOT reach further back, because an exclusion
+    // clause in an EARLIER sentence is not about this claim, and stripping it there deleted the
+    // subject: "No corticosteroid is safe here, except for Solu-Medrol 125mg/5ml, which is the
+    // worst of them. The rise is above what Prednisone Co 5mg gives [350]" lost Solu-Medrol out
+    // of the head and rendered Prednisone's rating. That was the last recorded open residual of
+    // this class, and stripping by sentence rather than wholesale closes it for nothing — the
+    // alternative measured four live ratings.
+    const rawHead = upto < 0 ? '' : answer.slice(0, upto);
+    const breaks = [...rawHead.matchAll(SENTENCE_END_GLOBAL)];
+    const lastBreak = breaks[breaks.length - 1];
+    const cut = lastBreak === undefined ? 0 : (lastBreak.index ?? 0) + lastBreak[0].length;
+    headTextOfSet.set(setKey, `${normalize(rawHead.slice(0, cut))} ${stripExclusions(normalize(rawHead.slice(cut)))}`);
   }
 
   const tailTextOfSet = new Map<string, string>();
@@ -1287,14 +1299,17 @@ export function resolveFindingSeverities(
       if (named !== lastClaim) contested.add(setKey);
     }
 
-    // KNOWN RESIDUAL, one shape, recorded because it is a wrong rating. Where the LEADING
-    // exclusion form names the subject and the sentence then contradicts itself about it — "No
-    // corticosteroid is safe here, except for Solu-Medrol 125mg/5ml, which is the worst of them."
-    // — the strip removes the subject from the head and the rule cannot see it. Closing it means
-    // not stripping the head at all, which was measured and costs four more live ratings
-    // (`r8_apartfrom`, the recovery an earlier cycle was built on). Left open deliberately: the
-    // prose excludes a drug and then calls it the worst, and paying four correct ratings for
-    // self-contradicting text is the wrong trade.
+    // KNOWN RESIDUAL, now down to ONE sentence shape. Where a LEADING exclusion form names the
+    // subject and contradicts itself about it WITHIN THE SAME SENTENCE — "Nothing other than
+    // Solu-Medrol 125mg/5ml: that order drives the rise, well above what Prednisone Co 5mg gives
+    // [350]" — the strip removes the subject from that sentence and the rule cannot see it.
+    //
+    // The two-sentence form of this ("… which is the worst of them. The rise is above …") IS
+    // closed, by stripping only the head's last sentence rather than the whole head, and that
+    // cost nothing. What is left needs the strip not to run on the marker's own sentence at all,
+    // which measured four live ratings (`r8_apartfrom`, an earlier cycle's recovery). Left open
+    // deliberately: the prose excludes a drug and then calls it the worst in the same breath, and
+    // paying four correct ratings for self-contradicting text is the wrong trade.
     //
     // Or the mirror: a candidate named BEFORE the set's first marker that no citation of the set
     // claims. In a trailing-written answer the head holds the first citation's own subject and it

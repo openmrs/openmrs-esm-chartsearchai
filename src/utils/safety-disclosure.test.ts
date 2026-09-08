@@ -109,6 +109,27 @@ describe('stripExclusions must not delete the cited finding’s own subject', ()
   });
 });
 
+describe('an exclusion clause in an EARLIER sentence is not about this claim', () => {
+  it('refuses when the strip would otherwise delete the subject out of the head', () => {
+    // The last recorded open residual of the head-rule class, closed by stripping only the head's
+    // LAST sentence — the part that is the first citation's claim window — rather than the whole
+    // head. "except for Solu-Medrol 125mg/5ml" sits in an earlier sentence, so it is not about
+    // [350]'s claim; stripping it there deleted the subject and rendered Prednisone's rating.
+    // Closing it cost nothing: the corpus is unchanged at 80 ratings. The alternative measured
+    // four live ratings.
+    const answer =
+      'No corticosteroid is safe here, except for Solu-Medrol 125mg/5ml, which is the worst of them. The rise is above what Prednisone Co 5mg gives [350].';
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350])]).toEqual([]);
+  });
+
+  it('still strips an exclusion clause in the SAME sentence as the marker', () => {
+    // The control, and why the strip must still reach the last sentence: this is the recovery the
+    // strip exists for.
+    const answer = 'Hydrocortisone aside, the order that matters is Solu-Medrol 125mg/5ml [350].';
+    expect(resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350]).get(350)).toBe('Major');
+  });
+});
+
 describe('a colon after a marker is a label separator, not a sentence close', () => {
   it('keeps the forward claim alive after a colon, which is what lets the set object', () => {
     // `:` is deliberately absent from the set of terminators that zero a forward claim, and
