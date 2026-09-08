@@ -937,17 +937,18 @@ function objectingSets(reading: ClaimReading): Set<string> {
  *
  * A set is withheld on any of SIX objections: a forward reading that identified a candidate at
  * every cited citation and elects a different one here; a forward reading that NAMES a finding
- * the trailing reading claims for no citation of the set; a candidate named past the answer's
- * SET's last own-index marker that is not the last citation's own election; a candidate named BEFORE the set's
- * first marker that no citation claims and that did not cite its own mention; the unconfined
- * backward window no longer singling out what the confined one elected; or the trailing reading
- * not being sound in the first place.
+ * the trailing reading claims for no citation of the set; a candidate named past the SET's last
+ * own-index marker that is not the last citation's own election; a candidate named BEFORE the
+ * set's first marker that no citation claims; the unconfined backward window no longer singling
+ * out what the confined one elected; or the trailing reading not being sound in the first place.
  *
  * The third and fourth are a mirrored pair and were added two cycles apart, each for a live
  * wrong rating and each after a word list had failed at the same job. Together they say: every
  * candidate this answer names must have a citation willing to claim it, whichever side of the
- * markers it sits on. That is the closest this module gets to a principle rather than a patch. Where nothing objects, orientation never mattered — and a single-candidate set
- * resolves the same either way, by the shortcut in `readClaims`.
+ * markers it sits on. That is the closest this module gets to a principle rather than a patch.
+ *
+ * Where nothing objects, orientation never mattered — and a single-candidate set resolves the
+ * same either way, by the shortcut in `readClaims`.
  *
  * Their weights are very unequal and it is worth knowing which, because the shape of this thing
  * is not what its rule list suggests. Measured on the live corpus:
@@ -1270,10 +1271,12 @@ export function resolveFindingSeverities(
     // Not the ANSWER's last marker: that version left the tail empty whenever any citation
     // followed the dangling name, and a trailing chart citation is the ordinary form on this
     // chart — 35,010 resolving answers of that family, all wrong. Three docs and a describe name
-    // still said "past the answer's last marker" after the code stopped doing it. That is a subject left over with nothing to cite it — the shift
-    // signature — and asking it of the tail rather than of a claim window is what makes it
-    // proof against the two things that hid it before: a foreign marker truncating a forward
-    // window, and a full stop closing one.
+    // still said "past the answer's last marker" after the code stopped doing it.
+    //
+    // A candidate there is a subject left over with nothing to cite it — the shift signature —
+    // and asking it of the tail rather than of a claim window is what makes it proof against the
+    // two things that hid it before: a foreign marker truncating a forward window, and a full
+    // stop closing one.
     //
     // A candidate in the tail objects unless it is the LAST citation's own subject restated.
     //

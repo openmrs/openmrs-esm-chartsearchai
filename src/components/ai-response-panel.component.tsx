@@ -483,7 +483,9 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   // The count tells a TRUNCATED list from an untruncated one. It does not tell a complete
   // answer from an incomplete one, and must not be worded as if it did: `found === reported`
   // says only that THIS check withheld nothing, which the wire-type doc states outright and
-  // which the count-of-one note below turns on. What is dropped is the LOWEST-RATED FIRST — an order, not a
+  // which the count-of-one note below turns on.
+  //
+  // What is dropped is the LOWEST-RATED FIRST — an order, not a
   // description of what ends up withheld, and the backend records its own counter-example in
   // the same sentence: a 16-drug question shows 10 of 72 pairs and withholds
   // `[Major x13, Moderate x40, Minor x9]`. So this must not say the withheld ones were mild.
