@@ -248,6 +248,13 @@ function trailingWindowStart(breaks: number[], ownEnd: number, markerStart: numb
 /**
  * The text of the claim each citation marker is attached to.
  *
+ * EXPORTED FOR TESTS, and it must not become production API. Its output is ONE reading, and the
+ * whole finding of this module is that one reading cannot be trusted: for any list the forward
+ * reading is a rotation of the backward one, both internally consistent, and only the contest
+ * between them plus {@link resolveFindingSeverities}' refusals separates them. A caller that
+ * used a claim from here to attribute a rating would be doing the exact thing eleven review
+ * rounds were spent stopping. `resolveFindingSeverities` is the only entry point that renders.
+ *
  * A marker's claim is the prose running back to the previous marker — but adjacent markers
  * (`[177] [350]`) cite ONE claim between them, so a run of marker groups separated by nothing
  * but whitespace is treated as a single attachment point and they all share the text before

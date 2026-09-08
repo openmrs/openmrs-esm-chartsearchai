@@ -927,7 +927,7 @@ describe('resolveFindingSeverities', () => {
 
   it('refuses where shift-consistency is the ONLY rule that can object', () => {
     // This shape exists because nothing else in the repo reached it. Disabling the
-    // shift-consistency rule below left all 288 tests green and a 200,000-seed sweep green,
+    // shift-consistency rule below left the whole suite green and a 200,000-seed sweep green,
     // while the rule was still load-bearing: it is the only objection on this answer, and
     // without it a MAJOR interaction renders Moderate beside its own citation.
     //
