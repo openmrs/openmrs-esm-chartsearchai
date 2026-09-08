@@ -757,7 +757,7 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     expect(limitsSection()).not.toBeNull();
     expect(screen.getByText('Interaction pairs shown: 5 of 5.')).toBeInTheDocument();
     // found === reported means that check withheld nothing; it is not a claim of completeness.
-    expect(screen.queryByText(/least severe were withheld/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/severe pairs can be among them/i)).not.toBeInTheDocument();
   });
 
   it('reads grammatically when the screen related a single pair', () => {
@@ -770,7 +770,7 @@ describe('AiResponsePanel answer-limit disclosure', () => {
   it('says so where the interaction list was truncated', () => {
     renderPanel({ interactionPairs: { found: 18, reported: 10 } });
     expect(screen.getByText(/Interaction pairs shown: 10 of 18/)).toBeInTheDocument();
-    expect(screen.getByText(/least severe were withheld/i)).toBeInTheDocument();
+    expect(screen.getByText(/severe pairs can be among them/i)).toBeInTheDocument();
   });
 
   it('states no interaction extent where the response stated no measurement', () => {
@@ -888,6 +888,17 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     // loading forever while a trailing grounded event still lands its measurements.
     renderPanel({ isLoading: true });
     expect(limitsSection()).toBeNull();
+  });
+
+  it('does not call the module’s own computed finding “reference data”', () => {
+    // [349] is `contraindication:Clarithromycin` — the module's deterministic finding about THIS
+    // patient's allergy record, not a dataset entry. One wording served every reference-group
+    // kind when the predicate matched `drug_reference` alone; widening it carried that sentence
+    // onto findings computed from the chart.
+    renderPanel();
+    const marker = screen.getByText('349');
+    expect(marker).toHaveAttribute('title', expect.stringMatching(/computed from this patient’s chart/i));
+    expect(marker.getAttribute('title')).not.toMatch(/clinical reference data/i);
   });
 
   it('labels each kind of reference material, and never guesses at one it does not know', () => {

@@ -183,7 +183,14 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           updated[idx] = {
             ...updated[idx],
             answer: response.answer,
-            references: response.references,
+            // The other two reference-carrying events are normalised in the API layer
+            // (`parsed.references ?? []`); `done` alone hands the parsed object straight
+            // through. The README does guarantee the key on `done`, so this is not reachable
+            // from a conforming backend — but the panel dereferences it (`references.some`,
+            // `references.length`) inside a render memo with no error boundary above it, and
+            // every other measurement on this line is already `Array.isArray`-guarded. The
+            // inconsistency was the finding, not a live crash.
+            references: Array.isArray(response.references) ? response.references : [],
             safetyWarnings: response.safetyWarnings ?? [],
             ...mergeDisclosure(updated[idx], response),
             questionId: response.questionId ?? '',

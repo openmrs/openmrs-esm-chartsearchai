@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { useConfig } from '@openmrs/esm-framework';
 import { useChartSearchAi } from './useChartSearchAi';
 import { searchPatientChart, searchPatientChartStream } from '../api/chartsearchai';
@@ -738,6 +738,24 @@ describe('useChartSearchAi after the panel closes', () => {
 });
 
 describe('useChartSearchAi late events', () => {
+  it('settles rather than throwing when done carries no reference list', () => {
+    // Not reachable from a conforming backend — the key is guaranteed on `done` — but the
+    // panel dereferences this in a render memo with no error boundary above it, so the value
+    // that reaches the store has to be iterable whatever arrived.
+    mockUseConfig.mockReturnValue({ useStreaming: false });
+    mockSearchPatientChart.mockResolvedValue({ answer: 'Text.', questionId: 'q-1' } as never);
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Any allergies?');
+    });
+    return waitFor(() => {
+      expect(result.current.messages[0].isLoading).toBe(false);
+      expect(result.current.messages[0].references).toEqual([]);
+      expect(() => result.current.messages[0].references.some(() => true)).not.toThrow();
+    });
+  });
+
   it('does not let a done in the last chunk replace an answer the user stopped', () => {
     // abort() cannot unwind a chunk already in hand, so `done` can still arrive after Stop.
     mockUseConfig.mockReturnValue({ useStreaming: true });

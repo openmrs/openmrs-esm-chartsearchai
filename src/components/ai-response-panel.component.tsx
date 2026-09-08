@@ -133,11 +133,6 @@ function notGroundedTitle(t: Translate): string {
   return t('notGroundedTitle', 'The cited record may not support this statement — verify against the chart.');
 }
 
-/** The tooltip shared by the reference-data chip and its inline citation: one wording, one i18n key. */
-function drugReferenceTitle(t: Translate): string {
-  return t('drugReferenceCitation', 'Clinical reference data — not this patient’s record.');
-}
-
 /**
  * The wording for a citation that cannot be the drug order its sentence names.
  *
@@ -156,11 +151,11 @@ function misattributedTitle(t: Translate): string {
  * record, so it gets its own neutral purple "Reference" tag rather than a grounding verdict.
  * Returns the shared {@link GroundedTag} shape so the badge renderer treats it uniformly.
  */
-function referenceTag(t: Translate): GroundedTag {
+function referenceTag(ref: AiReference, t: Translate): GroundedTag {
   return {
     type: 'purple',
     text: t('reference', 'Reference'),
-    title: drugReferenceTitle(t),
+    title: referenceTitle(ref, t),
   };
 }
 
@@ -212,6 +207,44 @@ const REFERENCE_KIND_LABEL: Record<ReferenceKind, (t: Translate) => string> = {
 
 function referenceLabel(ref: AiReference, t: Translate): string {
   return REFERENCE_KIND_LABEL[referenceKind(ref)](t);
+}
+
+/**
+ * What each kind of module-supplied citation IS, shown on both surfaces that carry it — the
+ * chip's badge and the inline marker — so a clinician hovering the same citation in two places
+ * is never told two different things.
+ *
+ * Split per kind for the same reason {@link REFERENCE_KIND_LABEL} is. One wording used to serve
+ * all of them, and it was written when the predicate above matched `drug_reference` alone:
+ * *"Clinical reference data — not this patient’s record."* Widening the predicate to the whole
+ * `reference` group carried that sentence onto the other two unchanged, and on the measured
+ * payload it lands on `[349]` — a `contraindication:Clarithromycin` finding whose text is *"The
+ * patient has a recorded allergy to Clarithromycin."*, computed from her own allergy record.
+ * The backend is explicit that such a finding is "computed rather than quoted from a dataset",
+ * so calling it reference data is wrong about the one citation in that answer that is entirely
+ * about this patient.
+ *
+ * This is a difference in WORDING only. Every kind still gets the same treatment the backend
+ * requires of the group: no grounding verdict, no navigation target, the same neutral tag. The
+ * README's "must not treat the `reference`-group types differently" is aimed at a client that
+ * keys the badge, the label or the navigation on `resourceType` and drops a type into a default
+ * branch — which is why this, like the label map, is a total `Record` with an explicit `other`.
+ */
+const REFERENCE_KIND_TITLE: Record<ReferenceKind, (t: Translate) => string> = {
+  safety_finding: (t) =>
+    t(
+      'safetyFindingCitation',
+      'The module’s own safety finding, computed from this patient’s chart — not a chart record to open.',
+    ),
+  drug_reference: (t) => t('drugReferenceCitation', 'Clinical reference data — not this patient’s record.'),
+  drug_class_note: (t) =>
+    t('drugClassNoteCitation', 'A note about a drug class the question named — not this patient’s record.'),
+  // A `reference`-group type this client predates: say only what the group guarantees.
+  other: (t) => t('referenceMaterialCitation', 'Module-supplied reference material — not this patient’s record.'),
+};
+
+function referenceTitle(ref: AiReference, t: Translate): string {
+  return REFERENCE_KIND_TITLE[referenceKind(ref)](t);
 }
 
 /**
@@ -323,7 +356,7 @@ function renderAnswerWithCitations(answer: string, ctx: CitationContext): React.
           <span
             key={citKey}
             className={`${styles.inlineCitation} ${styles.inlineCitationReference}`}
-            title={drugReferenceTitle(t)}
+            title={ref ? referenceTitle(ref, t) : undefined}
           >
             {citIndex}
           </span>
@@ -420,7 +453,10 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   // The bounded-ness of the interaction screen, in this panel's own phrasing rather than the
   // backend's suggested "N of M shown" (see the count-of-one note below). Rendered whenever a
   // measurement exists, because the count is the only thing that tells a bounded interaction
-  // list from a complete one; withheld pairs are always the least severe ones.
+  // list from a complete one. What is dropped is the LOWEST-RATED FIRST — an order, not a
+  // description of what ends up withheld, and the backend records its own counter-example in
+  // the same sentence: a 16-drug question shows 10 of 72 pairs and withholds
+  // `[Major x13, Moderate x40, Minor x9]`. So this must not say the withheld ones were mild.
   //
   // Not derived from the number of chips: this counts drug PAIRS, and the chip list also
   // carries contraindication and class findings that were never pairs.
@@ -542,7 +578,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
               // Only append the date when there is one — an allergy and a safety finding carry
               // none, and "— null" was reaching the screen.
               const label = `[${ref.index}] ${typeLabel}${ref.date ? ` — ${ref.date}` : ''}`;
-              const g = referenceData ? referenceTag(t) : groundedTag(ref.grounded, t);
+              const g = referenceData ? referenceTag(ref, t) : groundedTag(ref.grounded, t);
               // Tooltip via a native-title wrapper rather than Tag's deprecated `title` prop.
               // Rendered as a sibling of the link (Carbon Tag is a <div>) so the metadata
               // badge is not nested in, or part of, the navigation click target.
@@ -629,7 +665,8 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                 <Information size={16} className={styles.limitIcon} />
                 <span>
                   {pairsSentence.text}
-                  {pairsSentence.bounded && ` ${t('interactionPairsWithheld', 'The least severe were withheld.')}`}
+                  {pairsSentence.bounded &&
+                    ` ${t('interactionPairsWithheld', 'Withheld pairs were dropped lowest-rated first — where many were found, severe pairs can be among them.')}`}
                 </span>
               </li>
             )}
