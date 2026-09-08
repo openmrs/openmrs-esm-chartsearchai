@@ -7,6 +7,7 @@ import {
   type AiAnswerLimits,
   type AiReference,
   type AiSafetyWarning,
+  type ConditionRuleCoverage,
   SESSION_EXPIRED_ERROR_CODE,
 } from '../api/chartsearchai';
 import { highlightReference } from '../utils/highlight-reference';
@@ -169,6 +170,38 @@ function referenceTag(t: Translate): GroundedTag {
  * `group` is `reference` but whose type this client predates must not be called a drug
  * reference, which would tell a clinician it came from a drug's reference entry.
  */
+/**
+ * What each coverage verdict says, or `null` where it must say nothing.
+ *
+ * A total `Record` over the closed union, deliberately, and for the same reason as
+ * {@link REFERENCE_KIND_LABEL} below: a `switch` with a `default` arm collapses two different
+ * things — the decision that `published` renders nothing, and the fallback for a word this
+ * client predates — so a fourth verdict someone HAS taught the type system about would fall
+ * into the fallback and render silently. Measured: adding `'partial'` to the union type
+ * typechecked clean and passed all 279 tests. Here it is a compile error.
+ *
+ * `absent` and `unloaded` must not collapse into one sentence — "we looked and there is none"
+ * is not "nobody looked". `published` states only that the DATASET can run the arm, never that
+ * any recorded condition was screened, so it renders nothing rather than an affordance that
+ * would overclaim.
+ *
+ * The wire type is wider than this union (`string & {}`), which is why the lookup is cast and
+ * `?? null`-ed: an unrecognised word still renders nothing, as it must.
+ */
+const COVERAGE_SENTENCE: Record<ConditionRuleCoverage, ((t: Translate) => string) | null> = {
+  absent: (t) =>
+    t(
+      'conditionRulesAbsent',
+      'Conditions were not screened. The loaded drug-reference dataset publishes no condition rules, so this patient’s recorded conditions were not checked.',
+    ),
+  unloaded: (t) =>
+    t(
+      'conditionRulesUnloaded',
+      'Conditions were not screened. No drug-reference dataset was loaded, so nothing is known about condition coverage.',
+    ),
+  published: null,
+};
+
 const REFERENCE_KIND_LABEL: Record<ReferenceKind, (t: Translate) => string> = {
   safety_finding: (t) => t('safetyFindingLabel', 'Safety finding'),
   drug_reference: (t) => t('drugReferenceLabel', 'Drug reference'),
@@ -427,26 +460,10 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     };
   }, [interactionPairs, t]);
 
-  // Condition coverage. "absent" and "unloaded" must not collapse into one sentence — "we
-  // looked and there is none" is not "nobody looked" — and `published` states only that the
-  // DATASET can run the arm, never that any recorded condition was screened, so it renders
-  // nothing rather than an affordance that would overclaim.
-  const coverageSentence = useMemo(() => {
-    switch (conditionRuleCoverage) {
-      case 'absent':
-        return t(
-          'conditionRulesAbsent',
-          'Conditions were not screened. The loaded drug-reference dataset publishes no condition rules, so this patient’s recorded conditions were not checked.',
-        );
-      case 'unloaded':
-        return t(
-          'conditionRulesUnloaded',
-          'Conditions were not screened. No drug-reference dataset was loaded, so nothing is known about condition coverage.',
-        );
-      default:
-        return null;
-    }
-  }, [conditionRuleCoverage, t]);
+  const coverageSentence = useMemo(
+    () => COVERAGE_SENTENCE[conditionRuleCoverage as ConditionRuleCoverage]?.(t) ?? null,
+    [conditionRuleCoverage, t],
+  );
 
   /**
    * Whether this answer carries any drug-safety output at all — a warning, or a stated pair

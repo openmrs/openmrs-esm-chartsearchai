@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AiReference, AiSafetyWarning } from '../api/chartsearchai';
 import { resolveFindingSeverities } from './safety-disclosure';
+import { interaction, safetyFindingRef } from '../__fixtures__/clarithromycin-response';
 
 /**
  * The one property this module must never violate: **it may refuse, but it must never render a
@@ -55,22 +56,22 @@ const PARTNERS = [
   },
 ];
 
-const WARNINGS: AiSafetyWarning[] = PARTNERS.map((partner) => ({
-  type: 'interaction',
-  drug: 'Clarithromycin',
-  detail: `Clarithromycin interacts with active order ${partner.substance} — ${partner.severity}. Coadministration …`,
-  severity: partner.severity,
-  chartOrderBridges: partner.bridged ? [{ substance: partner.substance, orderDisplay: partner.order }] : [],
-}));
+/**
+ * Built through the shared fixture builders, not hand-written here.
+ *
+ * This file used to keep its own copies of both literals, and that made it the one test in the
+ * repo still asserting against a dataset shape the others had moved off. Measured: changing the
+ * fixture's ` — ` separator reddens 26 tests across the panel and resolver suites and leaves
+ * these 8,000 generated answers GREEN — so the guard the whole module is built around went on
+ * proving the safety property about a note format nothing else expected any more, and said
+ * nothing. A fuzzer that cannot see the input change is not a fuzzer of the input.
+ */
+const WARNINGS: AiSafetyWarning[] = PARTNERS.map((partner) =>
+  interaction(partner.substance, partner.severity, partner.bridged ? partner.order : undefined),
+);
 
 const INDEX_OF = PARTNERS.map((_partner, i) => 350 + i);
-const REFS: AiReference[] = INDEX_OF.map((index) => ({
-  index,
-  resourceType: 'safety_finding',
-  resourceUuid: 'interaction:Clarithromycin',
-  date: null as unknown as string,
-  group: 'reference',
-}));
+const REFS: AiReference[] = INDEX_OF.map((index) => safetyFindingRef(index));
 
 /** How one finding may be written. Each returns prose containing exactly that finding's marker. */
 const MARKER_FIRST_SHAPES: Array<(name: string, marker: string) => string> = [

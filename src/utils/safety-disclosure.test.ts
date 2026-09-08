@@ -364,20 +364,8 @@ describe('resolveFindingSeverities', () => {
     const warnings: AiSafetyWarning[] = [
       interaction('Methylprednisolone', 'Major'),
       interaction('Prednisone', 'Moderate'),
-      {
-        type: 'interaction',
-        drug: 'Ibuprofen',
-        detail: 'Ibuprofen interacts with active order Warfarin — Major. …',
-        severity: 'Major',
-        chartOrderBridges: [],
-      },
-      {
-        type: 'interaction',
-        drug: 'Ibuprofen',
-        detail: 'Ibuprofen interacts with active order Aspirin — Minor. …',
-        severity: 'Minor',
-        chartOrderBridges: [],
-      },
+      interaction('Warfarin', 'Major', undefined, 'Ibuprofen'),
+      interaction('Aspirin', 'Minor', undefined, 'Ibuprofen'),
     ];
     // The Clarithromycin set is fully identified; the Ibuprofen set has one member the answer
     // does not single out, so that set alone is withdrawn.
@@ -478,19 +466,10 @@ describe('resolveFindingSeverities', () => {
     const shared = [{ substance: 'Ibuprofen', orderDisplay: 'Advil 400mg' }];
     const warnings: AiSafetyWarning[] = [
       {
-        type: 'interaction',
-        drug: 'Ibuprofen',
-        detail: 'Ibuprofen interacts with active order Methylprednisolone — Moderate. …',
-        severity: 'Moderate',
+        ...interaction('Methylprednisolone', 'Moderate', undefined, 'Ibuprofen'),
         chartOrderBridges: [...shared, { substance: 'Methylprednisolone', orderDisplay: 'Solu-Medrol 125mg/5ml' }],
       },
-      {
-        type: 'interaction',
-        drug: 'Ibuprofen',
-        detail: 'Ibuprofen interacts with active order Prednisone — Minor. …',
-        severity: 'Minor',
-        chartOrderBridges: [...shared],
-      },
+      { ...interaction('Prednisone', 'Minor', undefined, 'Ibuprofen'), chartOrderBridges: [...shared] },
     ];
     const refs: AiReference[] = [safetyFindingRef(358, 'interaction', 'Ibuprofen')];
     const resolved = resolveFindingSeverities(

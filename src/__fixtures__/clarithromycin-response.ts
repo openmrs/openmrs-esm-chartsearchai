@@ -101,6 +101,13 @@ export const REFERENCES: AiReference[] = [
  * true while every test builds its warnings through this. That is why `drug` is a parameter:
  * a test needing a second candidate set used to hand-write the template and so kept its own
  * copy of the separator.
+ *
+ * That "only true while" was a claim, not a fact, for as long as it stood here: three callers
+ * had not been converted, and the most consequential was the property fuzzer. Measured before
+ * conversion — changing this separator to ` :: ` reddened 26 tests and left the fuzzer's 8,000
+ * generated answers GREEN, so the module's broadest guard was proving the safety property
+ * about a note format nothing else expected. After: 27, the fuzzer among them. Re-run that
+ * probe rather than trusting this paragraph if you add a caller.
  */
 export const interaction = (
   partner: string,
