@@ -978,7 +978,13 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     expect(screen.getByText(/publishes no condition rules/)).toBeInTheDocument();
   });
 
-  it('distinguishes "absent" from "unloaded"', () => {
+  it('distinguishes "absent" from "unloaded" — a mapping test, not a reachable render', () => {
+    // `renderPanel`'s defaults supply chips and a pair extent, which is what lets this reach the
+    // `unloaded` branch at all. A real `unloaded` payload cannot: it means no dataset was read,
+    // so there are no chips, no pair extent and no reference citations, and the coverage gate
+    // never opens. This asserts the two verdicts map to different sentences — which is worth
+    // asserting, since collapsing them is what the backend forbids — and not that a stock
+    // install ever shows the second one. See the reachability note beside COVERAGE_SENTENCE.
     // "We looked and there is none" is not "nobody looked".
     renderPanel({ conditionRuleCoverage: 'unloaded' });
     expect(screen.getByText(/No drug-reference dataset was loaded/)).toBeInTheDocument();

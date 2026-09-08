@@ -17,6 +17,7 @@ import {
   ANSWER_BY_ORDER_DISPLAY,
   ANSWER_BY_SUBSTANCE,
   ANSWER_MECHANISM_CLAUSES,
+  ANSWER_RESTATED_SUBJECT,
   ANSWER_TWO_FAMILIES,
   interaction,
   REFERENCES,
@@ -108,6 +109,97 @@ describe('stripExclusions must not delete the cited finding’s own subject', ()
   });
 });
 
+describe('a drug the claim COMPARES AGAINST is not its subject', () => {
+  it('refuses where the subject sits one sentence back, behind a chart citation', () => {
+    // Live-reproducible on the demo chart, and a Major/Moderate swap on the REAL ratings: the
+    // server returned "Her active order is recorded in [17]. Clarithromycin raises its levels far
+    // more than those of prednisone … [364]." and the module rendered Prednisone's rating for the
+    // Methylprednisolone finding, whose mechanism clause the sentence quotes verbatim.
+    //
+    // No window in any reading, nor the tail, ever contains the subject — so every objection was
+    // structurally silent and the only candidate named was the one the claim says the effect is
+    // GREATER THAN. Root cause was two bounds cancelling: the foreign-marker widening exists for
+    // this prose in ONE sentence, and the sentence-break bound undoes it across a full stop.
+    // 200,000 generated answers of the class resolved 110,514 and every one was wrong.
+    const answer =
+      'Her Solu-Medrol 125mg/5ml is the order at issue [17]. Clarithromycin raises its levels far more than those of Prednisone [350].';
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350])]).toEqual([]);
+  });
+
+  it('refuses the same shape across a line break, and other comparison wordings', () => {
+    for (const contrast of [
+      'raises its levels far more than those of Prednisone',
+      'is the bigger problem rather than Prednisone',
+      'matters here as opposed to Prednisone',
+      'is the concern instead of Prednisone',
+      'is implicated but not Prednisone',
+      'is the graver one whereas Prednisone is milder',
+    ]) {
+      const answer = `Her Solu-Medrol 125mg/5ml is the order at issue [17]\nClarithromycin ${contrast} [350].`;
+      expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350])]).toEqual([]);
+    }
+  });
+
+  it('still resolves when the comparison names something that is not a candidate', () => {
+    // The control: stripping a comparison clause must not cost a rating when the drug it names
+    // is not one of the set's candidates.
+    const answer =
+      'Clarithromycin interacts with active order Solu-Medrol 125mg/5ml, far more than with placebo [350].';
+    expect(resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350]).get(350)).toBe('Major');
+  });
+});
+
+describe('a finding no prose can name', () => {
+  it('refuses the whole set rather than donating its citation to a sibling', () => {
+    // A rated chip with an empty `detail` and no bridges has zero leads in every group, so no
+    // window can name it — and every window that mentions its bridged sibling then names exactly
+    // one candidate, unanimously, in all three readings. `electCandidate` returns a confident
+    // winner and all four objections agree with it. Measured: Major rendered for the answer's
+    // Prednisone sentence against a truth of Minor.
+    //
+    // Both halves are reachable: `discriminatingLeads` already notes that an operator's dataset
+    // can rate a rule and leave its note empty, and a note truncating to the subject drug yields
+    // a lead the same function drops as non-discriminating.
+    const warnings: AiSafetyWarning[] = [
+      interaction('Methylprednisolone', 'Major', 'Solu-Medrol 125mg/5ml'),
+      { type: 'interaction', drug: 'Clarithromycin', detail: '', severity: 'Minor', chartOrderBridges: [] },
+    ];
+    const refs = [safetyFindingRef(352)];
+    for (const answer of [
+      'Clarithromycin interacts with active order Prednisone, a weaker effect than for Methylprednisolone [352].',
+      'Clarithromycin interacts with active order Prednisone by the same route it affects Solu-Medrol 125mg/5ml [352].',
+    ]) {
+      expect([...resolveFindingSeverities(answer, refs, warnings, [352])]).toEqual([]);
+    }
+  });
+});
+
+describe('the two contest rules that survive the tail rule', () => {
+  it('refuses where the forward-disagreement rule is the ONLY objection', () => {
+    // Rule 1 was discriminated by NOTHING until this shape: disabling it left all 310 tests
+    // green, and the test named for it ("refuses a swap the shift-consistency rule cannot see")
+    // had been caught up with by the tail rule, which now refuses that answer earlier.
+    //
+    // Rule 1 survives precisely where the tail rule's carve-out applies. Here the tail restates
+    // the LAST citation's own election, so the tail rule stands down by design — and an earlier
+    // citation's forward election still disagrees with trailing's, which only rule 1 can see.
+    // Without it: {350: Moderate, 352: Major} against a truth of {350: Major, 352: Moderate}.
+    const answer =
+      'Prednisone is the lesser worry, but the greater one is [350]\nSolu-Medrol 125mg/5ml [352]\nSolu-Medrol 125mg/5ml';
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 352])]).toEqual([]);
+  });
+
+  it('resolves a subject restated by its order display — the carve-out the rule above covers', () => {
+    // The live answer the carve-out rests on, now a committed fixture rather than a citation to
+    // a scratch corpus. A candidate in the tail does not object when it is the last citation's
+    // own election; without that, this restatement reads as a subject left over and the rating
+    // is discarded.
+    expect(resolveFindingSeverities(ANSWER_RESTATED_SUBJECT, REFERENCES, SAFETY_WARNINGS, [350]).get(350)).toBe(
+      'Major',
+    );
+  });
+});
+
 describe('the partner may sit a whole clause away from its marker', () => {
   it('resolves a measured answer whose evidence is never adjacent to its marker', () => {
     // The refutation of proximity-as-evidence, kept as a test because the idea keeps coming back.
@@ -187,7 +279,8 @@ describe('a subject left over past the answer’s last marker', () => {
     // distinction is grammatical and nothing here parses, so the tail is read regardless of
     // shape and this answer pays for it.
     //
-    // Zero cost on all 46 captured live answers; the alternative was a swapped Major/Moderate
+    // Not zero-cost: 13 of 98 ratings across the corpus, stated in full on the sibling test
+    // below and in the README. The alternative was a swapped Major/Moderate
     // pair. A blank is safe, which is the premise the whole module rests on.
     const answer =
       'Clarithromycin interacts with active order Solu-Medrol 125mg/5ml [350], and with active order Pulmicort 90mcg [351]. Prednisone would be the safer choice.';
@@ -1128,7 +1221,8 @@ describe('resolveFindingSeverities', () => {
   });
 
   it('is not truncated by a citation outside this measurement', () => {
-    // Live in 4 of 62 cached answers: a chart-order citation lands between a finding's subject
+    // Live in 4 of a 62-answer capture (a larger population than THE CORPUS's 46, and taken
+    // earlier): a chart-order citation lands between a finding's subject
     // and the finding's own marker, cutting the subject out of the window and leaving only a
     // contrast partner, which is then elected. The block reading cannot help — on one line its
     // window is the same one. Without the foreign marker the same sentence correctly refuses,

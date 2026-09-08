@@ -111,7 +111,8 @@ const SENTENCE_SHAPES: Array<(name: string, marker: string) => string> = [
  *
  * The generator had no vocabulary for these, which made a TRUNCATED claim window unreachable:
  * a foreign citation between a finding's subject and its own marker cuts the subject out. Live
- * answers interleave them routinely — 7 times across 4 of 62 cached payloads.
+ * answers interleave them routinely — 7 times across 4 payloads of a 62-answer capture, which
+ * predates and exceeds the 46-answer corpus the resolver's own note defines.
  */
 const FOREIGN_MARKERS = ['[12]', '[14]', '[16]', '[17]', '[18]'];
 
@@ -415,7 +416,8 @@ describe('resolveFindingSeverities property: it may refuse, but never mis-attrib
     // And the sweep must not be vacuous — a resolver that refused everything would satisfy the
     // property while rendering nothing, which is the fail-open this whole file exists to catch.
     //
-    // The seed count went 4000 -> 6000 rather than this bound coming DOWN when the shifted shape
+    // The seed count went 4000 -> 9000, in two steps, rather than this bound coming DOWN as the
+    // shifted shape
     // was added. A fifth of the population now refuses by design (correctly — a rotated list
     // does not determine its own mapping), so the ratio fell; lowering the bound to match would
     // have quietly weakened the one assertion standing between this file and a vacuous pass.

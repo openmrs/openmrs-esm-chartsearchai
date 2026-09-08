@@ -22,7 +22,7 @@ export interface AiReference {
   /**
    * Citation grounding verdict from the backend: true = the cited record
    * supports the claim, false = it does not, null/absent = unverified.
-   * Render null as "unverified", never as "verified".
+   * Never render null as "verified". This client renders NO badge for it, which the backend asks be read as unverified rather than shown as such — a neutral badge is the render it asks for and is not drawn here (pre-existing at the base commit).
    *
    * `null` does not mean one thing, and two of its causes are not "verification was tried
    * and failed": a {@link group} of `reference` is always null (there is no way to vouch for

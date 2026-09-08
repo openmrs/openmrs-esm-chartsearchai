@@ -238,3 +238,15 @@ export const ANSWER_MECHANISM_CLAUSES =
   'concentrations and pharmacologic effects of corticosteroids [352]; and finally, it interacts with the ' +
   'active order Hydrocortisone Injection vial 100mg because coadministration with inhibitors of CYP450 ' +
   '3A3 may increase the plasma concentrations and pharmacologic effects of corticosteroids [354].';
+
+/**
+ * A fourth measured answer: the finding named by substance, then restated by its chart order
+ * display on the next line, with no marker on the restatement.
+ *
+ * Committed because the tail rule's carve-out — a candidate in the tail does NOT object when it
+ * is the last citation's own election — rests on it, and the file's own rule is that an answer
+ * deciding a design choice gets committed rather than cited from a scratch corpus. Without the
+ * carve-out this resolves nothing, because the restatement looks exactly like a subject left
+ * over.
+ */
+export const ANSWER_RESTATED_SUBJECT = 'Methylprednisolone [350]\n  Solu-Medrol 125mg/5ml';

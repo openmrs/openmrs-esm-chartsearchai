@@ -114,25 +114,60 @@ export function parseCitationIndices(group: string): number[] {
   return group.split(/\s*,\s*/).map(Number);
 }
 
-/**
- * THE CORPUS, named once because five notes in this file quoted it and two of them had drifted
- * (94 where the others said 98, with nothing to say whether that was an older measurement or a
- * mistake).
- *
- * "The live corpus" below always means the same thing: 46 answers captured from a running
- * server against the demo chart, of which 22 carry an `unstatedFindingSeverities` measurement
- * this module resolves, for 98 ratings in total. It is replayed on every change and a
- * byte-identical result is the regression bar. It is NOT in the repo — it lives in a scratch
- * directory — so a measurement quoted against it cannot be re-run from a clean checkout. Where
- * one of its answers turned out to decide a design choice, that answer is committed as a fixture
- * instead ({@link ANSWER_TWO_FAMILIES} is the case in point).
- */
+// -----------------------------------------------------------------------------------------------
+// THE CORPUS. Named once because notes throughout this file quote it and several had drifted —
+// 94 where others said 98, and separately a 62-answer and a 40-answer count for the same phrase.
+//
+// "The live corpus" always means: 46 answers captured from a running server against the demo
+// chart, of which 22 carry an `unstatedFindingSeverities` measurement this module resolves. It
+// renders 85 ratings today, down from 98 before the leftover-subject rule; every one of the 85
+// has been read against the sentence it was drawn from and is correct. It is replayed on every
+// change and a byte-identical result is the regression bar. It is NOT in the repo — it lives in a
+// scratch directory — so a measurement quoted against it cannot be re-run from a clean checkout.
+// Where one of its answers decides a design choice, that answer is committed as a fixture
+// instead: ANSWER_TWO_FAMILIES, ANSWER_MECHANISM_CLAUSES and ANSWER_RESTATED_SUBJECT are those.
+//
+// This was a javadoc block and so was silently documenting `normalize` below it — a
+// whitespace-collapsing helper described as the answer corpus, the fifth insertion-orphan of
+// that kind in this file. A `//` block cannot attach to a declaration.
+// -----------------------------------------------------------------------------------------------
+
+/** Collapses whitespace and lowercases, so every lead and claim is compared in one shape. */
 function normalize(text: string): string {
   return text.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
-/** At most four whitespace-separated tokens — a drug name, not a clause. See above. */
+/** At most four whitespace-separated tokens — a drug name, not a clause. See {@link stripExclusions}. */
 const EXCLUDED_NAME = String.raw`[^\s,;:.]+(?:[^\S\n]+[^\s,;:.]+){0,3}`;
+
+/**
+ * Words after which a named drug is being COMPARED AGAINST rather than talked about.
+ *
+ * Same principle as the exclusion clauses, and found the same way — by a wrong rating. A live
+ * answer read: *"Her active order is recorded in [17]. Clarithromycin raises its levels far more
+ * than those of prednisone … [364]."* The subject sits in the previous sentence; the only
+ * candidate the claim window names is the one it says the effect is GREATER THAN. Rendered
+ * Moderate against a truth of Major, on the real chart's own ratings.
+ *
+ * Unlike the exclusion clauses these need no trailing `,;:` — English does not punctuate them —
+ * so the four-token bound is the only thing keeping the span short.
+ */
+const COMPARISON_MARKERS = [
+  'more than',
+  'less than',
+  'greater than',
+  'rather than',
+  'as opposed to',
+  'instead of',
+  'but not',
+  'and not',
+  'whereas',
+  'excluding',
+  'with the exception of',
+].join('|');
+
+/** Filler that may sit between the comparison marker and the name it governs. */
+const COMPARISON_FILLER = String.raw`(?:[^\S\n]+(?:those|that|the|for|with|of|its|it|is|a|an))*`;
 
 const EXCLUSION_CLAUSES = [
   // "apart from X," / "unlike X," / "other than X," — the excluded name FOLLOWS the marker word.
@@ -142,6 +177,8 @@ const EXCLUSION_CLAUSES = [
   ),
   // "X aside," — the excluded name PRECEDES it.
   new RegExp(String.raw`\b${EXCLUDED_NAME}[^\S\n]+aside[^\S\n]*[,;:]`, 'g'),
+  // "more than (those of) X" — a comparison, so X is not the subject.
+  new RegExp(String.raw`\b(?:${COMPARISON_MARKERS})${COMPARISON_FILLER}[^\S\n]+${EXCLUDED_NAME}`, 'g'),
 ];
 
 /**
@@ -253,7 +290,9 @@ function sentenceBreaks(answer: string): number[] {
  * Where a trailing claim's window begins.
  *
  * Two things bound it, and a marker citing something OUTSIDE this measurement is neither.
- * Letting a foreign marker bound the window cuts the subject out — live, in 4 of 62 cached
+ * Letting a foreign marker bound the window cuts the subject out — live, in 4 of a 62-answer
+ * capture taken before THE CORPUS above was fixed at 46, so it is a different and larger
+ * population; the shape it names is in the 46 too. Counted
  * answers and 7 times in all: *"Solu-Medrol 125mg/5ml [17] carries more risk than Prednisone
  * does [350]"* left only the contrast partner in the window, and `[350]` elected it. The block
  * reading cannot help; on one line its window is the same one.
@@ -576,6 +615,23 @@ interface CandidateGroup {
 interface CandidateSet {
   candidates: AiSafetyWarning[];
   groups: CandidateGroup[];
+  /**
+   * True when some candidate has NO discriminating lead in any group, so no prose can name it.
+   *
+   * Such a set must be refused wholesale. Every window that mentions any sibling then names
+   * exactly one candidate, unanimously, in all three readings — so `electCandidate` returns a
+   * confident winner and all four objections agree with it, and the unnameable finding silently
+   * inherits whichever sibling the prose happened to mention. Measured: a rated chip with an
+   * empty `detail` and no bridges beside a bridged Methylprednisolone rendered Major for the
+   * answer's Prednisone sentence, against a truth of Minor.
+   *
+   * Both halves are reachable rather than hypothetical: `discriminatingLeads` already notes that
+   * "an operator's dataset can rate a rule and leave its note empty", and a note that truncates
+   * to the subject drug ("Clarithromycin. Interacts with active order Prednisone — Minor…")
+   * yields a lead the same function then drops as non-discriminating. Either way the finding ends
+   * up with nothing to be named by, and a set holding one cannot be resolved from prose at all.
+   */
+  unnameable: boolean;
 }
 
 /**
@@ -593,14 +649,17 @@ interface CandidateSet {
 function buildCandidateSet(candidates: AiSafetyWarning[]): CandidateSet {
   // A single candidate resolves by the shortcut in `readClaims` and its leads are never asked
   // for, so building them would be the only work this function ever wasted.
-  if (candidates.length <= 1) return { candidates, groups: [] };
+  if (candidates.length <= 1) return { candidates, groups: [], unnameable: false };
   const leadsPerCandidate = candidates.map(candidateLeadTiers);
   const groups = leadsPerCandidate[0].map((_unused, group) => {
     const leads = candidates.map((candidate, i) => discriminatingLeads(leadsPerCandidate[i][group], candidate.drug));
     const shared = leads.reduce<string[]>((common, own) => common.filter((lead) => own.includes(lead)), leads[0] ?? []);
     return { leadsPerCandidate: leads, shared: new Set(shared) };
   });
-  return { candidates, groups };
+  const unnameable = candidates.some((_candidate, i) =>
+    groups.every((group) => group.leadsPerCandidate[i].length === 0),
+  );
+  return { candidates, groups, unnameable };
 }
 
 /**
@@ -739,6 +798,9 @@ function readClaims(
       namedOf.set(index, new Set(candidates));
       continue;
     }
+
+    // A set holding a finding no prose can name is refused outright — see `unnameable`.
+    if (set.unnameable) continue;
 
     // Several findings share this (type, drug), so the answer's own sentence has to single one
     // out. Each lead group is asked of the whole candidate list and the verdicts are reconciled
@@ -890,14 +952,19 @@ function objectingSets(reading: ClaimReading): Set<string> {
  *   - Rule 1 is nearly INERT on real answers. Forcing its gate open drops the corpus from 98
  *     ratings to ONE, which says the forward reading disagrees somewhere almost always and the
  *     gate closing is what allows any rating at all.
- *   - Rule 2 changes NOTHING measurable. Disabling it leaves the suite green and the corpus at
- *     98, and a 400,000-shape adversarial search found no answer where it prevents a wrong
- *     rating rather than only withholding a correct one. Its original justification — a
- *     lead-in's partner scavenged by a marker-first line — is now handled earlier by
- *     {@link stripExclusions}. It is kept because "no case was found" is not "no case exists",
- *     and an objection can only ever refuse; but it is pinned by exactly one constructed test
- *     and nothing else, and that is the honest description of it.
- *   - Rules 3 and 4 are what actually protect a real answer, and rule 3 exists because 1 and 2
+ *   - Rule 2 DOES prevent wrong ratings, and this bullet said the opposite until it was
+ *     re-measured. Disabling it now reddens two tests, one of them the property sweep, which
+ *     reports five seeds rendering a rating that is not the cited finding's — a Major shown as
+ *     Minor among them. The earlier "changes nothing measurable" was taken before the sweep's
+ *     shifted population was fixed, and the claim outlived the measurement. It is a stale
+ *     number that invited deleting a live guard, which is the most dangerous kind of comment
+ *     this file can carry.
+ *   - Rule 1 survives in exactly one place, and it took a constructed shape to find it: where
+ *     rule 3's carve-out stands down because the tail restates the LAST citation's own election,
+ *     an earlier citation's forward disagreement is left as the only objection. It was
+ *     discriminated by nothing at all until that test was written, and the test NAMED for it had
+ *     been caught up with by rule 3, which refuses its answer earlier.
+ *   - Rules 3 and 4 carry most of the weight on a real answer, and rule 3 exists because 1 and 2
  *     are both blind to a ROTATION: a permutation is invisible to a per-finding check, and rule
  *     1's gate closes on exactly the answers a rotation needs.
  *
@@ -1066,10 +1133,12 @@ export function resolveFindingSeverities(
     // swapped pair, and so do four other phrasings of the same dangling name. A word list cannot
     // separate these because the distinction is grammatical and nothing here parses.
     //
-    // So the tail is read without regard to its shape. The cost is real and is stated in two
-    // tests: an answer whose closing sentence merely NAMES a candidate now renders nothing. It
-    // is zero on all 46 captured live answers, and the alternative was a swapped Major/Moderate
-    // pair, which this module's whole premise says is the worse outcome.
+    // So the tail is read without regard to its shape. The cost is real and is measured: 13 of the
+    // 98 ratings this would otherwise render across the live corpus, on three answers whose
+    // closing text names one of their own family's drugs for an unrelated reason. (This said the
+    // cost was ZERO, which the README and one of the two tests it points at both contradict —
+    // the zero was true of an earlier, narrower form of the rule and outlived it.) Against that:
+    // the shape it catches resolved 35,010 answers of which 35,010 carried a wrong rating.
     namedInTail.set(setKey, found);
   }
 
@@ -1154,8 +1223,9 @@ export function resolveFindingSeverities(
 
     // Or the wider, unconfined BACKWARD window no longer singles out what the line-confined one
     // elected. This is the check that survives a forward reading with nothing to say, and it has
-    // nothing to say in exactly the layouts that break the confined backward one: across 40 live
-    // answers a finding marker sits at end-of-line 54 times and is followed by a sentence
+    // nothing to say in exactly the layouts that break the confined backward one: across a
+    // 40-answer subset of the capture (counted before THE CORPUS was fixed at 46), a finding
+    // marker sits at end-of-line 54 times and is followed by a sentence
     // terminator 151 times, and a marker closed by a terminator has its forward claim zeroed
     // outright a few hundred lines up.
     const confined = trailing.electedOf.get(index);

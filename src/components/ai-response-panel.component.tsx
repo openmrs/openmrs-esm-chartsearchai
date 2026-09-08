@@ -208,6 +208,13 @@ const COVERAGE_SENTENCE: Record<ConditionRuleCoverage, ((t: Translate) => string
     ),
   published: null,
 };
+// A note on reachability, because one of these arms is dead in production and it should not look
+// like an oversight. `unloaded` means no drug-reference dataset was read, which on a stock
+// install is `chartsearchai.drugReference.enabled=false` — and that produces no safety findings,
+// no pair extent and no reference-group citations, so `hasSafetyOutput` below can never be true
+// and this sentence can never render. The arm stays because a backend reporting `unloaded`
+// ALONGSIDE safety output would be contradicting itself, and rendering the note is the right
+// response to that; but it is defensive, not a path any conforming server takes.
 
 /**
  * The label for a reference-group citation, keyed on the same classification the predicate uses
@@ -539,7 +546,16 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
    * pressure trend?" comes back `absent` with no warnings and no pair measurement.
    *
    * A pair extent counts on its own: it is stated by a check that RAN, whatever it related, so
-   * it is safety output even where that check raised no chip. So does a cited reference record,
+   * it is safety output even where that check raised no chip. And be clear what this gate is: a
+   * DEPARTURE from the backend's "Render it.", not an application of it. That sentence is said of
+   * `absent` unconditionally, and reinforced with "a statement about what the module did must not
+   * depend on the wording of a generated answer" — which is exactly what gating on the answer's
+   * own output does. The departure is taken because an ungated note puts "conditions were not
+   * screened" under every answer on every install, and its cost is stated with it: an answer with
+   * no chip, no pair extent and no cited reference record says nothing about condition screening,
+   * and `unloaded` becomes unreachable entirely.
+   *
+   * A cited reference record counts too,
    * which is what reaches the one answer type this note is most load-bearing for: a prescribing
    * question against a chart with conditions and no active orders runs the contraindication
    * screen, raises no chip and states no pair extent, and the backend says of exactly that case

@@ -29,10 +29,13 @@ export const NO_ANSWER_LIMITS: MessageAnswerLimits = {
  * value DOES replace an earlier one — including `[]` replacing null, which is the whole
  * distinction between "the check ran and named none" and "no measurement stated".
  *
- * One of two enumerations of the four keys — {@link NO_ANSWER_LIMITS} above is the other, and a
- * fifth measurement is a compile error at both, plus at any `ChatMessage` literal. It is NOT a
- * compile error in the panel: that reads its props by name, so making a new measurement RENDER
- * is a hand edit there whatever this file does.
+ * One of two enumerations of the four keys — {@link NO_ANSWER_LIMITS} above is the other — and
+ * those two are the WHOLE of the compile-time backstop. Verified with `tsc`: adding a fifth key
+ * to {@link AiAnswerLimits} reddens exactly these two functions and nothing else. It does NOT
+ * redden the `ChatMessage` literals or the hook, because each literal spreads
+ * `...NO_ANSWER_LIMITS` and the hook goes through `mergeDisclosure` — this doc claimed all three
+ * for a while, which overstated the safety net by two. Nor the panel, which reads its props by
+ * name, so making a new measurement RENDER is a hand edit there whatever this file does.
  */
 export function mergeDisclosure(previous: MessageAnswerLimits, source: Partial<AiSearchResponse>): MessageAnswerLimits {
   return {
@@ -49,9 +52,11 @@ export function mergeDisclosure(previous: MessageAnswerLimits, source: Partial<A
  * Spread rather than listed key-by-key in JSX, and that is the point: the panel's props extend
  * {@link AiAnswerLimits}, whose keys are all optional, so a hand-written list of them in JSX is
  * the one place a fifth measurement would silently fail to REACH the panel at all — stored on
- * the message and never passed down. Verified by adding a fifth key: this file, the
- * `ChatMessage` literals and the hook redden; the panel's own prop destructuring does not, which
- * is why the spread is about delivery and not about rendering.
+ * the message and never passed down. Verified by adding a fifth key with `tsc`: the two
+ * enumerations in this file redden and nothing else does — not the `ChatMessage` literals (they
+ * spread `...NO_ANSWER_LIMITS`), not the hook (it calls `mergeDisclosure`), and not the panel's
+ * own destructuring. So the spread is about delivery rather than rendering, and the compiler's
+ * help stops at this file.
  */
 export function answerLimitsOf(message: MessageAnswerLimits): MessageAnswerLimits {
   return mergeDisclosure(message, {});
