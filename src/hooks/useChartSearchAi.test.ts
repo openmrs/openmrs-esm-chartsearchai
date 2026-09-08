@@ -686,11 +686,16 @@ describe('useChartSearchAi answer-limit measurements', () => {
 
 describe('useChartSearchAi after the panel closes', () => {
   it('still completes a message whose done event arrives after unmount', () => {
-    // Closing the floating panel unmounts the hook without aborting the stream. Gating `done`
-    // on the mount flag therefore dropped it, leaving that message `isLoading` forever — the
-    // input disabled on reopen, no feedback row, and the trailing `grounded` event (which was
-    // never gated) landing final measurements on a message nothing would complete. The store
-    // outlives the panel, which is the whole reason `onGrounded` is ungated.
+    // Unmount DOES abort the stream — `aborts in-flight request on unmount` below asserts
+    // exactly that, and this comment used to claim the opposite of its own sibling. What abort()
+    // cannot do is unwind a chunk already in hand, so a `done` decoded from it still arrives.
+    // Gating `done` on the mount flag dropped that one, leaving the message `isLoading` forever:
+    // the input disabled on reopen and no feedback row, on a message the store keeps.
+    //
+    // A trailing `grounded` is NOT part of this. It comes only after the slower Tier-2 pass, by
+    // which point the abort has closed the stream — so the case for ungating rests on the
+    // last-chunk `done` alone, and this test drives that callback directly rather than a real
+    // stream, which is why it can reach a state the network no longer produces.
     mockUseConfig.mockReturnValue({ useStreaming: true });
     const { result, unmount } = renderHook(() => useChartSearchAi('patient-uuid'));
 

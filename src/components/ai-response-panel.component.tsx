@@ -451,9 +451,14 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   }, [answer]);
 
   // The bounded-ness of the interaction screen, in this panel's own phrasing rather than the
-  // backend's suggested "N of M shown" (see the count-of-one note below). Rendered whenever a
-  // measurement exists, because the count is the only thing that tells a bounded interaction
-  // list from a complete one. What is dropped is the LOWEST-RATED FIRST — an order, not a
+  // backend's suggested "N of M shown" (see the count-of-one note below). Rendered wherever the
+  // measurement is sane — not "whenever it exists": a half-stated or nonsensical pair is
+  // refused below, and nothing renders while the answer is still streaming.
+  //
+  // The count tells a TRUNCATED list from an untruncated one. It does not tell a complete
+  // answer from an incomplete one, and must not be worded as if it did: `found === reported`
+  // says only that THIS check withheld nothing, which the wire-type doc states outright and
+  // which the count-of-one note below turns on. What is dropped is the LOWEST-RATED FIRST — an order, not a
   // description of what ends up withheld, and the backend records its own counter-example in
   // the same sentence: a 16-drug question shows 10 of 72 pairs and withholds
   // `[Major x13, Moderate x40, Minor x9]`. So this must not say the withheld ones were mild.
@@ -502,9 +507,10 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   );
 
   /**
-   * Whether this answer carries any drug-safety output at all — a warning, or a stated pair
-   * extent. Named for what it measures rather than for "a screen ran", which is more than
-   * these two fields establish.
+   * Whether this answer carries any drug-safety output at all — a warning, a stated pair
+   * extent, or a cited reference record. Named for what it measures rather than for "a screen
+   * ran", which is more than any of the three establish. (It said "these two fields" until the
+   * third disjunct landed with its own test and the summary was left behind.)
    *
    * `conditionRuleCoverage` describes the loaded DATASET, and the backend states it on every
    * answer — deliberately ungated, so it answers even where nothing was screened — with
@@ -531,7 +537,9 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   // While the answer is still streaming its citations are not annotated at all (see
   // `renderedAnswer`), so a limits block here would describe annotations the reader cannot see.
   // It also keeps a measurement off a message the hook never completed: closing the panel
-  // mid-stream leaves `isLoading` true forever, and a trailing `grounded` event still lands.
+  // mid-stream leaves `isLoading` true forever — the panel is gone, so nothing re-renders it,
+  // but the message stays in the store and comes back on reopen. (Not because a trailing
+  // `grounded` lands on it: the unmount effect aborts the stream unconditionally, so it cannot.)
   const showLimits = !isLoading && (pairsSentence !== null || coverageNote !== null);
 
   // The API layer emits a code (not display text) for session expiry so the wording can be localized

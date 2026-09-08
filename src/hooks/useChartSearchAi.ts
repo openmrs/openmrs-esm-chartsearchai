@@ -158,8 +158,14 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         // Deliberately NOT gated on isMountedRef, for the same reason onGrounded is not: this
         // only writes to the chat store, which outlives the panel. Gating it meant closing the
         // floating panel mid-answer dropped `done` entirely, leaving that message `isLoading`
-        // forever — with the input disabled on reopen, and a trailing `grounded` event still
-        // landing final measurements on a message nothing would ever complete.
+        // forever, with the input disabled on reopen.
+        //
+        // The reason is that a `done` already decoded in the chunk in hand still arrives after
+        // the unmount effect calls abort() — NOT that a trailing `grounded` would otherwise
+        // land on the stranded message. It could not: that effect aborts unconditionally, and
+        // `grounded` is emitted only after the slower Tier-2 pass, so once the panel closes
+        // there is no stream left to carry it. This comment used to say so in three places and
+        // a test's prose said the opposite of its own sibling.
         if (abortControllerRef.current === abortController) {
           abortControllerRef.current = null;
         }

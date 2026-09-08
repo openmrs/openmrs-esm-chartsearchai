@@ -63,6 +63,76 @@ describe('severityTone', () => {
   });
 });
 
+describe('clauses no earlier test discriminated', () => {
+  // Each of these was found by mutating the clause and watching the whole suite stay green.
+  // A clause the suite never discriminates is one the next change removes for free.
+
+  it('cuts a lead clause at a full stop when the note carries no dash', () => {
+    // `leadClause` splits on ` — ` OR `. `, whichever comes first, and every test until now
+    // truncated on the dash — so the second half of that expression had never run. Replacing
+    // `detail.indexOf('. ')` with `-1` left the suite green.
+    const warnings: AiSafetyWarning[] = [
+      { ...interaction('Methylprednisolone', 'Major'), detail: 'Solu-Medrol 125mg/5ml. Prednisone is the safer pick.' },
+      { ...interaction('Prednisone', 'Moderate'), detail: 'Prednisone Co 5mg. Methylprednisolone is riskier.' },
+    ];
+    // Without the full-stop cut, each lead runs on and names BOTH partners, so neither
+    // discriminates and the set is refused.
+    const resolved = resolveFindingSeverities('Solu-Medrol 125mg/5ml [350].', REFERENCES, warnings, [350]);
+    expect(resolved.get(350)).toBe('Major');
+  });
+
+  it('ignores a rating that is only whitespace', () => {
+    // The candidate filter tests `severity.trim() !== ''` as well as `typeof`. Only the typeof
+    // half was covered — a whitespace rating would have resolved to '' and badged an empty chip.
+    const warnings: AiSafetyWarning[] = [{ ...interaction('Methylprednisolone', 'Major'), severity: '   ' }];
+    expect(resolveFindingSeverities('Solu-Medrol 125mg/5ml [350].', REFERENCES, warnings, [350]).size).toBe(0);
+  });
+
+  it('does not let a lead ending in a letter match a name continuing into digits', () => {
+    // `isWordish` counts DIGITS as word-ish, and nothing exercised that: without it the lead
+    // `Vitamin B` matches inside `Vitamin B12`, which is the class `shortOrderDisplay` was
+    // measured against live.
+    const warnings: AiSafetyWarning[] = [
+      {
+        ...interaction('Vitamin B', 'Major'),
+        chartOrderBridges: [{ substance: 'Vitamin B', orderDisplay: 'Vitamin B' }],
+      },
+      { ...interaction('Folic acid', 'Moderate') },
+    ];
+    const resolved = resolveFindingSeverities('Interacts with Vitamin B12 1000mcg [350].', REFERENCES, warnings, [350]);
+    expect(resolved.size).toBe(0);
+  });
+
+  it('treats a terminator as a sentence end from either side', () => {
+    // SENTENCE_END is a disjunction and each half passed on its own, so neither was pinned.
+    // Left half: a terminator NOT preceded by a digit. Right half: one not FOLLOWED by a digit.
+    const own = new Set([350]);
+    // `s.` — the terminator is preceded by a letter, so only the left alternative can match it.
+    expect(
+      claimTextByCitation('Reviewed [12] against Prednisone Co 5mg. Solu-Medrol 125mg/5ml [350].', 'trailing', own).get(
+        350,
+      ),
+    ).toBe(' Solu-Medrol 125mg/5ml ');
+    // `5.` followed by a space — only the RIGHT alternative matches (lookbehind sees the 5).
+    expect(
+      claimTextByCitation('Reviewed [12] against Prednisone 5. Solu-Medrol 125mg/5ml [350].', 'trailing', own).get(350),
+    ).toBe(' Solu-Medrol 125mg/5ml ');
+  });
+
+  it('reads a dose written without a leading zero as a sentence end — a known limit', () => {
+    // Recorded rather than fixed. SENTENCE_END excludes a decimal point only where a digit sits
+    // on BOTH sides, so `.125mg` still reads as a terminator and truncates the window. The safe
+    // direction (a refusal, not a wrong rating), and no live answer has produced the form — but
+    // the comment says "not a decimal point inside a dose", which is wider than what it does.
+    const claim = claimTextByCitation(
+      'Solu-Medrol [12] at .125mg is the one that interacts [350].',
+      'trailing',
+      new Set([350]),
+    ).get(350);
+    expect(claim).not.toContain('Solu-Medrol');
+  });
+});
+
 describe('claimTextByCitation', () => {
   it('begins a claim at its own sentence, not at the foreign marker that preceded it', () => {
     // The widening past a foreign marker (a citation outside this measurement) must not carry

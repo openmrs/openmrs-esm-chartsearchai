@@ -119,25 +119,8 @@ function normalize(text: string): string {
 }
 
 /**
- * The text of the claim each citation marker is attached to.
- *
- * A marker's claim is the prose running back to the previous marker — but adjacent markers
- * (`[177] [350]`) cite ONE claim between them, so a run of marker groups separated by nothing
- * but whitespace is treated as a single attachment point and they all share the text before
- * the run. Without that, `[350]` in `Methylprednisolone [177] [350]` would see a claim text of
- * just `" "` and could never be resolved.
- *
- * An index cited more than once keeps its FIRST claim. Measured live, the model routinely
- * repeats a finding's marker inside its own statement — *"…interacts with active order
- * Solu-Medrol 125mg/5ml [350], a Major problem because … adrenal suppression [350]"* — where
- * the first occurrence is the statement that names the finding and the repeat trails a
- * mechanism clause. An earlier version blanked such an index to avoid attributing a rating to
- * the wrong sentence, which discarded the only evidence there was on every one of those
- * answers.
- *
- * First rather than a union of all of them, because the renderer badges an index at its first
- * marker too: the rating is then read from, and shown beside, the same sentence. A union would
- * let evidence from a later sentence justify a badge drawn against an earlier one.
+ * Which way {@link claimTextByCitation} reads a marker's claim: back to the previous marker
+ * (`trailing`) or forward to the next (`leading`), each either line-confined or not (`block`).
  */
 export type ClaimDirection = 'trailing' | 'leading' | 'block' | 'block-leading';
 
@@ -217,6 +200,27 @@ function trailingWindowStart(breaks: number[], ownEnd: number, markerStart: numb
   return last === undefined || last <= ownEnd ? ownEnd : last;
 }
 
+/**
+ * The text of the claim each citation marker is attached to.
+ *
+ * A marker's claim is the prose running back to the previous marker — but adjacent markers
+ * (`[177] [350]`) cite ONE claim between them, so a run of marker groups separated by nothing
+ * but whitespace is treated as a single attachment point and they all share the text before
+ * the run. Without that, `[350]` in `Methylprednisolone [177] [350]` would see a claim text of
+ * just `" "` and could never be resolved.
+ *
+ * An index cited more than once keeps its FIRST claim. Measured live, the model routinely
+ * repeats a finding's marker inside its own statement — *"…interacts with active order
+ * Solu-Medrol 125mg/5ml [350], a Major problem because … adrenal suppression [350]"* — where
+ * the first occurrence is the statement that names the finding and the repeat trails a
+ * mechanism clause. An earlier version blanked such an index to avoid attributing a rating to
+ * the wrong sentence, which discarded the only evidence there was on every one of those
+ * answers.
+ *
+ * First rather than a union of all of them, because the renderer badges an index at its first
+ * marker too: the rating is then read from, and shown beside, the same sentence. A union would
+ * let evidence from a later sentence justify a badge drawn against an earlier one.
+ */
 export function claimTextByCitation(
   answer: string,
   direction: ClaimDirection = 'trailing',
@@ -780,6 +784,19 @@ export function resolveFindingSeverities(
     // badged Major, a swapped PAIR, both shown confidently beside their citations. It is the
     // existing "refuses a multi-line answer with one marker written before its drug" sentence
     // with one change: the lead-in's partner is itself cited.
+    // On `leading`'s place in both this loop and the NAMED one below: measured undiscriminated.
+    // Dropping it from either leaves 286 tests green and a 150,000-seed sweep clean; dropping
+    // `blockLeading` reddens both. That is what the geometry predicts — a line-confined forward
+    // window is a SUBSET of the unconfined one, so everything `leading` names `blockLeading`
+    // names too, and the NAMED rule cannot tell them apart even in principle.
+    //
+    // Kept rather than deleted, and not out of caution about a clause nothing pins. A contest
+    // can only ADD refusals; it can never produce a rating. So an undiscriminated contest
+    // member is safe in a way an undiscriminated GUARD is not, and there is one shape where it
+    // would earn its place: a permutation in which the unconfined window names two candidates
+    // (unsound, so it cannot object) while the confined one names exactly one. That is the
+    // residual class this cycle's fix does not close, so removing the only rule that could
+    // reach part of it would be the wrong way to tidy up.
     for (const [forward, soundForward] of [
       [leading, soundLeading],
       [blockLeading, soundBlockLeading],
