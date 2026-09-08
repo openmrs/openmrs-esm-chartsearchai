@@ -109,6 +109,23 @@ describe('stripExclusions must not delete the cited finding’s own subject', ()
   });
 });
 
+describe('a colon after a marker is a label separator, not a sentence close', () => {
+  it('keeps the forward claim alive after a colon, which is what lets the set object', () => {
+    // `:` is deliberately absent from the set of terminators that zero a forward claim, and
+    // nothing discriminated that until this test: the whole suite and the property sweep stayed
+    // green with `:` added. It is load-bearing anyway — over a 3,840-answer sweep of
+    // colon-after-marker shapes, adding it resolves 64 MORE answers and every one of the 64 is a
+    // wrong rating, because zeroing that claim costs the set its right to object and the
+    // trailing reading's election, scavenged from the lead-in, then stands.
+    //
+    // The example the comment beside that clause used to offer refuses either way, so it was
+    // evidence for nothing. This one discriminates: with `:` treated as a close it renders
+    // {350: Moderate, 351: Major} and 350 is Budesonide, which is Major.
+    const answer = 'Prednisone is the lesser worry, but the greater one is [350]: Budesonide [351] Budesonide';
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 351])]).toEqual([]);
+  });
+});
+
 describe('a subject the answer names that no citation will claim', () => {
   it('refuses across TWELVE phrasings of the same comparison, not just those on a word list', () => {
     // The measurement that retired the second word list in this file. A comparison-marker list
@@ -292,7 +309,7 @@ describe('the partner may sit a whole clause away from its marker', () => {
   });
 });
 
-describe('a subject left over past the answer’s last marker', () => {
+describe('a subject left over past the set’s last own marker', () => {
   it('refuses a rotation whose last forward window a foreign marker emptied', () => {
     // The residual cycle 10 recorded and could not close. Every contest was silent: the
     // disagreement gate needs the forward reading to name at every cited index and `[14]`
@@ -383,7 +400,8 @@ describe('a subject left over past the answer’s last marker', () => {
     // name emptied it and this rule went silent. That is not a contrivance: two live answers end
     // with a chart citation after the finding marker, so the rule was DORMANT on a large share of
     // real answers. Swept: 35,010 resolving answers of this family, 35,010 carrying a wrong
-    // rating. The tail is now per-set and deletes markers instead of stopping at them.
+    // rating. The tail is now per-set and starts after the set's own last first-occurrence
+    // marker instead of stopping at the answer's last one.
     const head =
       'Hydrocortisone Injection vial 100mg is the lesser worry, but the greater one is [350].\nSolu-Medrol 125mg/5ml [354]\nHydrocortisone Injection vial 100mg';
     for (const suffix of [' [14]', ' [17].', ', an active order [14]', ' — see [350] above']) {

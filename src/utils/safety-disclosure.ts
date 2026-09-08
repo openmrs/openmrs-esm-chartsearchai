@@ -120,8 +120,11 @@ export function parseCitationIndices(group: string): number[] {
 //
 // "The live corpus" always means: 46 answers captured from a running server against the demo
 // chart, of which 22 carry an `unstatedFindingSeverities` measurement this module resolves. It
-// renders 85 ratings today, down from 98 before the leftover-subject rule; every one of the 85
-// has been read against the sentence it was drawn from and is correct. It is replayed on every
+// renders 80 ratings today across 18 of those answers, down from 98 before the two
+// leftover-subject rules — 13 for the tail rule and 5 for the head rule's loss of its exemption.
+// All 85 that stood at the tail-rule stage were read against the sentence each was drawn from
+// and were correct; today's 80 are a subset of those. This number has now drifted twice, once
+// per cycle that changed a refusal, so re-measure it rather than quoting it. It is replayed on every
 // change and a byte-identical result is the regression bar. It is NOT in the repo — it lives in a
 // scratch directory — so a measurement quoted against it cannot be re-run from a clean checkout.
 // Where one of its answers decides a design choice, that answer is committed as a fixture
@@ -390,7 +393,10 @@ export function claimTextByCitation(
       // back-to-the-previous-marker by design, and widening it or the forward windows was
       // measured to regress the live corpus hard — the one note that still quoted a 94-rating
       // baseline after the figure was consolidated. Re-stated against the corpus as THE CORPUS
-      // defines it: widening these windows took it from 98 correct ratings to 74.
+      // defines it: widening these windows took it from 98 correct ratings to 74 — measured
+      // BEFORE the leftover-subject rules, against the then-98 baseline. The corpus renders 85
+      // today, so do not read 98 here as its current size; the canonical note near the top of
+      // this file is the only place that number should be taken from.
       const from =
         direction === 'trailing' && ownIndices
           ? trailingWindowStart(breaks, lastOwnEnd, run.start)
@@ -876,7 +882,8 @@ function soundSets(reading: ClaimReading): Set<string> {
  * which asks the same "does a subject dangle past the last marker" question of the answer's
  * TAIL, where no claim window can hide it. Two local repairs to this gate were implemented and
  * measured first, and both cost correct live ratings — widening the forward window past a
- * foreign marker (98 -> 95) and removing the `.` from the terminator rule (98 -> 82). Neither
+ * foreign marker (98 -> 95) and removing the `.` from the terminator rule (98 -> 82), both
+ * against the then-98 baseline rather than today's 85. Neither
  * was shipped. That is why the answer to a bad proxy here was a different question elsewhere
  * rather than a better proxy.
  *
@@ -885,7 +892,12 @@ function soundSets(reading: ClaimReading): Set<string> {
  * contested. Both make an objection fire LESS often, which is the unsafe direction for a rule
  * whose only output is a refusal — and neither is justified by anything measurable. With both
  * removed the suite, the live corpus and a 150,000-seed sweep
- * (269 resolving answers) are byte-identical to with them. So they were noise in the direction
+ * (5,171 resolving answers) are unchanged. NOT byte-identical any more, and that matters: the
+ * INJECTIVITY half can no longer be re-added without cost — doing so now reddens "refuses where
+ * the forward-disagreement rule is the ONLY objection" with a swapped Major/Moderate pair,
+ * because that test did not exist when this was measured. The `forwardElected` half really is
+ * inert. Re-measure before believing either; the figure here said 269, which was a 9,000-seed
+ * count read as a 150,000-seed one. They were noise in the direction
  * of resolving more, and are gone rather than left for the next change to delete for free.
  */
 function objectingSets(reading: ClaimReading): Set<string> {
@@ -926,7 +938,7 @@ function objectingSets(reading: ClaimReading): Set<string> {
  * A set is withheld on any of SIX objections: a forward reading that identified a candidate at
  * every cited citation and elects a different one here; a forward reading that NAMES a finding
  * the trailing reading claims for no citation of the set; a candidate named past the answer's
- * last marker that is not the last citation's own election; a candidate named BEFORE the set's
+ * SET's last own-index marker that is not the last citation's own election; a candidate named BEFORE the set's
  * first marker that no citation claims and that did not cite its own mention; the unconfined
  * backward window no longer singling out what the confined one elected; or the trailing reading
  * not being sound in the first place.
@@ -940,9 +952,9 @@ function objectingSets(reading: ClaimReading): Set<string> {
  * Their weights are very unequal and it is worth knowing which, because the shape of this thing
  * is not what its rule list suggests. Measured on the live corpus:
  *
- *   - Rule 1 is nearly INERT on real answers. Forcing its gate open drops the corpus from 98
- *     ratings to ONE, which says the forward reading disagrees somewhere almost always and the
- *     gate closing is what allows any rating at all.
+ *   - Rule 1 is nearly INERT on real answers. Forcing its gate open dropped the corpus from its
+ *     then-98 ratings to ONE, which says the forward reading disagrees somewhere almost always
+ *     and the gate closing is what allows any rating at all.
  *   - Rule 2 DOES prevent wrong ratings, and this bullet said the opposite until it was
  *     re-measured. Disabling it now reddens two tests, one of them the property sweep, which
  *     reports five seeds rendering a rating that is not the cited finding's — a Major shown as
@@ -1054,7 +1066,8 @@ export function resolveFindingSeverities(
   // markers for.
   const markerRuns = [...answer.matchAll(citationGroupPattern())];
   // PER SET, after the last marker citing one of ITS indices, with any remaining marker groups
-  // DELETED rather than treated as a boundary.
+  // left in place rather than treated as a boundary — see the note at the slice below, which is
+  // the correct home for that detail.
   //
   // Cutting at the ANSWER's last marker left the tail empty whenever any citation followed the
   // dangling name — ` [14]`, ` [17].`, `, an active order [14]` — and on this chart a trailing
@@ -1239,8 +1252,13 @@ export function resolveFindingSeverities(
       if (!claimedByTrailing.get(setKey)?.has(named)) contested.add(setKey);
     }
 
-    // Or a candidate of this set is named PAST THE ANSWER'S LAST MARKER and claimed by no
-    // citation of it. That is a subject left over with nothing to cite it — the shift
+    // Or a candidate of this set is named past the SET'S last own-index marker (first
+    // occurrences only) and is not the last citation's own election.
+    //
+    // Not the ANSWER's last marker: that version left the tail empty whenever any citation
+    // followed the dangling name, and a trailing chart citation is the ordinary form on this
+    // chart — 35,010 resolving answers of that family, all wrong. Three docs and a describe name
+    // still said "past the answer's last marker" after the code stopped doing it. That is a subject left over with nothing to cite it — the shift
     // signature — and asking it of the tail rather than of a claim window is what makes it
     // proof against the two things that hid it before: a foreign marker truncating a forward
     // window, and a full stop closing one.
