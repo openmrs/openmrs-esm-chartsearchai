@@ -136,15 +136,47 @@ describe('a subject the answer names that no citation will claim', () => {
     }
   });
 
-  it('still resolves when the earlier mention CITES ITSELF', () => {
-    // The control that keeps the head rule off ordinary prose, and a live shape: an answer naming
-    // one family member with a chart citation of its own and the next with a finding citation.
-    // "active order Methylprednisolone [16]" offers evidence for its own mention, so it is being
-    // talked about rather than left over. Without this exemption the rule costs five live ratings
-    // (`q1_mixed`, `q6_interleaved`) and this test.
+  it('refuses when an earlier family member is named with a citation of its own', () => {
+    // This asserted a RESOLUTION for one cycle, on the strength of an exemption for a mention
+    // that "cites itself". The exemption meant "some bracketed number sits within two words of
+    // this name", which a trailing chart citation on an order display always satisfies — the
+    // form this module's own fixture carries verbatim, and the form the resolver elsewhere calls
+    // the ordinary one. So it exempted the leftover subject on exactly the prose the head rule
+    // exists for: 1,696 of 1,696 resolving answers of that class carried a wrong rating, none
+    // resolved correctly, and one was captured verbatim from the running server.
+    //
+    // It cost 5 live ratings to remove (`q1_mixed`, `q6_interleaved`) and this assertion with
+    // them. Same trade as every other refusal here, and the same reason: an answer that names a
+    // family member the citations do not account for has not said which finding is which.
     const answer =
       'Clarithromycin interacts with active order Methylprednisolone [16]. Additionally, it interacts with active order Prednisone [352].';
-    expect(resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [352]).get(352)).toBe('Moderate');
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [352])]).toEqual([]);
+  });
+
+  it('refuses the live shape where a chart citation used to exempt the leftover', () => {
+    // Captured verbatim from the running server. "Its exposure rise" is Solu-Medrol's, and the
+    // AUC figure is copied out of the Methylprednisolone warning's own detail — so the sentence
+    // is about that finding (Major) and Prednisone is the comparison only.
+    for (const answer of [
+      'Solu-Medrol 125mg/5ml [17]. Its exposure rise is increased systemic exposure by approximately 100 percent compared to Prednisone [350].',
+      'Clarithromycin interacts with active order Methylprednisolone [177]. That interaction is graver than the one with Prednisone [350].',
+      'Solu-Medrol 125mg/5ml, Pulmicort 90mcg [166], and Prednisone Co 5mg are all active. The steepest rise of the three is bigger than what Prednisone Co 5mg gives [350].',
+    ]) {
+      expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350])]).toEqual([]);
+    }
+  });
+
+  it('refuses where an "X aside," clause had swallowed the subject', () => {
+    // The trailing exclusion form allowed four tokens for the excluded name, so a two-token
+    // "dose timing aside" preceded by a four-token order display took the drug with it. Bounded
+    // to two tokens now: "dose timing aside," still strips, and the order display stays in the
+    // head where it belongs.
+    for (const answer of [
+      'Solu-Medrol 125mg/5ml dose timing aside, the exposure rise is bigger than anything Prednisone Co 5mg would cause [350].',
+      'Her Solu-Medrol 125mg/5ml dose timing aside, she is stable. The exposure rise is well above Prednisone Co 5mg [350].',
+    ]) {
+      expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350])]).toEqual([]);
+    }
   });
 });
 
@@ -1279,7 +1311,7 @@ describe('resolveFindingSeverities', () => {
     const answer =
       'Clarithromycin interacts with active order Methylprednisolone [16]. ' +
       'Additionally, it interacts with active order Prednisone [352].';
-    expect(resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [352]).get(352)).toBe('Moderate');
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [352])]).toEqual([]);
   });
 
   it('does not read a decimal point in a dose as a sentence break', () => {

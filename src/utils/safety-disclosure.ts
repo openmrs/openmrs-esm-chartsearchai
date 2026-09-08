@@ -163,7 +163,7 @@ const EXCLUSION_CLAUSES = [
     'g',
   ),
   // "X aside," — the excluded name PRECEDES it.
-  new RegExp(String.raw`\b${EXCLUDED_NAME}[^\S\n]+aside[^\S\n]*[,;:]`, 'g'),
+  new RegExp(String.raw`\b[^\s,;:.]+(?:[^\S\n]+[^\s,;:.]+)?[^\S\n]+aside[^\S\n]*[,;:]`, 'g'),
 ];
 
 /**
@@ -888,39 +888,6 @@ function soundSets(reading: ClaimReading): Set<string> {
  * (269 resolving answers) are byte-identical to with them. So they were noise in the direction
  * of resolving more, and are gone rather than left for the next change to delete for free.
  */
-/**
- * Whether the head's mention of this candidate carries a citation marker of its own.
- *
- * At most two words may sit between the name and the marker. A structural test, deliberately,
- * after two word lists failed at this: it asks whether the ANSWER offered evidence for the
- * mention rather than what the sentence around it says.
- */
-function citesItsOwnMention(
-  text: string,
-  set: CandidateSet,
-  candidate: AiSafetyWarning,
-  group: CandidateGroup,
-): boolean {
-  const leads = group.leadsPerCandidate[set.candidates.indexOf(candidate)] ?? [];
-  for (const lead of leads) {
-    if (!lead) continue;
-    let at = text.indexOf(lead);
-    while (at >= 0) {
-      const after = text.slice(at + lead.length);
-      const marker = after.search(/\[\d/);
-      if (marker >= 0) {
-        const between = after
-          .slice(0, marker)
-          .split(/\s+/)
-          .filter((word) => /[a-z0-9]/.test(word));
-        if (between.length <= 2) return true;
-      }
-      at = text.indexOf(lead, at + 1);
-    }
-  }
-  return false;
-}
-
 function objectingSets(reading: ClaimReading): Set<string> {
   const qualified = new Set<string>();
   for (const [setKey, indices] of indicesBySet(reading)) {
@@ -1171,18 +1138,22 @@ export function resolveFindingSeverities(
     const found = new Set<AiSafetyWarning>();
     for (const group of set.groups) {
       for (const candidate of matchesInGroup(set.candidates, group.leadsPerCandidate, group.shared, text)) {
-        // ...unless the answer OFFERED A CITATION for that mention. A family member the answer
-        // cites in its own right — "active order Methylprednisolone [16]" — is being talked
-        // about, not left over, even when the citation is a chart order this measurement does
-        // not list. Without this the rule refuses a live shape: an answer naming one partner
-        // with a chart citation and the next with a finding citation, which is `q1_mixed`,
-        // `q6_interleaved` and the "foreign citation bounds across a sentence break" test.
+        // No exemption for a mention that carries a citation of its own. There WAS one, and it
+        // was the whole of this rule's failure: it meant "some bracketed number sits within two
+        // words of this name", which a trailing chart citation on an order display always
+        // satisfies — and that is the form this module's own fixture carries verbatim
+        // (`active order Methylprednisolone [177] [350]`) and the form the file elsewhere calls
+        // "the ORDINARY form, measured on two live answers". So the leftover subject was exempted
+        // on exactly the prose the rule was written for. Measured: 1,696 of 1,696 resolving
+        // answers of that class carried a wrong rating, including one captured verbatim from the
+        // running server, and NONE resolved correctly. The exemption also never checked WHOSE
+        // marker it was — another drug's chart citation two words away exempted just as well, and
+        // so did `[999]`, an index no payload ever sent.
         //
-        // "Offered" means the marker follows the name almost immediately. That is what separates
-        // those from the defect: "Solu-Medrol 125mg/5ml [17]" cites its own mention, while "Her
-        // Solu-Medrol 125mg/5ml is the order at issue [17]" puts five words in between and the
-        // citation belongs to the clause, not the name.
-        if (!citesItsOwnMention(text, set, candidate, group)) found.add(candidate);
+        // Its cost is real and paid deliberately: 5 live ratings, on `q1_mixed` and
+        // `q6_interleaved`, where an answer names one family member with a chart citation and the
+        // next with a finding citation. Two tests assert that refusal.
+        found.add(candidate);
       }
     }
     namedInHead.set(setKey, found);
@@ -1298,6 +1269,15 @@ export function resolveFindingSeverities(
       if (named !== lastClaim) contested.add(setKey);
     }
 
+    // KNOWN RESIDUAL, one shape, recorded because it is a wrong rating. Where the LEADING
+    // exclusion form names the subject and the sentence then contradicts itself about it — "No
+    // corticosteroid is safe here, except for Solu-Medrol 125mg/5ml, which is the worst of them."
+    // — the strip removes the subject from the head and the rule cannot see it. Closing it means
+    // not stripping the head at all, which was measured and costs four more live ratings
+    // (`r8_apartfrom`, the recovery an earlier cycle was built on). Left open deliberately: the
+    // prose excludes a drug and then calls it the worst, and paying four correct ratings for
+    // self-contradicting text is the wrong trade.
+    //
     // Or the mirror: a candidate named BEFORE the set's first marker that no citation of the set
     // claims. In a trailing-written answer the head holds the first citation's own subject and it
     // IS claimed, so this stays quiet; where the subject sits in an earlier sentence and the
