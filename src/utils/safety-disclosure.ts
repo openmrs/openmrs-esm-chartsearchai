@@ -1397,6 +1397,33 @@ export function resolveFindingSeverities(
     namedInTail.set(setKey, found);
   }
 
+  // -----------------------------------------------------------------------------------------
+  // THE ONE RULE ABOUT RULES, before the objections start, because a maintainer adding one
+  // reads this line and I did not have it to read.
+  //
+  // A RENDERED RATING IS ALWAYS THE TRAILING READING'S OWN ELECTION. Every rule from here down
+  // may only SUPPRESS it. That is exact rather than aspirational: a value is produced in just
+  // two places, both inside `readClaims` — the single-candidate shortcut and `electCandidate`'s
+  // winner — and the assembly below re-emits `trailing.resolved` unchanged. All seven objections
+  // do nothing but `contested.add(setKey)`, which is consulted in one place, to skip.
+  //
+  // So a rule whose JOB is to refuse must not touch the two inputs to that election — the
+  // candidate list and the claim text. Suppressing cannot invent a rating; changing an input
+  // can, and it does not look like it can, which is the whole problem. Twice now:
+  //
+  //   - A clause was deleted for making objections fire less often. True, and the direction
+  //     argument was right — but it also emptied the forward windows that ten OTHER tests used
+  //     to discriminate the tail and interior rules, and they all still passed. See the
+  //     terminator clause a few hundred lines up.
+  //   - `answerStatesRating` was first written to drop findings from the candidate list. Same
+  //     class closed, corpus happy, suite and 400,000 seeds green — and a shorter candidate list
+  //     changes what `discriminatingLeads` counts as shared by all, so a window that had
+  //     honestly elected nobody elected somebody. It rendered a swapped pair.
+  //
+  // The two rules that MAY change an election are the two whose stated purpose is to: the
+  // candidate list comes from the payload in `candidateSetFor`, and `stripExclusions` rewrites
+  // claim text on purpose, with its own measured history of what that costs. Nothing else.
+  // -----------------------------------------------------------------------------------------
   const contested = new Set<string>();
   for (const [index, setKey] of trailing.setOfIndex) {
     // The forward reading disagrees about THIS index — a permutation within the same findings.
@@ -1499,6 +1526,30 @@ export function resolveFindingSeverities(
     // ("Methylprednisolone [350]\n  Solu-Medrol 125mg/5ml"), and contesting that costs a real
     // rating. So the test is: anything but the LAST citation's own election objects — which
     // covers a candidate no citation claimed at all, since that is not the last one's either.
+    //
+    // KNOWN LIMIT, and the sharpest one left: THIS RULE HAS NO TAIL TO READ WHEN THE ANSWER ENDS
+    // ON ITS LAST MARKER. Then the closed-rotation protection below is simply absent, and nothing
+    // else covers it — the forward window of that last citation is empty so the disagreement rule
+    // is barred set-wide, `block` reads the same span as trailing and agrees, and a lead-in that
+    // names a partner WITHOUT excluding it leaves that partner claimed, so the head rule is
+    // satisfied too. Measured on the committed fixture:
+    //
+    //   "In addition to Hydrocortisone Injection vial 100mg, the greater worry is [350].
+    //    Solu-Medrol 125mg/5ml [354]"
+    //     -> {350: Moderate, 354: Major}
+    //
+    // Add one dangling name after that last marker and the same answer refuses — that is the
+    // committed test one describe below. So the module's verdict on this shape depends on whether
+    // it can SEE the tail, not on how ambiguous the prose is.
+    //
+    // Left open, and this is a judgement rather than a measurement: the two readings really do
+    // disagree here (the full stop after [350] argues the marker takes the lead-in's partner; the
+    // next line argues it takes Solu-Medrol), so there is no truth to check a fix against, and
+    // a rule built on the wrong choice of truth would render wrong ratings rather than blanks.
+    // An adversarial sweep reached this shape and declined to file it for that reason. What it did
+    // not establish, and what is recorded here because it changes the picture: the hole does NOT
+    // need self-contradicting prose. "In addition to X" is an ordinary, coherent lead-in, so
+    // ambiguity of the prose is not what is standing in for the missing rule.
     const lastClaim = trailing.electedOf.get(lastIndexOfSet.get(setKey) ?? -1);
     for (const named of namedInTail.get(setKey) ?? []) {
       if (named !== lastClaim) contested.add(setKey);
