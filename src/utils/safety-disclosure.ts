@@ -682,10 +682,16 @@ function isWordish(character: string): boolean {
  * its mirror. The premise above — "a lead at the HEAD of a compound is normally that drug in
  * adjectival form" — fails when the hyphen joins two DRUG names, and then this boundary exposes
  * the head, which is a sibling, while the `-` before the tail keeps the marker's own subject
- * hidden. 1,008 wrong ratings across a 2,520-answer sweep of the fixture's own names, every one
- * of them under-warned. {@link hyphenJoinsASibling} is the other half; the two tests named for
- * this pair of classes each redden under the other's boundary setting, which is the evidence that
- * neither setting alone can serve both.
+ * hidden. {@link hyphenJoinsASibling} is the other half; the two tests named for this pair of
+ * classes each redden under the other's boundary setting, which is the evidence that neither
+ * setting alone can serve both.
+ *
+ * No counts here on purpose. The first figures written for this class said "every one of them
+ * under-warned", which was an artefact of sweeping only the two Major indices — where a wrong
+ * rating can only under-warn. Re-run across all five it is close to an even split, and that is
+ * structural: for a pair `(A,B)` and `(B,A)` with different ratings, one ordering under-warns and
+ * the other over-warns, so no pair sweep of this fixture can be one-directional. The direction is
+ * what the safety argument rested on, so getting it wrong mattered more than the count did.
  */
 function isWordishAfter(character: string): boolean {
   return /[a-z0-9/]/.test(character);
@@ -843,10 +849,33 @@ export function namesLead(claim: string, lead: string, siblingLeads: readonly st
  * patient: *"Clarithromycin interacts with active order Dexamethasone Injection vial 8mg [353],
  * with active order Hydrocortisone Injection vial 100mg [354], and with her
  * prednisone-to-Solu-Medrol switch [350]"* rendered all three badges and got [350] wrong, MAJOR
- * shown as Moderate. Across every ordered pair of the fixture's own published names joined by six
- * hyphen forms in five carrier sentences: 1,140 answers, 936 resolved, 576 wrong, 288 of those
- * under-warned, and not one refused. The real-world shape is a combination product carrying two
- * findings — `Sulfamethoxazole-Trimethoprim`, `Carbidopa-Levodopa`, `Amoxicillin-Clavulanate`.
+ * shown as Moderate. Swept over every ordered pair of the fixture's own published names joined by
+ * six hyphen forms in five carrier sentences, with this check disabled: nearly every answer
+ * resolves, none refuses, and a large share carry a wrong rating in BOTH directions depending on
+ * the pair's ordering. The real-world shape is a combination product carrying two findings —
+ * `Sulfamethoxazole-Trimethoprim`, `Carbidopa-Levodopa`, `Amoxicillin-Clavulanate`.
+ *
+ * KNOWN RESIDUAL, found by two independent reviews and verified: this reads the remainder only as
+ * far as the next SPACE, so it cannot see a sibling whose lead contains one, and it never fires at
+ * all unless the matched lead is itself hyphen-adjacent. Both escapes are live:
+ *
+ *   "…her Solu-Medrol 125mg/5ml-Prednisone switch [350]."   -> renders Major, over-warning
+ *   "…with her metformin-Insulin Glargine regimen [350]."    -> renders the sibling's rating
+ *
+ * In the first the dose-stripped short form `Solu-Medrol` matches cleanly with a SPACE after it,
+ * so nothing here looks at the hyphen further along the token; in the second the sibling's lead
+ * (`insulin glargine`) spans a space and the space-bounded remainder cannot contain it. The
+ * fixture has no multi-word substance, which is why the second needs a constructed payload.
+ *
+ * Left open rather than patched, and the design constraint is the reason: every candidate rule
+ * tried fails one of the committed cases. Anchoring both sides at the hyphen misses
+ * `prednisone-to-methylprednisolone`, because the connector breaks the adjacency. Treating the
+ * whole space-bounded run as one unit misses the first case above, whose hyphen is in a different
+ * run from the match. Allowing overlapping leads inside a run breaks the `Medrol`-inside-
+ * `Solu-Medrol` mirror, which must keep resolving. What looks most likely to work is a window
+ * after each HYPHEN in the claim — a lead ending at it, another candidate's lead beginning within
+ * a short no-space distance — which needs its own cycle with the corpus and a skewed sweep behind
+ * it rather than a hurried third boundary rule.
  *
  * REVERTING `isWordishAfter` IS NOT THE FIX, and that is why this exists instead. Putting `-` back
  * on both sides refuses these answers and re-opens their mirror, where the compound is a drug plus
