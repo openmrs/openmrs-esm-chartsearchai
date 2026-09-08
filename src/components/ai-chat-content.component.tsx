@@ -4,6 +4,7 @@ import { useConfig, usePatient } from '@openmrs/esm-framework';
 import { Close, Microphone, MicrophoneFilled, Send, StopFilled } from '@carbon/react/icons';
 import { InlineLoading } from '@carbon/react';
 import { useChartSearchAi } from '../hooks/useChartSearchAi';
+import { answerLimitsOf } from '../utils/answer-limits';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { type ChartSearchAiConfig } from '../config-schema';
 import AiResponsePanel from './ai-response-panel.component';
@@ -115,8 +116,11 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
     prevMessagesLengthRef.current = messages.length;
   }, [messages.length]);
 
-  // Re-scrolls per chunk and again when streaming ends — references/feedback mount in that final commit and grow the message past the viewport.
-  // Tracks `reasoning` too: it streams before any answer text exists, so without it the live "Thinking..." scratchpad grows past the viewport and is clipped out of sight.
+  // Re-scrolls per chunk and again when streaming ends — references and the feedback row mount
+  // in that final commit and grow the message past the viewport.
+  //
+  // Tracks `reasoning` too: it streams before any answer text exists, so without it the live
+  // "Thinking..." scratchpad grows past the viewport and is clipped out of sight.
   const lastMessage = messages.length > 0 ? messages[messages.length - 1] : undefined;
   const lastAnswer = lastMessage?.answer ?? '';
   const lastReasoning = lastMessage?.reasoning ?? '';
@@ -188,6 +192,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
                 answer={msg.answer}
                 references={msg.references}
                 safetyWarnings={msg.safetyWarnings}
+                {...answerLimitsOf(msg)}
                 questionId={msg.questionId}
                 error={msg.error}
                 isLoading={msg.isLoading}

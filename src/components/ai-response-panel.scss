@@ -123,6 +123,144 @@
   align-items: center;
 }
 
+// An inline citation the backend reports cannot be the drug order its sentence names.
+// Struck through and non-navigating: the number stays legible so its chip can be found below,
+// but there is nowhere useful to follow it to. Amber rather than red, and deliberately NOT the
+// ungrounded treatment above — this is unreliable EVIDENCE for a sound finding, and rendering
+// it as a refuted claim is the exact misreading the backend field exists to prevent.
+.inlineCitationMisattributed {
+  color: colors.$orange-70;
+  text-decoration: line-through;
+  cursor: help;
+  font-weight: 600;
+}
+
+// The chip for the same citation: plain and inert, with the amber tag beside it carrying the
+// reason. Striking the whole chip label — record type and date included — reads as "this
+// record was withdrawn", when the record is real and it is only the wrong evidence for this
+// sentence. The inline marker is where the strikethrough belongs, because there it stands in
+// for a link the reader would otherwise follow.
+.referenceTagMisattributed {
+  @extend %referenceTagBase;
+  color: colors.$gray-70;
+}
+
+%disclosureTagBase {
+  @include type.type-style('label-01');
+  display: inline-flex;
+  align-items: center;
+  padding: 0 layout.$spacing-02;
+  border-radius: 0.25rem;
+  cursor: help;
+  white-space: nowrap;
+}
+
+.misattributedTag {
+  @extend %disclosureTagBase;
+  background-color: colors.$orange-10;
+  color: colors.$orange-70;
+}
+
+// Marks a citation the MODULE attached rather than the model citing it. Neutral grey: it is a
+// statement about who supplied the citation, not about how good the evidence is.
+.attachedTag {
+  @extend %disclosureTagBase;
+  background-color: colors.$gray-10;
+  color: colors.$gray-70;
+}
+
+// The rating the answer states nowhere, rendered beside the sentence that dropped it.
+// `display: inline` (a span, not a Carbon Tag, which is a <div>) so it flows inside the answer
+// paragraph rather than breaking it — that override is the reason it cannot just be a Tag.
+.severityTag {
+  @extend %disclosureTagBase;
+  display: inline;
+  font-weight: 600;
+}
+
+.severityMajor {
+  background-color: colors.$red-10;
+  color: colors.$red-70;
+}
+
+// Deliberately not the same amber as `.misattributedTag`: within one answer the two would mean
+// "Moderate rating" and "unreliable evidence", which must not look alike.
+.severityModerate {
+  background-color: colors.$yellow-20;
+  color: colors.$yellow-80;
+}
+
+.severityMinor {
+  background-color: colors.$gray-10;
+  color: colors.$gray-80;
+}
+
+// `Unknown` is the LOWEST of the four ratings the module recognises, so it is de-emphasised
+// rather than neutral — and it must not share a treatment with *unrated*, which the module
+// sorts ABOVE all four.
+.severityUnknown {
+  background-color: colors.$gray-10;
+  color: colors.$gray-60;
+  font-weight: 400;
+}
+
+// A rating word the module does not recognise. Outlined rather than filled: it carries no tier,
+// and tinting it as one would assert a ranking no dataset stated — while leaving it looking
+// like `Unknown` would put the module's above-Major case in its lowest tier's clothes.
+.severityUnrated {
+  background-color: transparent;
+  color: colors.$gray-80;
+  box-shadow: inset 0 0 0 1px colors.$gray-40;
+}
+
+// What the safety screen did and did not cover. Informational grey, NOT a caution: an arm the
+// loaded dataset cannot run is a limit of the dataset, not a finding about this patient, and an
+// amber or red treatment here reads as the latter.
+.limitsSection {
+  display: flex;
+  flex-direction: column;
+  gap: layout.$spacing-02;
+  padding: layout.$spacing-03;
+  background-color: colors.$gray-10;
+  border-radius: 0.25rem;
+}
+
+.limitsLabel {
+  @include type.type-style('label-01');
+  color: colors.$gray-70;
+}
+
+.limitsList {
+  display: flex;
+  flex-direction: column;
+  gap: layout.$spacing-02;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.limitItem {
+  @include type.type-style('body-compact-01');
+  display: flex;
+  align-items: flex-start;
+  gap: layout.$spacing-02;
+  color: colors.$gray-70;
+}
+
+// A truncated interaction list is the one statement here that is about this answer's own
+// completeness, so it carries a little more weight than the coverage notes beside it.
+.limitItemBounded {
+  @extend .limitItem;
+  color: colors.$orange-70;
+  font-weight: 600;
+}
+
+.limitIcon {
+  flex-shrink: 0;
+  // Nudge the 16px glyph onto the cap height of the first line of text beside it.
+  margin-top: 0.125rem;
+}
+
 // An inline citation pointing at injected drug-reference data (not a chart record).
 // Purple to match the reference chip and to read as "reference, not patient data";
 // non-navigating, so no pointer cursor.

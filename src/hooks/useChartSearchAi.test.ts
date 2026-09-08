@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { useConfig } from '@openmrs/esm-framework';
 import { useChartSearchAi } from './useChartSearchAi';
 import { searchPatientChart, searchPatientChartStream } from '../api/chartsearchai';
@@ -285,7 +285,7 @@ describe('useChartSearchAi', () => {
     // ...then the trailing grounded event re-sends them with verdicts, which must land on the
     // SAME (already completed) message.
     act(() => {
-      callbacks.onGrounded([{ ...refs[0], grounded: true }]);
+      callbacks.onGrounded({ references: [{ ...refs[0], grounded: true }] });
     });
     expect(result.current.messages[0].references[0].grounded).toBe(true);
     expect(result.current.messages[0].isLoading).toBe(false);
@@ -315,9 +315,11 @@ describe('useChartSearchAi', () => {
     });
 
     act(() => {
-      firstCallbacks.onGrounded([
-        { index: 1, resourceType: 'condition', resourceUuid: 'uuid-7', date: '2022-11-13', grounded: false },
-      ]);
+      firstCallbacks.onGrounded({
+        references: [
+          { index: 1, resourceType: 'condition', resourceUuid: 'uuid-7', date: '2022-11-13', grounded: false },
+        ],
+      });
     });
 
     expect(result.current.messages).toHaveLength(2);
@@ -537,5 +539,327 @@ describe('useChartSearchAi', () => {
 
     unmount();
     expect(abortController.signal.aborted).toBe(true);
+  });
+});
+
+/**
+ * The answer-limit measurements (issue #26). Where they arrive from depends on the server:
+ * with `chartsearchai.grounding.async=false` the `done` event carries them, and with it true
+ * `done` is emitted before validation runs so they arrive only on the trailing `grounded`
+ * event. A hook that reads `done` alone renders none of the disclosure on such a server.
+ */
+describe('useChartSearchAi answer-limit measurements', () => {
+  const disclosure = {
+    misattributedOrderCitations: [177, 166, 155],
+    unstatedFindingSeverities: [350, 351],
+    conditionRuleCoverage: 'absent',
+    interactionPairs: { found: 18, reported: 10 },
+    // The fifth measurement, added to the backend after the other four. It rides the same merge,
+    // so listing it HERE is what gives it end-to-end streaming coverage: every test below that
+    // asserts on `disclosure` now asserts this key survives the early-`done`-then-`grounded`
+    // path, refuses to be erased by a later null, and is refused after a stop.
+    activeOrderClaims: { stated: 5, uncited: 3 },
+  };
+
+  it('starts a message with no measurement stated', () => {
+    mockSearchPatientChart.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Safe to start clarithromycin?');
+    });
+
+    // null is "no measurement stated" — never an empty array, which would say a check ran.
+    const msg = result.current.messages[0];
+    expect(msg.misattributedOrderCitations).toBeNull();
+    expect(msg.unstatedFindingSeverities).toBeNull();
+    expect(msg.conditionRuleCoverage).toBeNull();
+    expect(msg.interactionPairs).toBeNull();
+  });
+
+  it('carries the measurements from a sync response onto the message', async () => {
+    mockSearchPatientChart.mockResolvedValue({
+      answer: 'No — Clarithromycin should not be started [350].',
+      references: [],
+      safetyWarnings: [{ type: 'interaction', drug: 'Clarithromycin', detail: 'x', severity: 'Major' }],
+      questionId: 'q-1',
+      ...disclosure,
+    });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    await act(async () => {
+      result.current.submitQuestion('patient-uuid', 'Safe to start clarithromycin?');
+    });
+
+    expect(result.current.messages[0]).toMatchObject(disclosure);
+  });
+
+  it('carries measurements that arrive only on the trailing grounded event (async grounding)', () => {
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Safe to start clarithromycin?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+
+    // Async grounding: `done` arrives before validation ran, so it states nulls and no chips.
+    act(() => {
+      callbacks.onDone({
+        answer: 'No — Clarithromycin should not be started [350].',
+        references: [],
+        safetyWarnings: [],
+        misattributedOrderCitations: null,
+        unstatedFindingSeverities: null,
+        conditionRuleCoverage: 'absent',
+        interactionPairs: null,
+        questionId: 'q-1',
+      });
+    });
+    expect(result.current.messages[0].interactionPairs).toBeNull();
+    expect(result.current.messages[0].misattributedOrderCitations).toBeNull();
+    // conditionRuleCoverage is known before the model is called, so `done` already has it.
+    expect(result.current.messages[0].conditionRuleCoverage).toBe('absent');
+
+    // ...then the trailing event supplies the rest, and they must land on the SAME message.
+    act(() => {
+      callbacks.onGrounded({
+        references: [],
+        safetyWarnings: [{ type: 'interaction', drug: 'Clarithromycin', detail: 'x', severity: 'Major' }],
+        ...disclosure,
+      });
+    });
+    expect(result.current.messages[0]).toMatchObject(disclosure);
+    expect(result.current.messages[0].safetyWarnings).toHaveLength(1);
+  });
+
+  it('does not let a later event erase a measurement an earlier one stated', () => {
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Safe to start clarithromycin?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+
+    // Sync grounding: `done` carries everything, and the trailing event (if the server sends
+    // one at all) re-sends verdicts without repeating the measurements.
+    act(() => {
+      callbacks.onDone({
+        answer: 'a [350]',
+        references: [],
+        safetyWarnings: [{ type: 'x', drug: 'y', detail: 'z' }],
+        questionId: 'q-1',
+        ...disclosure,
+      });
+    });
+    act(() => {
+      callbacks.onGrounded({
+        references: [{ index: 1, resourceType: 'obs', resourceUuid: 'u', date: '2025-01-01', grounded: true }],
+      });
+    });
+
+    expect(result.current.messages[0]).toMatchObject(disclosure);
+    expect(result.current.messages[0].safetyWarnings).toHaveLength(1);
+    expect(result.current.messages[0].references[0].grounded).toBe(true);
+  });
+
+  it('keeps an empty measurement distinct from an absent one', () => {
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Safe to start clarithromycin?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+
+    // [] says the check ran and named none; it must overwrite a null rather than be treated as
+    // nothing-stated, or a client can never tell the two apart.
+    act(() => {
+      callbacks.onDone({
+        answer: 'a',
+        references: [],
+        misattributedOrderCitations: [],
+        unstatedFindingSeverities: [],
+        questionId: 'q-1',
+      });
+    });
+    expect(result.current.messages[0].misattributedOrderCitations).toEqual([]);
+    expect(result.current.messages[0].unstatedFindingSeverities).toEqual([]);
+  });
+});
+
+describe('useChartSearchAi after the panel closes', () => {
+  it('still completes a message whose done event arrives after unmount', () => {
+    // Unmount DOES abort the stream — `aborts in-flight request on unmount` below asserts
+    // exactly that, and this comment used to claim the opposite of its own sibling. What abort()
+    // cannot do is unwind a chunk already in hand, so a `done` decoded from it still arrives.
+    // Gating `done` on the mount flag dropped that one, leaving the message `isLoading` forever:
+    // the input disabled on reopen and no feedback row, on a message the store keeps.
+    //
+    // A trailing `grounded` is NOT part of this. It comes only after the slower Tier-2 pass, by
+    // which point the abort has closed the stream — so the case for ungating rests on the
+    // last-chunk `done` alone, and this test drives that callback directly rather than a real
+    // stream, which is why it can reach a state the network no longer produces.
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result, unmount } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Safe to start clarithromycin?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+
+    unmount();
+    act(() => {
+      callbacks.onDone({
+        answer: 'No — it should not be started [350].',
+        references: [],
+        safetyWarnings: [{ type: 'interaction', drug: 'Clarithromycin', detail: 'x', severity: 'Major' }],
+        conditionRuleCoverage: 'absent',
+        questionId: 'q-1',
+      });
+    });
+
+    const stored = chatSessionStore.getState().messagesByPatient['patient-uuid'];
+    expect(stored).toHaveLength(1);
+    expect(stored[0].isLoading).toBe(false);
+    expect(stored[0].questionId).toBe('q-1');
+    expect(stored[0].conditionRuleCoverage).toBe('absent');
+  });
+
+  it('still settles a message whose error arrives after unmount', () => {
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result, unmount } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Safe to start clarithromycin?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+
+    unmount();
+    act(() => {
+      callbacks.onError('boom');
+    });
+
+    const stored = chatSessionStore.getState().messagesByPatient['patient-uuid'];
+    expect(stored[0].isLoading).toBe(false);
+    expect(stored[0].error).toBe('boom');
+  });
+});
+
+describe('useChartSearchAi late events', () => {
+  it('settles rather than throwing when done carries no reference list', () => {
+    // Not reachable from a conforming backend — the key is guaranteed on `done` — but the
+    // panel dereferences this in a render memo with no error boundary above it, so the value
+    // that reaches the store has to be iterable whatever arrived.
+    mockUseConfig.mockReturnValue({ useStreaming: false });
+    mockSearchPatientChart.mockResolvedValue({ answer: 'Text.', questionId: 'q-1' } as never);
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Any allergies?');
+    });
+    return waitFor(() => {
+      expect(result.current.messages[0].isLoading).toBe(false);
+      expect(result.current.messages[0].references).toEqual([]);
+      expect(() => result.current.messages[0].references.some(() => true)).not.toThrow();
+    });
+  });
+
+  it('does not let a done in the last chunk replace an answer the user stopped', () => {
+    // abort() cannot unwind a chunk already in hand, so `done` can still arrive after Stop.
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Safe to start clarithromycin?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+    act(() => {
+      callbacks.onToken('Partial answer');
+    });
+    act(() => {
+      result.current.stopCurrent();
+    });
+    expect(result.current.messages[0].answer).toBe('Partial answer');
+    expect(result.current.messages[0].isLoading).toBe(false);
+
+    act(() => {
+      callbacks.onDone({ answer: 'THE FULL ANSWER', references: [], questionId: 'q-1' });
+    });
+    // The answer the user chose to stop at must not change under them.
+    expect(result.current.messages[0].answer).toBe('Partial answer');
+  });
+});
+
+describe('useChartSearchAi trailing grounded event', () => {
+  it('does not let a trailing grounded event dress up an answer the user stopped', () => {
+    // The `done` twin of this is above. `grounded` is the same hazard and worse: it carries the
+    // four measurements, so a message whose answer is half a sentence would grow severity badges
+    // resolved against that fragment and a "What the safety checks covered" block stating the
+    // extent of a screen over an answer the reader never saw.
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Safe to start clarithromycin?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+    act(() => {
+      callbacks.onToken('Clarithromycin inter');
+    });
+    act(() => {
+      result.current.stopCurrent();
+    });
+
+    act(() => {
+      callbacks.onGrounded({
+        references: [
+          { index: 350, resourceType: 'safety_finding', resourceUuid: 'interaction:Clarithromycin', date: null },
+        ],
+        safetyWarnings: [{ type: 'interaction', drug: 'Clarithromycin', severity: 'Major', message: 'x' }],
+        interactionPairs: { found: 5, reported: 5 },
+        conditionRuleCoverage: 'absent',
+        unstatedFindingSeverities: [350],
+        misattributedOrderCitations: [],
+      });
+    });
+
+    const msg = result.current.messages[0];
+    expect(msg.answer).toBe('Clarithromycin inter');
+    expect(msg.references).toHaveLength(0);
+    expect(msg.safetyWarnings).toEqual([]);
+    expect(msg.interactionPairs).toBeNull();
+    expect(msg.conditionRuleCoverage).toBeNull();
+    expect(msg.unstatedFindingSeverities).toBeNull();
+  });
+
+  it('does not blank the citation list when the event carries no references', () => {
+    // The API layer coerces a missing/null `references` to `[]` before calling back, so an
+    // event that parses without the key arrives as an empty array — and assigning it would
+    // strip a completed answer of its whole References section and degrade every inline [N] to
+    // plain text, the opposite of the documented "leaves citations rendered as unverified".
+    mockUseConfig.mockReturnValue({ useStreaming: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'Any allergies?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+    act(() => {
+      callbacks.onDone({
+        answer: 'Has it [1].',
+        references: [{ index: 1, resourceType: 'condition', resourceUuid: 'uuid-7', date: '2022-11-13' }],
+        questionId: 'q-1',
+      });
+    });
+    expect(result.current.messages[0].references).toHaveLength(1);
+
+    act(() => {
+      callbacks.onGrounded({ references: [], interactionPairs: { found: 3, reported: 2 } });
+    });
+    expect(result.current.messages[0].references).toHaveLength(1);
+    // ...while the measurement the event DID carry still lands.
+    expect(result.current.messages[0].interactionPairs).toEqual({ found: 3, reported: 2 });
   });
 });

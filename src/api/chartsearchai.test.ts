@@ -247,9 +247,12 @@ describe('searchPatientChartStream', () => {
     await flushPromises();
 
     expect(cb.onDone).toHaveBeenCalled();
-    expect(cb.onGrounded).toHaveBeenCalledWith([
-      { index: 2, resourceType: 'condition', resourceUuid: 'uuid-7', date: '2022-11-13', grounded: true },
-    ]);
+    // The whole payload is handed over, not the references alone: under async grounding this
+    // event is the only place safetyWarnings and the answer-limit measurements arrive.
+    expect(cb.onGrounded).toHaveBeenCalledWith({
+      references: [{ index: 2, resourceType: 'condition', resourceUuid: 'uuid-7', date: '2022-11-13', grounded: true }],
+      questionId: 'q-9',
+    });
     // done must have been delivered before the verdicts.
     expect(cb.onDone.mock.invocationCallOrder[0]).toBeLessThan(cb.onGrounded.mock.invocationCallOrder[0]);
     expect(cb.onError).not.toHaveBeenCalled();

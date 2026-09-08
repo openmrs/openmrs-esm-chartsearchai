@@ -23,3 +23,11 @@ declare namespace NodeJS {
     context(directory: string, useSubdirectories?: boolean, regExp?: RegExp, mode?: string): RequireContext;
   }
 }
+
+// i18next-parser ships no type declarations. Only the lexer is used, and only from a test that
+// compares in-code t() defaults against the catalogue.
+declare module 'i18next-parser' {
+  export class JsxLexer {
+    extract(content: string, filename?: string): Array<{ key: string; defaultValue?: string }>;
+  }
+}

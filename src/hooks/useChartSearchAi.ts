@@ -9,8 +9,10 @@ import {
 } from '../api/chartsearchai';
 import { type ChartSearchAiConfig } from '../config-schema';
 import { chatSessionStore } from '../store/chat-session.store';
+import { type MessageAnswerLimits, mergeDisclosure, NO_ANSWER_LIMITS } from '../utils/answer-limits';
+import { citationStripPattern } from '../utils/safety-disclosure';
 
-export interface ChatMessage {
+export interface ChatMessage extends MessageAnswerLimits {
   id: string;
   question: string;
   answer: string;
@@ -44,11 +46,12 @@ function generateId(): string {
 
 /** Removes citation markers ([3], [1, 2], …) from the progressive-reasoning PREVIEW text only.
  *  The preview reasons over an independently-numbered top-K focused chart, so its [N] markers do
- *  NOT line up with the committed answer's record numbering — showing them would mislead. Mirrors
- *  the citation regex in ai-response-panel's stripCitations, but WITHOUT trimming, since the preview
+ *  NOT line up with the committed answer's record numbering — showing them would mislead. Shares
+ *  the resolver's citationStripPattern(), so marker syntax has one home; unlike stripCitations
+ *  this does NOT trim, since the preview
  *  is accumulated chunk-by-chunk and the trailing space must survive between chunks. */
 function stripPreviewCitations(text: string): string {
-  return text.replace(/\s?\[\d+(?:\s*,\s*\d+)*\]/g, '');
+  return text.replace(citationStripPattern(), '');
 }
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
@@ -67,6 +70,17 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
   const messages: ChatMessage[] = patientUuid ? (messagesByPatient[patientUuid] ?? EMPTY_MESSAGES) : EMPTY_MESSAGES;
   const abortControllerRef = useRef<AbortController | null>(null);
   const inFlightMessageIdRef = useRef<string | null>(null);
+  /**
+   * Messages the user pressed Stop on, by id.
+   *
+   * `done` decides the same question from `inFlightMessageIdRef` and cannot lend that test to
+   * `grounded`: `done` clears the ref itself, so by the time a trailing `grounded` arrives the
+   * ref is null for a perfectly normal answer too, and mirroring the test there would discard
+   * every legitimate measurement instead of the one case it is for. So the fact is recorded
+   * rather than inferred. Bounded by the number of times a user presses Stop, and emptied with
+   * the history.
+   */
+  const stoppedMessageIdsRef = useRef<Set<string>>(new Set());
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -84,6 +98,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       abortControllerRef.current = null;
     }
     inFlightMessageIdRef.current = null;
+    stoppedMessageIdsRef.current.clear();
   }, [patientUuid]);
 
   const stopCurrent = useCallback(() => {
@@ -93,6 +108,9 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
     }
     const stoppedId = inFlightMessageIdRef.current;
     inFlightMessageIdRef.current = null;
+    if (stoppedId) {
+      stoppedMessageIdsRef.current.add(stoppedId);
+    }
     if (stoppedId && patientUuid) {
       updateMessages(patientUuid, (prev) => {
         const idx = prev.findIndex((m) => m.id === stoppedId);
@@ -123,6 +141,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         answer: '',
         references: [],
         safetyWarnings: [],
+        ...NO_ANSWER_LIMITS,
         questionId: '',
         isLoading: true,
         error: null,
@@ -135,7 +154,18 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       inFlightMessageIdRef.current = messageId;
 
       const done = (response: AiSearchResponse) => {
-        if (!isMountedRef.current) return;
+        const stopped = inFlightMessageIdRef.current !== messageId;
+        // Deliberately NOT gated on isMountedRef, for the same reason onGrounded is not: this
+        // only writes to the chat store, which outlives the panel. Gating it meant closing the
+        // floating panel mid-answer dropped `done` entirely, leaving that message `isLoading`
+        // forever, with the input disabled on reopen.
+        //
+        // The reason is that a `done` already decoded in the chunk in hand still arrives after
+        // the unmount effect calls abort() — NOT that a trailing `grounded` would otherwise
+        // land on the stranded message. It could not: that effect aborts unconditionally, and
+        // `grounded` is emitted only after the slower Tier-2 pass, so once the panel closes
+        // there is no stream left to carry it. This comment used to say so in three places and
+        // a test's prose said the opposite of its own sibling.
         if (abortControllerRef.current === abortController) {
           abortControllerRef.current = null;
         }
@@ -145,12 +175,35 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         updateMessages(patientUuid, (prev) => {
           const idx = prev.findIndex((m) => m.id === messageId);
           if (idx === -1) return prev;
+          // A `done` already in the last read chunk still arrives after abort(), so a message
+          // the user STOPPED would otherwise be replaced under them by the full answer. An
+          // unmounted-but-unstopped message has `stopped === false` — the ref still holds its id
+          // — so this does not re-gate that, and `stopped` alone says it. There was an
+          // `!isLoading &&` conjunct here credited with that, discriminated by nothing and in the
+          // unsafe direction: whenever `stopped` is true and the message is still present it is
+          // never loading anyway (`stopCurrent` either removes it or clears the flag), so the
+          // conjunct could only ever let a late `done` through.
+          //
+          // `onGrounded` asks the same question of `stoppedMessageIdsRef` rather than of this
+          // test, and the two cannot disagree — `stopCurrent` writes both in one go. It reads
+          // the recorded fact because this test is only sound HERE: `stopped` above is taken
+          // before the ref is cleared a few lines up, and a trailing `grounded` arrives long
+          // after that, by which point the ref is null for a normal answer too.
+          if (stopped) return prev;
           const updated = [...prev];
           updated[idx] = {
             ...updated[idx],
             answer: response.answer,
-            references: response.references,
+            // The other two reference-carrying events are normalised in the API layer
+            // (`parsed.references ?? []`); `done` alone hands the parsed object straight
+            // through. The README does guarantee the key on `done`, so this is not reachable
+            // from a conforming backend — but the panel dereferences it (`references.some`,
+            // `references.length`) inside a render memo with no error boundary above it, and
+            // every other measurement on this line is already `Array.isArray`-guarded. The
+            // inconsistency was the finding, not a live crash.
+            references: Array.isArray(response.references) ? response.references : [],
             safetyWarnings: response.safetyWarnings ?? [],
+            ...mergeDisclosure(updated[idx], response),
             questionId: response.questionId ?? '',
             isLoading: false,
             // the scratchpad served its purpose as a live indicator; don't persist it
@@ -162,7 +215,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       };
 
       const fail = (errMessage: string) => {
-        if (!isMountedRef.current) return;
+        // Ungated for the same reason as `done`: a message whose error is dropped stays loading.
         if (abortControllerRef.current === abortController) {
           abortControllerRef.current = null;
         }
@@ -249,15 +302,41 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
               },
               onDone: done,
               // Trailing verdicts (server runs async grounding): update the SAME message's
-              // references after done completed it. Deliberately NOT gated on isMountedRef —
-              // the chat store outlives the panel, and verdicts that arrive after the user
-              // closed it must still land so badges are correct when the panel reopens.
-              onGrounded: (references) => {
+              // references after done completed it — and its safety warnings and answer-limit
+              // measurements, which `done` states as empty/null in that mode because validation
+              // and the answer checks run after it is handed off. Reading `done` alone there
+              // would render none of the disclosure.
+              //
+              // Deliberately NOT gated on isMountedRef — the chat store outlives the panel, and
+              // verdicts that arrive after the user closed it must still land so badges are
+              // correct when the panel reopens.
+              onGrounded: (update) => {
+                // `done` has the same guard, and the reason is the same: abort() cannot unwind a
+                // chunk already in hand. This one carries more, which is why the asymmetry was
+                // worth closing rather than reasoning away — `grounded` brings the four
+                // measurements, so a message whose answer is half a sentence would grow severity
+                // badges resolved against that fragment and a "What the safety checks covered"
+                // block stating the extent of a screen over an answer the reader never saw.
+                if (stoppedMessageIdsRef.current.has(messageId)) return;
                 updateMessages(patientUuid, (prev) => {
                   const idx = prev.findIndex((m) => m.id === messageId);
                   if (idx === -1) return prev;
                   const updated = [...prev];
-                  updated[idx] = { ...updated[idx], references };
+                  updated[idx] = {
+                    ...updated[idx],
+                    // The OPTIONAL CHAIN is the unreachable part — the API layer normalises this
+                    // to `[]` before calling back, so it is never nullish. The `.length` test is
+                    // the live one, and it is exactly the case that normalisation produces: a
+                    // payload parsing with no `references` key arrives as `[]`, and assigning it
+                    // would BLANK the list, the opposite of the documented "leaves citations
+                    // rendered as unverified". (This said the fallback was unreachable, which the
+                    // rest of the same sentence contradicted; the test at
+                    // `does not blank the citation list when the event carries no references`
+                    // reddens if the `.length` is dropped.)
+                    references: update.references?.length ? update.references : updated[idx].references,
+                    safetyWarnings: update.safetyWarnings ?? updated[idx].safetyWarnings,
+                    ...mergeDisclosure(updated[idx], update),
+                  };
                   return updated;
                 });
               },
