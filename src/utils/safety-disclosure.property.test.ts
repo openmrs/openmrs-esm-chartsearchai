@@ -227,6 +227,19 @@ function generateAnswer(random: () => number): Generated {
       const other = PARTNERS[(partnerIndex + 1) % PARTNERS.length];
       return `${name} ${foreign} carries more risk than ${other.substance} does [${index}].`;
     }
+    // The mirror of that, and the one structural dimension this generator lacked: a foreign
+    // marker AFTER the subject, on a line whose own marker comes FIRST. It is what leaves the
+    // shift-consistency rule as the sole objection — the trailing foreign marker shortens the
+    // unconfined backward window so the block rule falls silent, and a terminator closing the
+    // next line's claim bars the disagreement rule. Measured: with that rule disabled, 288
+    // tests and a 200,000-seed sweep of this file stayed green while a Major interaction
+    // rendered Moderate. Every objection has to be reachable from here or it is one refactor
+    // from deletion.
+    if (random() < 0.2) {
+      const foreign = FOREIGN_MARKERS[Math.floor(random() * FOREIGN_MARKERS.length)];
+      const other = PARTNERS[(partnerIndex + 1) % PARTNERS.length];
+      return `${other.substance} aside, the worry is [${index}] ${name} ${foreign}`;
+    }
     // A contrast entry names another partner beside the marker and its own on the header line.
     if (random() < 0.25) {
       const other = PARTNERS[(partnerIndex + 1 + Math.floor(random() * (PARTNERS.length - 1))) % PARTNERS.length];
@@ -265,6 +278,7 @@ describe('the generator reaches the shapes it exists for', () => {
     let markerAtLineEnd = 0;
     let colonAfterMarker = 0;
     let foreignMarker = 0;
+    let foreignAfterSubject = 0;
     let orderVocabulary = 0;
     let multiLine = 0;
     let shifted = 0;
@@ -278,6 +292,9 @@ describe('the generator reaches the shapes it exists for', () => {
       if (/\[\d+\]\n/.test(answer)) markerAtLineEnd += 1;
       if (/\[\d+\]:/.test(answer)) colonAfterMarker += 1;
       if (FOREIGN_MARKERS.some((marker) => answer.includes(marker))) foreignMarker += 1;
+      // A foreign marker at end-of-line on a marker-first line: the shape that leaves the
+      // shift-consistency rule as the only objection available.
+      if (/aside, the worry is \[\d+\][^\n]*\[1[2-8]\]/.test(answer)) foreignAfterSubject += 1;
       if (/\d+(mg|mcg|ml)/.test(answer)) orderVocabulary += 1;
       if (answer.includes('\n')) multiLine += 1;
       // The shifted list: a marker ending the FIRST line with the lead-in, and a final line
@@ -303,6 +320,7 @@ describe('the generator reaches the shapes it exists for', () => {
       markerAtLineEnd: markerAtLineEnd > 50,
       colonAfterMarker: colonAfterMarker > 50,
       foreignMarker: foreignMarker > 200,
+      foreignAfterSubject: foreignAfterSubject > 200,
       orderVocabulary: orderVocabulary > 200,
       multiLine: multiLine > 200,
       shifted: shifted > 200,
@@ -314,6 +332,7 @@ describe('the generator reaches the shapes it exists for', () => {
       markerAtLineEnd: true,
       colonAfterMarker: true,
       foreignMarker: true,
+      foreignAfterSubject: true,
       orderVocabulary: true,
       multiLine: true,
       shifted: true,

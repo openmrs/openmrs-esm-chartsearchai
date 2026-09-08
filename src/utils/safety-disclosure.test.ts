@@ -63,6 +63,45 @@ describe('severityTone', () => {
   });
 });
 
+describe('a clause that names a drug to exclude it is not evidence for it', () => {
+  it('recovers the live "Apart from prednisone, …" answer instead of refusing it', () => {
+    // Measured on the live server. Prednisone is one of the five candidates sharing
+    // (interaction, Clarithromycin), so before the exclusion clause was stripped [364]'s window
+    // named both Prednisone and Methylprednisolone, elected neither, and the whole set refused.
+    // Four correct ratings were being discarded by a clause that says the opposite of what it
+    // was read as.
+    const answer =
+      'Apart from prednisone, Methylprednisolone [364] Budesonide [365] Dexamethasone [367] Hydrocortisone [368].';
+    const refs = [364, 365, 367, 368].map((i) => safetyFindingRef(i));
+    const resolved = resolveFindingSeverities(answer, refs, SAFETY_WARNINGS, [364, 365, 367, 368]);
+    expect(resolved.get(364)).toBe('Major');
+    expect(resolved.get(365)).toBe('Major');
+  });
+
+  it('refuses two exclusion lines that scavenge from each other', () => {
+    // The other direction, and why stripping is not merely a recovery. Singly such a line
+    // already refused, because the forward reading disagreed. TWO of them elect out of each
+    // other's preambles and produce a complete, injective, wholly wrong bijection that no
+    // contest objects to — a swapped pair. Found by the fuzzer the moment it could write a
+    // foreign marker after the subject on a marker-first line.
+    const answer = [
+      'Apart from Prednisone Co 5mg, the interacting orders are [353] Dexamethasone',
+      'Dexamethasone aside, the worry is [352] Prednisone Co 5mg [17]',
+      'Consider Pulmicort 90mcg carefully [351]; the exposure rises.',
+    ].join('\n');
+    const resolved = resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [351, 352, 353]);
+    // 352 is Prednisone (Moderate) and 353 Dexamethasone (Moderate) on this chart, so the swap
+    // is invisible to a rating comparison — assert the ELECTION is refused, not the ratings.
+    expect(resolved.has(352)).toBe(false);
+    expect(resolved.has(353)).toBe(false);
+  });
+
+  it('strips the trailing "X aside," form as well as the leading one', () => {
+    const answer = 'Hydrocortisone aside, the order that matters is Solu-Medrol 125mg/5ml [350].';
+    expect(resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350]).get(350)).toBe('Major');
+  });
+});
+
 describe('a shifted list is refused even when its tell is ambiguous', () => {
   it('refuses a five-item rotation whose dangling last line names two partners', () => {
     // The class cycle 9 left open, and the worst failure this module has produced: not a missing
@@ -827,6 +866,24 @@ describe('resolveFindingSeverities', () => {
       353: 'Moderate',
       354: 'Moderate',
     });
+  });
+
+  it('refuses where shift-consistency is the ONLY rule that can object', () => {
+    // This shape exists because nothing else in the repo reached it. Disabling the
+    // shift-consistency rule below left all 288 tests green and a 200,000-seed sweep green,
+    // while the rule was still load-bearing: it is the only objection on this answer, and
+    // without it a MAJOR interaction renders Moderate beside its own citation.
+    //
+    // What makes it sole-decisive is a foreign marker AFTER the subject on a marker-first line.
+    // `[18]` shortens the unconfined BACKWARD window, so the block rule falls silent; and the
+    // terminator after `[352]` zeroes the forward claim there, so the forward reading loses
+    // named-completeness and the disagreement rule is barred. Trailing is left alone with
+    // `Hydrocortisone` scavenged out of the lead-in clause.
+    const answer =
+      '[17] Hydrocortisone aside, the worry is [350] Solu-Medrol 125mg/5ml [18]\nPrednisone is affected by the same mechanism [352].';
+    // Truth is {350: Major, 352: Moderate}; with the rule disabled this renders
+    // {350: Moderate, 352: Moderate}.
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 352])]).toEqual([]);
   });
 
   it('refuses a swap the shift-consistency rule cannot see', () => {

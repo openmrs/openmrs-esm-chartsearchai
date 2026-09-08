@@ -119,6 +119,46 @@ function normalize(text: string): string {
 }
 
 /**
+ * A clause that names a drug in order to EXCLUDE it, removed from an already-normalised claim.
+ *
+ * "Apart from Prednisone, the interacting orders are …" names Prednisone and says it is not one
+ * of them. Reading that name as the claim's subject is not a near-miss: it elects the one
+ * candidate the sentence rules out.
+ *
+ * Found by the fuzzer the moment it could write a foreign marker after the subject on a
+ * marker-first line. Singly such an answer already refused — the forward reading disagreed —
+ * but TWO exclusion lines in one answer scavenge from each other's preambles and produce a
+ * complete, injective, wholly wrong bijection that nothing objects to:
+ *
+ *   "Apart from Prednisone, the interacting orders are [353] Dexamethasone
+ *    Dexamethasone aside, the worry is [352] Prednisone Co 5mg [17]
+ *    Consider Budesonide carefully [351]; the exposure rises."
+ *
+ * rendered [353] with Prednisone's rating and [352] with Dexamethasone's — a swapped pair.
+ *
+ * This is not a heuristic about which candidate is likelier; it is removing text that states
+ * the opposite of what it was being read as. Where a claim's only candidate was named in such a
+ * clause it now names none and the set refuses, and where the real subject sits outside the
+ * clause the answer resolves that subject instead of refusing on a two-candidate window — so
+ * this both removes wrong ratings and recovers correct ones.
+ *
+ * Operates on the lowercased output of {@link normalize}, which is why the patterns carry no
+ * case flag. Bounded to 60 characters so a missing comma cannot swallow a whole line.
+ */
+const EXCLUSION_CLAUSES = [
+  // "apart from X," / "unlike X," / "other than X," — the excluded name FOLLOWS the marker word.
+  /\b(?:apart from|aside from|other than|unlike|besides|except for|except)\s+[^,;:.]{1,60}?\s*[,;:]/g,
+  // "X aside," — the excluded name PRECEDES it.
+  /\b[^,;:.]{1,60}?\s+aside\s*[,;:]/g,
+];
+
+function stripExclusions(claim: string): string {
+  let stripped = claim;
+  for (const pattern of EXCLUSION_CLAUSES) stripped = stripped.replace(pattern, ' ');
+  return stripped;
+}
+
+/**
  * Which way {@link claimTextByCitation} reads a marker's claim: back to the previous marker,
  * line-confined (`trailing`) or not (`block`), or forward to the next, unconfined
  * (`block-leading`).
@@ -649,7 +689,7 @@ function readClaims(
     // Several findings share this (type, drug), so the answer's own sentence has to single one
     // out. Each lead group is asked of the whole candidate list and the verdicts are reconciled
     // by `electCandidate`, which refuses on every disagreement — group order decides nothing.
-    const claim = normalize(claims.get(index) ?? '');
+    const claim = stripExclusions(normalize(claims.get(index) ?? ''));
     const perGroupMatches = set.groups.map((group) =>
       matchesInGroup(candidates, group.leadsPerCandidate, group.shared, claim),
     );
