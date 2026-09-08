@@ -91,6 +91,10 @@ describe('chatPatientChartStream', () => {
       const cb = makeCallbacks();
       const payload: Record<string, string> = {
         turn_started: '{"session":"sess-1","messageId":"m1","provider":"hub"}',
+        // The three delta channels carry raw text, not JSON.
+        preliminary_delta: 'Scanning records',
+        reasoning_delta: 'Checking the chart',
+        answer_delta: 'Answer',
         answer_done: '{"answer":"Answer.","references":[],"messageId":"m1"}',
         answer_validation:
           '{"answer":"Answer.","references":[],"messageId":"m1","answerValidation":{"status":"checked","label":"Checked"}}',
