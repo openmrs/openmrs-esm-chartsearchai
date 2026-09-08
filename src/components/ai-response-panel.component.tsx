@@ -557,6 +557,18 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     const { stated, uncited } = activeOrderClaims;
     if (stated <= 0) return null;
     if (uncited <= 0) {
+      // Withheld while the neighbouring check has REJECTED a citation in this same answer.
+      // `uncited: 0` is a true statement about the markers, and the sibling test is right that it
+      // stops there — but it leads a block headed "What the safety checks covered", and under that
+      // heading, beside markers rendered `Not the order named`, it reads as a statement about the
+      // records. Silence is the choice `misattributedOrderCitations: []` already makes one field
+      // over: no certificate.
+      //
+      // `Array.isArray` and a length test, not truthiness, for the reason the two `typeof` guards
+      // above exist. `null` is NO measurement — absent evidence of a rejection is not a rejection,
+      // and suppressing on it would silence the sentence on every deployment that does not state
+      // the field. `[]` is a measurement of none and leaves the affirmation standing.
+      if (Array.isArray(misattributedOrderCitations) && misattributedOrderCitations.length > 0) return null;
       return {
         bounded: false,
         text: t('activeOrderClaimsAllCited', 'Every statement about her active orders cites a chart record.'),
@@ -570,7 +582,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
         { uncited, stated },
       ),
     };
-  }, [activeOrderClaims, t]);
+  }, [activeOrderClaims, misattributedOrderCitations, t]);
 
   /**
    * Whether this answer carries any drug-safety output at all — a warning, a stated pair

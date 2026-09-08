@@ -582,6 +582,35 @@ describe('activeOrderClaims', () => {
     expect(screen.queryByText(/cannot be checked against the chart at all/)).not.toBeInTheDocument();
   });
 
+  it('does not affirm that every claim is cited while a citation is rejected', () => {
+    // `uncited: 0` is true of the MARKERS — every active-order sentence carries one — and the
+    // sibling test above is right that the sentence stops there. But it leads a block headed
+    // "What the safety checks covered", and under that heading, beside citations the
+    // neighbouring check has struck through, it reads as a statement about the RECORDS. Live on
+    // the #26 reproduction: `{stated: 5, uncited: 0}` with `misattributedOrderCitations`
+    // `[177, 166, 155]`, three markers rendered `Not the order named` directly above the
+    // affirmation. Silence here is the choice `misattributedOrderCitations: []` already makes
+    // one field over — no certificate.
+    renderClaims({ stated: 5, uncited: 0 }, [177, 166, 155]);
+    expect(
+      screen.queryByText(/Every statement about her active orders cites a chart record\./),
+    ).not.toBeInTheDocument();
+  });
+
+  it('still affirms it where nothing was rejected, and where no measurement was stated', () => {
+    // The scope of the refusal above, both directions. `[]` is a stated measurement of none, so
+    // the affirmation stands — that is the case the sibling test reasoned about. `null` is NO
+    // measurement, and must not suppress it either: absent evidence of a rejection is not a
+    // rejection, and treating it as one would silence the sentence on every deployment that
+    // does not run the check.
+    const view = renderClaims({ stated: 5, uncited: 0 }, []);
+    expect(screen.getByText(/Every statement about her active orders cites a chart record\./)).toBeInTheDocument();
+    view.unmount();
+
+    renderClaims({ stated: 5, uncited: 0 }, null);
+    expect(screen.getByText(/Every statement about her active orders cites a chart record\./)).toBeInTheDocument();
+  });
+
   it('renders nothing for a null measurement or an answer that made no such claim', () => {
     for (const value of [null, undefined, { stated: 0, uncited: 0 }]) {
       const view = renderClaims(value);
