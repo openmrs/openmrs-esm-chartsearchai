@@ -175,6 +175,92 @@ describe('an exclusion clause in an EARLIER sentence is not about this claim', (
   });
 });
 
+describe('a rating the answer states rules that finding out', () => {
+  it('refuses where the prose gives nothing but the backend does — captured live', () => {
+    // The class no reading of the prose could close, and the one the module was most exposed to,
+    // because in it all three readings AGREE and every objection is satisfied. The answer names
+    // the marker's own subject in a form the payload publishes no lead for — here an anaphor,
+    // "by the same mechanism" — so the window is left naming exactly one drug, the SIBLING, which
+    // every reading then elects unanimously. The head and interior rules are satisfied by the
+    // very election they should be doubting: the wrongly-elected sibling is in `claimedByTrailing`
+    // precisely BECAUSE it was wrongly elected.
+    //
+    // What closes it is the backend's own published rule read backwards, not a better guess at
+    // the prose. A citation lands in `unstatedFindingSeverities` only when the finding's rating
+    // word appears NOWHERE in the answer. This answer says "Major", so [352] is not a Major
+    // finding, so it is not Methylprednisolone's — and Methylprednisolone stops being a candidate
+    // whatever the sentence beside the marker looks like.
+    for (const answer of [
+      // Captured verbatim from a running server, at [352].
+      'No - Clarithromycin should not be started: it interacts with active order Solu-Medrol 125mg/5ml, a Major interaction, and by the same mechanism [352].',
+      // The same with the dropped clause restored, which makes the mis-pairing unambiguous.
+      'No - Clarithromycin should not be started: it interacts with active order Solu-Medrol 125mg/5ml, a Major interaction, and by the same mechanism with her other corticosteroid order [352].',
+      // And a mechanism clause naming the sibling's substance, which is what the bundled
+      // knowledge base's own note does.
+      'Clarithromycin interacts with active order Solu-Medrol 125mg/5ml [350] — a Major interaction, because CYP450 3A4 inhibition increases plasma methylprednisolone — and the same applies to her third corticosteroid order [352].',
+    ]) {
+      // Each rendered {352: 'Major'} against a truth of Moderate before the elimination.
+      expect(resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [352]).get(352)).toBeUndefined();
+    }
+  });
+
+  it('KNOWN DEFECT: a typo in the second order display still renders the sibling’s rating', () => {
+    // The residual of that class, recorded as a failing shape rather than left to be rediscovered.
+    // The answer states no rating at all, so the elimination has nothing to work with, and the
+    // only thing separating the two drugs is one missing letter in `Predisone`. Nothing here
+    // fuzzy-matches a drug name and nothing should: `Prednisone` and `Prednisolone` are different
+    // drugs one letter apart, so a near-match rule would trade this over-warning for a class of
+    // wrong ratings between real neighbours.
+    //
+    // Live behaviour, not a contrivance — three captures on one day wrote `Solu-Medrol 12mg/5ml`,
+    // `125mag/5ml` and `125mcg/5ml`, and the committed fixture carries `CYP454` and `CYP45O`.
+    // Asserted as it BEHAVES so the assertion changes the day someone closes it.
+    const answer =
+      'Clarithromycin interacts with active order Solu-Medrol 125mg/5ml and with active order Predisone Co 5mg [352].';
+    // Truth is Moderate. This is an over-warning, which is the safer of the two wrong directions
+    // and still a wrong rating beside a citation.
+    expect(resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [352]).get(352)).toBe('Major');
+  });
+
+  it('resolves what the backend’s own list leaves possible — the live recovery', () => {
+    // The other direction, and the first rating this module has ever recovered rather than given
+    // up. Reduced from the live answer `n5_worst_first`: the leading sentence states a Moderate
+    // rating for a citation OUTSIDE the measurement, which rules all three Moderate findings out
+    // of the two citations inside it, leaving exactly the two Major ones for their bridges to
+    // discriminate. Before the elimination both windows named their bridge alongside a field of
+    // five and elected nobody.
+    const answer =
+      'Prednisone Co 5mg [15] is the least concerning active order, with a Moderate interaction [352].\n' +
+      'Clarithromycin interacts with active order Solu-Medrol [350].\n' +
+      'Clarithromycin interacts with active order Pulmicort [351].';
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 351])]).toEqual([
+      [350, 'Major'],
+      [351, 'Major'],
+    ]);
+  });
+});
+
+describe('a sentence-separated list, one item per sentence', () => {
+  it('resolves all three, which is what the forward-claim terminator rule is for', () => {
+    // The positive control this file did not have, and its absence is what let the clause that
+    // zeroes a forward claim at a sentence terminator be deleted as redundant on a green suite.
+    // Nothing here or in the corpus exercised the ordinary shape it protects: one item per
+    // sentence, with the last item's subject restated on a following line.
+    //
+    // Without the clause every interior marker's forward window runs into the NEXT sentence, so
+    // the forward reading is a clean shift-by-one bijection that disagrees with the correct
+    // trailing one, and all three ratings are discarded. A refusal is the safe direction, which
+    // is exactly why no measurement complained — and three correct ratings on a plain answer is
+    // still a real cost. This test is what makes it visible next time.
+    const answer = 'Methylprednisolone [350]. Budesonide [351]. Prednisone [352]\n  Prednisone Co 5mg';
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 351, 352])]).toEqual([
+      [350, 'Major'],
+      [351, 'Major'],
+      [352, 'Moderate'],
+    ]);
+  });
+});
+
 describe('a label-separator colon after a marker', () => {
   it('refuses a rotation labelled with a colon', () => {
     // Written for a clause that no longer exists. There used to be a rule zeroing a forward claim
@@ -183,11 +269,11 @@ describe('a label-separator colon after a marker', () => {
     // exclusion, since adding `:` resolved 64 more answers in a 3,840-answer sweep and all 64
     // were wrong.
     //
-    // The whole terminator rule has since been removed as redundant — suite, corpus and a
-    // 150,000-seed sweep are unchanged without it — so there is no exclusion left to pin. The
-    // shape is kept because it is a rotation and must still refuse, which it now does through the
-    // leftover-subject rules. If a terminator rule ever comes back, this is the case that says
-    // `:` must not be in it.
+    // That rule was deleted as redundant mid-cycle and put back in the same cycle, once an
+    // ordinary sentence-separated list turned out to lose three correct ratings without it and
+    // the deletion turned out to have un-pinned ten other tests silently. So the exclusion this
+    // shape pins is live again, and it is the only thing pinning it. The full arc is recorded at
+    // the clause itself in the resolver.
     const answer = 'Prednisone is the lesser worry, but the greater one is [350]: Budesonide [351] Budesonide';
     expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 351])]).toEqual([]);
   });
@@ -819,6 +905,27 @@ describe('resolveFindingSeverities', () => {
     expect(resolved.get(351)).toBe('Major');
   });
 
+  it('refuses when a hyphen compound is the only mention of the marker’s own subject', () => {
+    // Captured from a live phrasing, and the worst direction this module has measured: TWO Major
+    // interactions rendered Moderate in one answer. The answer names each marker's own subject
+    // only as an adjective — "her methylprednisolone-containing injection" — and `-` used to
+    // count as word-ish on BOTH sides of a lead, so `methylprednisolone` matched nothing. Each
+    // window was left naming exactly one drug, the SIBLING, which all three readings then elected
+    // unanimously; the head and interior rules were satisfied by the very election they should
+    // have doubted, because the wrongly-elected sibling is in `claimedByTrailing` precisely
+    // because it was wrongly elected.
+    //
+    // With `-` a boundary after a lead the window names both drugs, elects nobody, and the set
+    // refuses. The mirror shape — a bridge on `Medrol` against a claim naming `Solu-Medrol
+    // 125mg/5ml` — still resolves, in the test below, which is what keeps the two halves of the
+    // boundary separate.
+    const answer =
+      'Clarithromycin interacts with active order Prednisone Co 5mg and with her methylprednisolone-containing injection [350]. It also interacts with active order Dexamethasone Injection vial 8mg and with her budesonide-containing inhaler [351].';
+    // Truth is {350: Major, 351: Major}; before the boundary was split this rendered
+    // {350: Moderate, 351: Moderate} — both under-warning.
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 351])]).toEqual([]);
+  });
+
   it('does not match a bridge against half of a hyphenated brand', () => {
     // The hyphen half of the boundary class: dropping `-` from it left the whole suite green,
     // and this repo's own fixture vocabulary contains the hazard — a chip bridged to `Medrol`
@@ -1366,6 +1473,26 @@ describe('resolveFindingSeverities', () => {
     // block bound, and the full stop zeroes [352]'s forward claim.
     const answer = 'Solu-Medrol 125mg/5ml [350] Hydrocortisone [17]. Prednisone Co 5mg [352].';
     expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350, 352])]).toEqual([]);
+  });
+
+  it('refuses a swapped pair only the unconfined backward reading can see', () => {
+    // The block rule's only named witness, and it had none at all for a long time: disabling that
+    // rule left every test in this file green and the live corpus unmoved, so the seeded sweep was
+    // its whole coverage. A fuzzer's counterexample is not something a maintainer can search for
+    // before deleting a line that reads as redundant — which is precisely what happened to a
+    // different rule in this file, in the cycle that added this test.
+    //
+    // The shape came out of that sweep and was then rebuilt on the committed fixture. What makes
+    // the block rule sole-decisive: the subject of the first marker sits on the NEXT line, so the
+    // line-confined backward window holds only the lead-in and elects Prednisone out of it, while
+    // the unconfined window reaches the real subject and elects Budesonide. Nothing else objects
+    // — the forward windows name only what trailing already claims, and the closing mechanism
+    // clause names a candidate the set does claim, so head, interior and tail are all quiet.
+    const answer =
+      'Compared with Budesonide, the bigger problem is [352] Prednisone Co 5mg\nPulmicort 90mcg\n  This interaction differs from the one for Prednisone Co 5mg [351].';
+    // With the rule disabled this renders {351: Moderate, 352: Major} against a truth of
+    // {351: Major, 352: Moderate} — both wrong, and one of them under-warns.
+    expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [351, 352])]).toEqual([]);
   });
 
   it('refuses a swap the shift-consistency rule cannot see', () => {

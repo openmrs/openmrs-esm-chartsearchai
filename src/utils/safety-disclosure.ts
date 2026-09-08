@@ -120,13 +120,17 @@ export function parseCitationIndices(group: string): number[] {
 //
 // "The live corpus" always means: 46 answers captured from a running server against the demo
 // chart, of which 22 carry an `unstatedFindingSeverities` measurement this module resolves. It
-// renders 80 ratings today across 18 of those answers, down from 98 before the two
-// leftover-subject rules — 13 for the tail rule and 5 for the head rule's loss of its exemption.
-// All 85 that stood at the tail-rule stage were read against the sentence each was drawn from
-// and were correct; today's 80 are a subset of those. This number has now drifted twice, once
-// per cycle that changed a refusal, so re-measure it rather than quoting it. It is replayed on every
-// change and a byte-identical result is the regression bar. It is NOT in the repo — it lives in a
-// scratch directory — so a measurement quoted against it cannot be re-run from a clean checkout.
+// renders 82 ratings today across 19 of those answers. It was 98 before the two
+// leftover-subject rules took 18 — 13 for the tail rule and 5 for the head rule's loss of its
+// exemption — and the two since recovered are the first to come BACK: eliminating candidates
+// whose rating the answer already states cut one answer's field to the two findings that could
+// still be at its citations, and both were then read against the sentence they were drawn from
+// and checked against the payload. All 85 that stood at the tail-rule stage were read the same
+// way and were correct; 80 of today's 82 are a subset of those. This number has now drifted three
+// times, once per cycle that changed a refusal, so re-measure it rather than quoting it. It is
+// replayed on every change, and a byte-identical result is the regression bar. It is NOT in the
+// repo — it lives in a scratch directory — so a measurement quoted against it cannot be re-run
+// from a clean checkout.
 // Where one of its answers decides a design choice, that answer is committed as a fixture
 // instead: ANSWER_TWO_FAMILIES, ANSWER_MECHANISM_CLAUSES and ANSWER_RESTATED_SUBJECT are those.
 //
@@ -415,23 +419,42 @@ export function claimTextByCitation(
       // reach the confinement with it.
       claim = answer.slice(run.end, runs[i + 1]?.start ?? answer.length);
 
-      // A clause used to sit here zeroing this claim when the marker was immediately followed by
-      // a sentence terminator, on the reasoning that nothing after a full stop can be the
-      // marker's subject. It was added because an ordinary trailing-marker list self-contested —
-      // the forward claim of marker N was sentence N+1, a complete claim about the next
-      // candidate, so the forward reading was a clean shift-by-one bijection disagreeing with the
-      // correct trailing one, and four correct live ratings were discarded.
+      // Zero the claim when the marker is immediately followed by a sentence terminator: nothing
+      // after a full stop can be the marker's subject. Without it an ordinary trailing-marker
+      // list self-contests — the forward claim of marker N is sentence N+1, a complete claim
+      // about the NEXT candidate, so the forward reading is a clean shift-by-one bijection
+      // disagreeing with the correct trailing one, and correct ratings are discarded.
       //
-      // It is gone, and the removal is measured three ways: the suite, the 46-answer corpus (no
-      // change, 80 ratings) and a 150,000-seed sweep are all unchanged without it. Its job has
-      // been taken over by the three leftover-subject rules, which refuse those answers for a
-      // better reason than "the claim was blanked". And the direction matters: zeroing a claim
-      // REDUCES objections, so the clause made refusals fire LESS often — the unsafe side for
-      // something nothing discriminated. Removing it can only add refusals.
+      // THIS LINE WAS DELETED AND PUT BACK IN ONE CYCLE, and the round trip is the most useful
+      // thing in this file, so it is recorded rather than tidied away. It was removed as
+      // redundant on three measurements that all came back clean — the suite green, the live
+      // corpus unmoved, a seeded sweep unchanged — plus a direction argument that
+      // is sound as far as it goes: zeroing a claim REDUCES objections, so the clause makes
+      // refusals fire LESS often, and deleting it can only add them. Every one of those
+      // statements is true. The conclusion drawn from them was still wrong, twice over.
       //
-      // If a future change makes the forward reading over-contest sentence-separated lists again,
-      // this is the clause that used to prevent it; re-measure before re-adding it, because the
-      // reason it existed no longer reproduces.
+      // First, "the reason it existed no longer reproduces" was false, and an ordinary answer
+      // shows it: *"Methylprednisolone [350]. Budesonide [351]. Prednisone [352]\n  Prednisone
+      // Co 5mg"* — a three-item sentence-separated list with a restated tail — resolved all three
+      // correctly with this line and refused all three without it. The corpus does not happen to
+      // contain that shape, so no measurement taken over the corpus could see it. A clean result
+      // is evidence about the inputs it ran on and nothing else.
+      //
+      // Second, and worse, the deletion silently un-pinned OTHER rules. This clause is what
+      // empties a forward window in ten of the tests that discriminate the tail and interior
+      // objections; with it gone those ten stopped exercising what they are named for — the tail
+      // rule's witnesses fell from 11 to 3, the interior rule's from 2 to 1 — and the suite
+      // reported nothing, because every one of them still refused, for a different reason. A
+      // green suite cannot see coverage it has just lost. Restoring the clause restores all ten,
+      // which is how the number is known.
+      //
+      // What makes keeping it safe is not this argument but the tail rule. The suppression here
+      // once let a rotation ship wherever the last citation's forward window could be emptied
+      // (see the objecting-sets gate above); that hole is now closed in the answer's TAIL, where
+      // no claim window can hide it, and the two tests encoding it still refuse with this line
+      // in. Measured on restoration: suite green, corpus byte-identical, a 400,000-seed sweep
+      // clean.
+      if (/^[^\S\n]*[.;!?]/.test(answer.slice(run.end))) claim = '';
     }
     for (const group of run.groups) {
       for (const index of parseCitationIndices(group[1])) {
@@ -575,10 +598,33 @@ function discriminatingLeads(leads: string[], drug: string): string[] {
   );
 }
 
-/** Word-ish characters, for boundary testing. `/` and `-` count so a lead cannot match half of a
- *  combination product (`aspirin` inside `aspirin/dipyridamole`) or half a hyphenated brand. */
+/** Word-ish characters BEFORE a lead. `/` and `-` count so a lead cannot match the tail of a
+ *  combination product (`dipyridamole` inside `aspirin/dipyridamole`) or the tail of a hyphenated
+ *  brand (`Medrol` inside `Solu-Medrol 125mg/5ml`, a different product). */
 function isWordish(character: string): boolean {
   return /[a-z0-9/-]/.test(character);
+}
+
+/**
+ * Word-ish characters AFTER a lead, where `-` is a BOUNDARY rather than part of the word.
+ *
+ * The asymmetry is the point, and it is about which side of the hyphen the lead sits on. A lead
+ * that is the tail of a compound is usually a different product — `Medrol` is not `Solu-Medrol` —
+ * so `-` before it must keep hiding it. A lead that is the HEAD of one is normally that very
+ * drug in adjectival form, which is how a clinician writes it: measured live, *"it interacts with
+ * active order Prednisone Co 5mg and with her methylprednisolone-containing injection [350]"*
+ * hid the lead `methylprednisolone` behind the `-containing`, so the window named only the
+ * sibling Prednisone, elected it unanimously in all three readings, and rendered a MAJOR
+ * interaction as Moderate. Two of them in one answer, and under-warning is the direction that
+ * actually reaches a patient.
+ *
+ * With `-` a boundary on this side the window names BOTH drugs, elects nobody, and the set
+ * refuses — the outcome the module wants. Cost, measured: one correct rating, on the mirror shape
+ * where a bridge names `Medrol` and the claim names `Solu-Medrol` — that one is preserved by the
+ * `before` half above, which is why the halves are separate functions rather than one.
+ */
+function isWordishAfter(character: string): boolean {
+  return /[a-z0-9/]/.test(character);
 }
 
 /**
@@ -682,7 +728,7 @@ export function namesLead(claim: string, lead: string): boolean {
     if (at < 0) return false;
     const before = at === 0 ? '' : claim[at - 1];
     const after = at + lead.length >= claim.length ? '' : claim[at + lead.length];
-    if (!isWordish(before) && !isWordish(after)) return true;
+    if (!isWordish(before) && !isWordishAfter(after)) return true;
     from = at;
   }
 }
@@ -762,6 +808,54 @@ function candidateSetFor(
   const set = buildCandidateSet(candidates);
   setCache.set(setKey, set);
   return set;
+}
+
+/**
+ * The candidates still eligible at an unstated index, given what the answer says about ratings.
+ *
+ * This is the backend's own published rule read backwards rather than a guess about prose. A
+ * citation lands in `unstatedFindingSeverities` when the finding's rating word "appears nowhere in
+ * the answer" — the check asks it of the WHOLE answer, not of the citing sentence, so an answer
+ * that states the rating anywhere leaves the citation off the list (backend README, the
+ * `unstatedFindingSeverities` section, and ADR Decision 78). Contrapositive: a finding whose
+ * rating word DOES appear somewhere in the answer cannot be the finding at any index on that
+ * list. So it is not a candidate, whatever the prose beside the marker looks like.
+ *
+ * That closes a wrong-rating class no reading of the prose could, because in it all three readings
+ * AGREE and every objection is satisfied. The answer names the marker's own subject in a form the
+ * payload publishes no lead for — an anaphor, or a clause instead of a name — so the window is
+ * left naming exactly one drug, the SIBLING, which the readings then elect unanimously; and the
+ * head and interior rules are satisfied by the very election they should be doubting, because the
+ * wrongly-elected sibling sits in `claimedByTrailing` precisely because it was wrongly elected.
+ * Captured live: *"it interacts with active order Solu-Medrol 125mg/5ml, a Major interaction, and
+ * by the same mechanism [352]"* badged a MODERATE finding Major. The prose gives nothing to work
+ * with — but the answer says "Major", so the backend would not have listed a Major finding at
+ * [352], and Methylprednisolone is out.
+ *
+ * Matched with {@link namesLead}, the same boundary test the leads use, so `Minor` cannot be found
+ * inside a word and a rating stated in any casing counts. A candidate whose own rating is not a
+ * string was already filtered out downstream and is left alone here.
+ *
+ * It can only REMOVE candidates, and removal has both directions in it: an emptied set refuses,
+ * while a set cut to one resolves through the single-candidate shortcut. The second is not a
+ * loosening — it is the backend having narrowed the field for us — but it is the direction that
+ * could go wrong, so it is measured rather than argued.
+ *
+ * It fires on the live corpus and it ADDS ratings, which nothing else in this file has done: one
+ * answer states *"a Moderate interaction"* for a citation outside the measurement, which rules
+ * every Moderate finding out of the two citations inside it and leaves exactly the two Major ones,
+ * discriminated by their bridges. Both were hand-checked against the answer's own list before the
+ * change was kept — see THE CORPUS at the top of this file for what the corpus renders now. Suite
+ * green; a 400,000-seed sweep clean, and the sweep can now express this shape at all, which it
+ * could not before: its generated answers stated no rating anywhere, so this ran only in its
+ * no-op branch. That gap is closed by `statingOneRating` in the property test, whose coverage
+ * bound asserts both that the shape is reached AND that some of it resolves.
+ */
+function withoutRatingsTheAnswerStates(answer: string, safetyWarnings: AiSafetyWarning[]): AiSafetyWarning[] {
+  const normalizedAnswer = normalize(answer);
+  return safetyWarnings.filter(
+    (warning) => typeof warning.severity !== 'string' || !namesLead(normalizedAnswer, normalize(warning.severity)),
+  );
 }
 
 function readClaims(
@@ -1018,25 +1112,26 @@ export function resolveFindingSeverities(
   if (unstatedFindingSeverities.length === 0 || safetyWarnings.length === 0) return new Map();
 
   const ownIndices = new Set(unstatedFindingSeverities);
+  const eligible = withoutRatingsTheAnswerStates(answer, safetyWarnings);
   // Shared across all three readings on purpose: see {@link candidateSetFor}.
   const setCache = new Map<string, CandidateSet>();
   const trailing = readClaims(
     references,
-    safetyWarnings,
+    eligible,
     unstatedFindingSeverities,
     claimTextByCitation(answer, 'trailing', ownIndices),
     setCache,
   );
   const block = readClaims(
     references,
-    safetyWarnings,
+    eligible,
     unstatedFindingSeverities,
     claimTextByCitation(answer, 'block'),
     setCache,
   );
   const blockLeading = readClaims(
     references,
-    safetyWarnings,
+    eligible,
     unstatedFindingSeverities,
     claimTextByCitation(answer, 'block-leading'),
     setCache,
@@ -1327,6 +1422,27 @@ export function resolveFindingSeverities(
     // in exactly the second case — and the trailing reading's election, scavenged from a
     // lead-in, then stood. Measured: one extra clause naming a second candidate flipped a
     // correct refusal into a wrong rating.
+    //
+    // NOTHING WITNESSES THIS RULE, and the number is worth having exactly: instrumented over a
+    // 400,000-answer sweep it contests 268,874 of them and is the SOLE objection on ZERO. The
+    // suite is green without it, the 46-answer corpus does not move, and 400,000 seeds find no
+    // violation. Two tests are still NAMED for it — `refuses where shift-consistency is the ONLY
+    // rule that can object` and its neighbour — and both are now over-determined: they were
+    // written before the three leftover-subject rules existed, and those rules object on their
+    // shapes too. Their names are the stale part, not their assertions.
+    //
+    // The subsumption has a structural reason rather than being a coincidence of the generator.
+    // This rule asks "is a name in a CLAIM WINDOW unclaimed by any citation of the set", and the
+    // three leftover-subject rules below ask the same question of the head, the interior and the
+    // tail — which together are the whole answer. Every claim window is a substring of one of
+    // them, so a name this rule can see is a name they can see.
+    //
+    // Kept regardless, and the direction is why: an objection ADDS refusals, so deleting a
+    // redundant one can only make refusals fire LESS often, and this cycle measured what that
+    // costs. Removing the terminator rule — also redundant, also green, also corpus-neutral —
+    // silently un-pinned this rule and the block rule below by destroying their sole witnesses,
+    // and the suite reported nothing. Redundancy on every input this repo can produce is not
+    // evidence about the input it cannot. Keeping it costs nothing but this paragraph.
     for (const named of blockLeading.namedOf.get(index) ?? []) {
       if (!claimedByTrailing.get(setKey)?.has(named)) contested.add(setKey);
     }
@@ -1400,6 +1516,13 @@ export function resolveFindingSeverities(
     // marker sits at end-of-line 54 times and is followed by a sentence
     // terminator 151 times, and a marker closed by a terminator has its forward claim zeroed
     // outright a few hundred lines up.
+    //
+    // Its witness is `refuses a swapped pair only the unconfined backward reading can see`, which
+    // renders {351: Moderate, 352: Major} against a truth of {351: Major, 352: Moderate} with
+    // this line disabled — a swapped pair, and this is the only objection that fires on it. That
+    // test was added late: for a while the rule had no named coverage at all and the seeded sweep
+    // was the whole of it, which is not a name a maintainer can search for before deleting a line
+    // that looks redundant.
     const confined = trailing.electedOf.get(index);
     if (block.electedOf.get(index) !== confined) contested.add(setKey);
   }

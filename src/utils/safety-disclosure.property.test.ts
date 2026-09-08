@@ -198,7 +198,51 @@ function shiftedAnswer(random: () => number, chosen: number[]): Generated {
   return { answer: lines.join('\n'), truth, unstated: chosen.map((i) => INDEX_OF[i]) };
 }
 
+/**
+ * With one answer in four, state ONE cited finding's rating in the prose and drop that citation
+ * from `unstated` — which is exactly what the backend does with it.
+ *
+ * The generator could not express this at all, and that made a 400,000-seed sweep silent on the
+ * candidate elimination in the resolver: every answer it produced stated no rating anywhere, so
+ * the filter ran only in its no-op branch and every candidate always survived. A sweep that
+ * cannot reach a rule reports on the rest of the file, not on that rule.
+ *
+ * The mirroring is what keeps truth checkable. `unstatedFindingSeverities` lists a citation only
+ * when the finding's rating word appears NOWHERE in the answer, so an answer that states a rating
+ * must also drop that citation from the list — otherwise the payload is one the backend could not
+ * have emitted, and a violation found on it would say nothing. Dropping it from `truth` too is
+ * the same point: the module is no longer asked about that index.
+ *
+ * Shaped on the live answer that this rule recovered two correct ratings from — a leading sentence
+ * naming one order, carrying its own marker, and stating its rating, ahead of the list. The
+ * partner whose rating is now stated must be eliminated from every REMAINING index's candidate
+ * pool; if the resolver instead elects it, the truth map here says so.
+ */
+function statingOneRating(random: () => number, generated: Generated): Generated {
+  if (random() < 0.75) return generated;
+  // Two or more, so that dropping one leaves something for the property to be about.
+  const cited = [...generated.truth.keys()];
+  if (cited.length < 2) return generated;
+
+  const index = cited[Math.floor(random() * cited.length)];
+  const partner = PARTNERS[INDEX_OF.indexOf(index)];
+  if (!partner) return generated;
+
+  const name = random() < 0.5 ? partner.substance : partner.order;
+  const truth = new Map(generated.truth);
+  truth.delete(index);
+  return {
+    answer: `${name} [${index}] is the least concerning active order, with a ${partner.severity} interaction.\n${generated.answer}`,
+    truth,
+    unstated: generated.unstated.filter((cite) => cite !== index),
+  };
+}
+
 function generateAnswer(random: () => number): Generated {
+  return statingOneRating(random, generateAnswerBody(random));
+}
+
+function generateAnswerBody(random: () => number): Generated {
   // One in five answers is the shifted shape above. `count` starts at 2 because the rotation
   // needs at least two findings to exist — it is a floor, not a filter, and there was an
   // `if (count >= 2)` here reading as one. It could never be false (`2 + floor(r * 4)` is 2..5,
@@ -320,9 +364,17 @@ describe('the generator reaches the shapes it exists for', () => {
     // counts shifted answers whose first claim still names a partner AFTER stripping.
     let shiftedClosable = 0;
     let leadInPartnerCited = 0;
+    let ratingStated = 0;
+    let ratingStatedAndResolves = 0;
 
     for (let seed = 1; seed <= 4000; seed++) {
-      const { answer } = generateAnswer(makeRandom(seed));
+      const generated = generateAnswer(makeRandom(seed));
+      const { answer } = generated;
+      if (/with a (?:Major|Moderate|Minor|Unknown) interaction\./.test(answer)) {
+        ratingStated += 1;
+        const got = resolveFindingSeverities(answer, REFS, WARNINGS, generated.unstated);
+        if (got.size > 0) ratingStatedAndResolves += 1;
+      }
       if (answer.includes('This interaction differs')) contrast += 1;
       if (/\[\d+\]\s+[A-Z]/.test(answer)) markerFirst += 1;
       if (/\[\d+\]\n/.test(answer)) markerAtLineEnd += 1;
@@ -373,6 +425,22 @@ describe('the generator reaches the shapes it exists for', () => {
       shiftedAmbiguousTail: shiftedAmbiguousTail > 100,
       shiftedClosable: shiftedClosable > 200,
       leadInPartnerCited: leadInPartnerCited > 200,
+      // The rating-stating dimension, and BOTH halves of it. Reaching the shape is not enough:
+      // if every such answer refused, the candidate elimination would be exercised only where it
+      // cannot produce a wrong rating, which is the half that does not need checking. The second
+      // bound is what lets the sweep catch the elimination cutting a field down to the WRONG
+      // survivor.
+      //
+      // Measured over these seeds: 695 answers state a rating and 36 of them resolve. The second
+      // number is small because it is a conjunction of two independent draws, and it is also the
+      // interesting one: the same bodies with the sentence removed resolve only 8 times, so the
+      // elimination is not merely passing these answers through — it is narrowing candidate
+      // fields that were previously too ambiguous to elect from, which is exactly the direction
+      // that could go wrong. The bound sits below the measurement with room, because tightening
+      // an anti-vacuity bound to its measured value turns any drift into a red test that says
+      // nothing about correctness.
+      ratingStated: ratingStated > 300,
+      ratingStatedAndResolves: ratingStatedAndResolves > 20,
     }).toEqual({
       contrast: true,
       markerFirst: true,
@@ -386,6 +454,8 @@ describe('the generator reaches the shapes it exists for', () => {
       shiftedAmbiguousTail: true,
       shiftedClosable: true,
       leadInPartnerCited: true,
+      ratingStated: true,
+      ratingStatedAndResolves: true,
     });
   });
 });
