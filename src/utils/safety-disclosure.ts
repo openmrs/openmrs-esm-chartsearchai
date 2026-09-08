@@ -787,13 +787,6 @@ export function resolveFindingSeverities(
     claimTextByCitation(answer, 'trailing', ownIndices),
     setCache,
   );
-  const leading = readClaims(
-    references,
-    safetyWarnings,
-    unstatedFindingSeverities,
-    claimTextByCitation(answer, 'leading'),
-    setCache,
-  );
   const block = readClaims(
     references,
     safetyWarnings,
@@ -811,7 +804,20 @@ export function resolveFindingSeverities(
   const soundTrailing = soundSets(trailing);
   // Qualified to OBJECT, which is a weaker test than qualified to RESOLVE — see
   // {@link objectingSets} for the answer that made the difference.
-  const objectingLeading = objectingSets(leading);
+  //
+  // Only the UNCONFINED forward reading is taken. The line-confined one used to sit beside it in
+  // both contests below and is provably redundant, which is why the answer is read three ways
+  // rather than four: its window is a SUBSET of this one's, so (a) everything it names, this
+  // names — which settles the NAMED contest — and (b) wherever it would object here, this one
+  // does too. Take the only case that looks like an exception: the confined window names exactly
+  // one candidate and disagrees with trailing, while the wider window names two and so elects
+  // nobody. Electing nobody is `undefined`, which is not what trailing elected either, so the
+  // objection still lands. That equivalence needs the `forwardElected` guard to be absent — it
+  // was removed in the same cycle for its own reasons, and this fell out.
+  //
+  // Measured alongside the proof, before removal: dropping the confined reading from either
+  // contest left the suite, the 46-answer corpus (94 ratings), a 150,000-seed sweep and a
+  // 60,000-answer rotation search all unchanged.
   const objectingBlockLeading = objectingSets(blockLeading);
 
   // Which findings the trailing reading claims for SOME citation of each set.
@@ -860,15 +866,11 @@ export function resolveFindingSeverities(
     // (unsound, so it cannot object) while the confined one names exactly one. That is the
     // residual class this cycle's fix does not close, so removing the only rule that could
     // reach part of it would be the wrong way to tidy up.
-    for (const [forward, objectingForward] of [
-      [leading, objectingLeading],
-      [blockLeading, objectingBlockLeading],
-    ] as const) {
-      if (!soundTrailing.has(setKey) || !objectingForward.has(setKey)) continue;
-      // No `forwardElected &&` guard: on a reading that named a candidate at every cited
-      // citation, an index that still elected NOBODY named two, and that ambiguity is itself a
-      // reason to doubt the confined reading's confidence rather than something to pass over.
-      if (trailing.electedOf.get(index) !== forward.electedOf.get(index)) contested.add(setKey);
+    if (soundTrailing.has(setKey) && objectingBlockLeading.has(setKey)) {
+      // No `forwardElected` guard: on a reading that named a candidate at every cited citation,
+      // an index that still elected NOBODY named two, and that ambiguity is itself a reason to
+      // doubt the confined reading's confidence rather than something to pass over.
+      if (trailing.electedOf.get(index) !== blockLeading.electedOf.get(index)) contested.add(setKey);
     }
 
     // Or the leading reading names a finding the trailing reading claims for NO citation of this
@@ -888,10 +890,8 @@ export function resolveFindingSeverities(
     // in exactly the second case — and the trailing reading's election, scavenged from a
     // lead-in, then stood. Measured: one extra clause naming a second candidate flipped a
     // correct refusal into a wrong rating.
-    for (const forward of [leading, blockLeading]) {
-      for (const named of forward.namedOf.get(index) ?? []) {
-        if (!claimedByTrailing.get(setKey)?.has(named)) contested.add(setKey);
-      }
+    for (const named of blockLeading.namedOf.get(index) ?? []) {
+      if (!claimedByTrailing.get(setKey)?.has(named)) contested.add(setKey);
     }
 
     // Or the wider, unconfined window no longer singles out what the line-confined one elected.
