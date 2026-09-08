@@ -131,6 +131,19 @@ function normalize(text: string): string {
   return text.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
+/** At most four whitespace-separated tokens — a drug name, not a clause. See above. */
+const EXCLUDED_NAME = String.raw`[^\s,;:.]+(?:[^\S\n]+[^\s,;:.]+){0,3}`;
+
+const EXCLUSION_CLAUSES = [
+  // "apart from X," / "unlike X," / "other than X," — the excluded name FOLLOWS the marker word.
+  new RegExp(
+    String.raw`\b(?:apart from|aside from|other than|unlike|except for|except)[^\S\n]+${EXCLUDED_NAME}[^\S\n]*[,;:]`,
+    'g',
+  ),
+  // "X aside," — the excluded name PRECEDES it.
+  new RegExp(String.raw`\b${EXCLUDED_NAME}[^\S\n]+aside[^\S\n]*[,;:]`, 'g'),
+];
+
 /**
  * A clause that names a drug in order to EXCLUDE it, removed from an already-normalised claim.
  *
@@ -175,21 +188,7 @@ function normalize(text: string): string {
  * most FOUR tokens for the name, which a drug display fits ("Hydrocortisone Injection vial
  * 100mg") and a clause does not: "except Prednisone Co 5mg at her current dose," no longer
  * matches at all, so the claim keeps both names and refuses.
- */
-/** At most four whitespace-separated tokens — a drug name, not a clause. See above. */
-const EXCLUDED_NAME = String.raw`[^\s,;:.]+(?:[^\S\n]+[^\s,;:.]+){0,3}`;
-
-const EXCLUSION_CLAUSES = [
-  // "apart from X," / "unlike X," / "other than X," — the excluded name FOLLOWS the marker word.
-  new RegExp(
-    String.raw`\b(?:apart from|aside from|other than|unlike|except for|except)[^\S\n]+${EXCLUDED_NAME}[^\S\n]*[,;:]`,
-    'g',
-  ),
-  // "X aside," — the excluded name PRECEDES it.
-  new RegExp(String.raw`\b${EXCLUDED_NAME}[^\S\n]+aside[^\S\n]*[,;:]`, 'g'),
-];
-
-/**
+ *
  * EXPORTED FOR TESTS ONLY, like {@link claimTextByCitation} and for a sharper reason: the
  * property test's shifted population became VACUOUS when this function landed, because every
  * lead-in it generated used a word removed here — 0 of 20,000 shifted answers resolved anything
@@ -762,9 +761,11 @@ function readClaims(
 /**
  * Each candidate set's citation indices, in one place.
  *
- * The two bars below — the right to RESOLVE and the right to OBJECT — are meant to differ by
- * one word, and each kept its own copy of this grouping and its own `citedIndices` filter. That
- * is one word plus two hand-copied preambles: a change to how an index is assigned to a set, or
+ * The two bars below — the right to RESOLVE and the right to OBJECT — differ only in which
+ * predicate completeness is measured on and whether injectivity is required, and each kept its
+ * own copy of this grouping and its own `citedIndices` filter as well. (Both of those bars were
+ * described as differing "by one word" in three places, which was never true and is corrected
+ * where each of them is defined.) A change to how an index is assigned to a set, or
  * to which indices count as cited, made once would silently give the two bars different
  * POPULATIONS, so a set could qualify to object under one grouping while being judged sound
  * under another. (Also drops the quadratic array copy the grouping loops both used.)
