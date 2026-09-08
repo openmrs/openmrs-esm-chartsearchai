@@ -208,3 +208,28 @@ export const TWO_FAMILY_WARNINGS: AiSafetyWarning[] = [
   interaction('Diclofenac', 'Moderate', undefined, 'Methylprednisolone'),
   interaction('Ibuprofen', 'Moderate', 'Advil 400mg', 'Methylprednisolone'),
 ];
+
+/**
+ * A third measured answer: one sentence, semicolon-separated clauses, and the partner name
+ * separated from its marker by a whole mechanism clause.
+ *
+ * Committed because it is the shape that refutes the most tempting simplification. A
+ * lead-to-marker DISTANCE test — reject an election whose evidence sits too far from the marker —
+ * was measured as a way to close the rotation class, and it costs the same as the rule that
+ * shipped while being wrong for this reason: here the elected partner is eight to fifteen words
+ * from its own marker in every clause, and every one of those elections is CORRECT. Anyone
+ * reaching for proximity as evidence should run this first.
+ *
+ * All four of its ratings were verified by hand against the payload's own warnings during a
+ * full audit of the live corpus.
+ */
+export const ANSWER_MECHANISM_CLAUSES =
+  'No — Clarithromycin should not be prescribed due to multiple reasons to withhold it: it interacts ' +
+  'with the active order Solu-Medrol 125mg/5ml because coadministration may significantly increase the ' +
+  'plasma concentrations of methylprednisolone, leading to increased adrenal suppression [350]; it also ' +
+  'interacts with the active order Pulmicort 90mcg because coadministration may significantly increase ' +
+  'the systemic bioavailability of budesonide [351]; furthermore, it interacts with the active order ' +
+  'Prednisone Co 5mg because coadministration with inhibitors of CYP450 3A4 may lead to increased plasma ' +
+  'concentrations and pharmacologic effects of corticosteroids [352]; and finally, it interacts with the ' +
+  'active order Hydrocortisone Injection vial 100mg because coadministration with inhibitors of CYP450 ' +
+  '3A3 may increase the plasma concentrations and pharmacologic effects of corticosteroids [354].';

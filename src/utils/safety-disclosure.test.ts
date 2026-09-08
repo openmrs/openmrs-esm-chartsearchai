@@ -16,6 +16,7 @@ import {
   ANSWER_BARE_LIST,
   ANSWER_BY_ORDER_DISPLAY,
   ANSWER_BY_SUBSTANCE,
+  ANSWER_MECHANISM_CLAUSES,
   ANSWER_TWO_FAMILIES,
   interaction,
   REFERENCES,
@@ -104,6 +105,27 @@ describe('stripExclusions must not delete the cited finding’s own subject', ()
     // The positive control: the recovery cycle 10 measured must survive the tightening.
     const answer = 'Hydrocortisone aside, the order that matters is Solu-Medrol 125mg/5ml [350].';
     expect(resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350]).get(350)).toBe('Major');
+  });
+});
+
+describe('the partner may sit a whole clause away from its marker', () => {
+  it('resolves a measured answer whose evidence is never adjacent to its marker', () => {
+    // The refutation of proximity-as-evidence, kept as a test because the idea keeps coming back.
+    // Every election here is eight to fifteen words from its marker, separated by a mechanism
+    // clause, and every one is correct. A distance test closes the rotation class at the same
+    // price as the rule that shipped and takes this answer with it.
+    const resolved = resolveFindingSeverities(
+      ANSWER_MECHANISM_CLAUSES,
+      REFERENCES,
+      SAFETY_WARNINGS,
+      [350, 351, 352, 354],
+    );
+    expect(Object.fromEntries(resolved)).toStrictEqual({
+      350: 'Major',
+      351: 'Major',
+      352: 'Moderate',
+      354: 'Moderate',
+    });
   });
 });
 
