@@ -141,34 +141,21 @@ function normalize(text: string): string {
 const EXCLUDED_NAME = String.raw`[^\s,;:.]+(?:[^\S\n]+[^\s,;:.]+){0,3}`;
 
 /**
- * Words after which a named drug is being COMPARED AGAINST rather than talked about.
+ * A comparison word list lived here for one cycle and is gone, because it could not do the job
+ * it was written for and the head rule can.
  *
- * Same principle as the exclusion clauses, and found the same way — by a wrong rating. A live
- * answer read: *"Her active order is recorded in [17]. Clarithromycin raises its levels far more
- * than those of prednisone … [364]."* The subject sits in the previous sentence; the only
- * candidate the claim window names is the one it says the effect is GREATER THAN. Rendered
- * Moderate against a truth of Major, on the real chart's own ratings.
+ * It was added for a live wrong rating — a claim whose subject sits in an earlier sentence names
+ * only the drug it is compared against — and then measured: 11 of 12 plausible rephrasings still
+ * rendered the wrong rating ("over", "compared with", "versus", "beyond", "in contrast to",
+ * "relative to", "; X is milder", ", not X", "— X is the lesser worry", "well above", "unlike").
+ * A list of words cannot decide which drug a sentence is ABOUT. Removing it now changes nothing:
+ * the leaks stay closed, the live corpus stays at 85 ratings and the suite stays green, because
+ * the head rule in `resolveFindingSeverities` asks a structural question instead — is some
+ * candidate the answer names left with no citation willing to claim it?
  *
- * Unlike the exclusion clauses these need no trailing `,;:` — English does not punctuate them —
- * so the four-token bound is the only thing keeping the span short.
+ * Kept as a note rather than deleted silently: this is the second word list in this file to be
+ * tried and withdrawn, and the next person reaching for a third should read both first.
  */
-const COMPARISON_MARKERS = [
-  'more than',
-  'less than',
-  'greater than',
-  'rather than',
-  'as opposed to',
-  'instead of',
-  'but not',
-  'and not',
-  'whereas',
-  'excluding',
-  'with the exception of',
-].join('|');
-
-/** Filler that may sit between the comparison marker and the name it governs. */
-const COMPARISON_FILLER = String.raw`(?:[^\S\n]+(?:those|that|the|for|with|of|its|it|is|a|an))*`;
-
 const EXCLUSION_CLAUSES = [
   // "apart from X," / "unlike X," / "other than X," — the excluded name FOLLOWS the marker word.
   new RegExp(
@@ -177,8 +164,6 @@ const EXCLUSION_CLAUSES = [
   ),
   // "X aside," — the excluded name PRECEDES it.
   new RegExp(String.raw`\b${EXCLUDED_NAME}[^\S\n]+aside[^\S\n]*[,;:]`, 'g'),
-  // "more than (those of) X" — a comparison, so X is not the subject.
-  new RegExp(String.raw`\b(?:${COMPARISON_MARKERS})${COMPARISON_FILLER}[^\S\n]+${EXCLUDED_NAME}`, 'g'),
 ];
 
 /**
@@ -903,6 +888,39 @@ function soundSets(reading: ClaimReading): Set<string> {
  * (269 resolving answers) are byte-identical to with them. So they were noise in the direction
  * of resolving more, and are gone rather than left for the next change to delete for free.
  */
+/**
+ * Whether the head's mention of this candidate carries a citation marker of its own.
+ *
+ * At most two words may sit between the name and the marker. A structural test, deliberately,
+ * after two word lists failed at this: it asks whether the ANSWER offered evidence for the
+ * mention rather than what the sentence around it says.
+ */
+function citesItsOwnMention(
+  text: string,
+  set: CandidateSet,
+  candidate: AiSafetyWarning,
+  group: CandidateGroup,
+): boolean {
+  const leads = group.leadsPerCandidate[set.candidates.indexOf(candidate)] ?? [];
+  for (const lead of leads) {
+    if (!lead) continue;
+    let at = text.indexOf(lead);
+    while (at >= 0) {
+      const after = text.slice(at + lead.length);
+      const marker = after.search(/\[\d/);
+      if (marker >= 0) {
+        const between = after
+          .slice(0, marker)
+          .split(/\s+/)
+          .filter((word) => /[a-z0-9]/.test(word));
+        if (between.length <= 2) return true;
+      }
+      at = text.indexOf(lead, at + 1);
+    }
+  }
+  return false;
+}
+
 function objectingSets(reading: ClaimReading): Set<string> {
   const qualified = new Set<string>();
   for (const [setKey, indices] of indicesBySet(reading)) {
@@ -1076,10 +1094,38 @@ export function resolveFindingSeverities(
   // shape, "— see [350] above" — pushed the tail start past the leftover and the rule went
   // silent again.
   const firstRunEndOfIndex = new Map<number, number>();
+  const firstRunStartOfIndex = new Map<number, number>();
   for (const run of markerRuns) {
     for (const index of parseCitationIndices(run[1])) {
       if (!firstRunEndOfIndex.has(index)) firstRunEndOfIndex.set(index, (run.index ?? 0) + run[0].length);
+      if (!firstRunStartOfIndex.has(index)) firstRunStartOfIndex.set(index, run.index ?? 0);
     }
+  }
+
+  // The HEAD, mirroring the tail: everything before the FIRST marker citing one of the set's own
+  // indices. A candidate named there and claimed by no citation of the set is a subject left
+  // over BEFORE the markers, which is the same signature as one left over after them.
+  //
+  // This exists because the word lists could not close the class they were written for. A claim
+  // whose subject sits in an earlier sentence names only the drug it is compared against, and
+  // `stripExclusions` was extended with comparison markers to catch that — then measured: 11 of
+  // 12 plausible rephrasings still rendered the wrong rating ("over", "compared with", "versus",
+  // "beyond", "in contrast to", "relative to", "; X is milder", ", not X", "— X is the lesser
+  // worry", "well above", "unlike"). A list of words cannot decide which drug a sentence is
+  // ABOUT. What can be decided is whether some candidate the answer names has no citation
+  // willing to claim it, and that is a fact about the whole answer rather than about phrasing.
+  const headTextOfSet = new Map<string, string>();
+  for (const setKey of new Set(trailing.setOfIndex.values())) {
+    let upto = -1;
+    for (const [index, end] of firstRunStartOfIndex) {
+      if (trailing.setOfIndex.get(index) !== setKey) continue;
+      upto = upto < 0 ? end : Math.min(upto, end);
+    }
+    // Stripped like a CLAIM is, unlike the tail. The head contains the first citation's own claim
+    // window, so an exclusion or comparison clause in it is about that claim and must come out —
+    // without this, "Hydrocortisone aside, the order that matters is Solu-Medrol … [350]" reads
+    // Hydrocortisone as a leftover subject and refuses an answer the strip exists to resolve.
+    headTextOfSet.set(setKey, stripExclusions(normalize(upto < 0 ? '' : answer.slice(0, upto))));
   }
 
   const tailTextOfSet = new Map<string, string>();
@@ -1109,6 +1155,31 @@ export function resolveFindingSeverities(
         if (setKey !== undefined) lastIndexOfSet.set(setKey, index);
       }
     }
+  }
+
+  const namedInHead = new Map<string, Set<AiSafetyWarning>>();
+  for (const setKey of new Set(trailing.setOfIndex.values())) {
+    const set = setCache.get(setKey);
+    if (!set) continue;
+    const text = headTextOfSet.get(setKey) ?? '';
+    const found = new Set<AiSafetyWarning>();
+    for (const group of set.groups) {
+      for (const candidate of matchesInGroup(set.candidates, group.leadsPerCandidate, group.shared, text)) {
+        // ...unless the answer OFFERED A CITATION for that mention. A family member the answer
+        // cites in its own right — "active order Methylprednisolone [16]" — is being talked
+        // about, not left over, even when the citation is a chart order this measurement does
+        // not list. Without this the rule refuses a live shape: an answer naming one partner
+        // with a chart citation and the next with a finding citation, which is `q1_mixed`,
+        // `q6_interleaved` and the "foreign citation bounds across a sentence break" test.
+        //
+        // "Offered" means the marker follows the name almost immediately. That is what separates
+        // those from the defect: "Solu-Medrol 125mg/5ml [17]" cites its own mention, while "Her
+        // Solu-Medrol 125mg/5ml is the order at issue [17]" puts five words in between and the
+        // citation belongs to the clause, not the name.
+        if (!citesItsOwnMention(text, set, candidate, group)) found.add(candidate);
+      }
+    }
+    namedInHead.set(setKey, found);
   }
 
   const namedInTail = new Map<string, Set<AiSafetyWarning>>();
@@ -1219,6 +1290,16 @@ export function resolveFindingSeverities(
     const lastClaim = trailing.electedOf.get(lastIndexOfSet.get(setKey) ?? -1);
     for (const named of namedInTail.get(setKey) ?? []) {
       if (named !== lastClaim) contested.add(setKey);
+    }
+
+    // Or the mirror: a candidate named BEFORE the set's first marker that no citation of the set
+    // claims. In a trailing-written answer the head holds the first citation's own subject and it
+    // IS claimed, so this stays quiet; where the subject sits in an earlier sentence and the
+    // claim names only what it is compared against, the subject is in the head with nothing to
+    // claim it.
+    const claimedAnywhere = claimedByTrailing.get(setKey);
+    for (const named of namedInHead.get(setKey) ?? []) {
+      if (!claimedAnywhere?.has(named)) contested.add(setKey);
     }
 
     // Or the wider, unconfined BACKWARD window no longer singles out what the line-confined one

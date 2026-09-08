@@ -109,6 +109,45 @@ describe('stripExclusions must not delete the cited finding’s own subject', ()
   });
 });
 
+describe('a subject the answer names that no citation will claim', () => {
+  it('refuses across TWELVE phrasings of the same comparison, not just those on a word list', () => {
+    // The measurement that retired the second word list in this file. A comparison-marker list
+    // was added for the live wrong rating below, then measured: 11 of these 12 still rendered the
+    // wrong rating. What closes all twelve is the HEAD rule — the subject is named in the answer,
+    // before the set's first marker, and no citation claims it. Removing the word list afterwards
+    // changed nothing.
+    const head = 'Her Solu-Medrol 125mg/5ml is the order at issue [17]. ';
+    for (const contrast of [
+      'far more than those of Prednisone',
+      'over those of Prednisone',
+      'compared with Prednisone',
+      'versus Prednisone',
+      'beyond those of Prednisone',
+      'in contrast to Prednisone',
+      'relative to Prednisone',
+      '; Prednisone is milder',
+      ', not Prednisone',
+      '\u2014 Prednisone is the lesser worry',
+      'well above Prednisone',
+      'unlike Prednisone',
+    ]) {
+      const answer = `${head}Clarithromycin raises its levels ${contrast} [350].`;
+      expect([...resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [350])]).toEqual([]);
+    }
+  });
+
+  it('still resolves when the earlier mention CITES ITSELF', () => {
+    // The control that keeps the head rule off ordinary prose, and a live shape: an answer naming
+    // one family member with a chart citation of its own and the next with a finding citation.
+    // "active order Methylprednisolone [16]" offers evidence for its own mention, so it is being
+    // talked about rather than left over. Without this exemption the rule costs five live ratings
+    // (`q1_mixed`, `q6_interleaved`) and this test.
+    const answer =
+      'Clarithromycin interacts with active order Methylprednisolone [16]. Additionally, it interacts with active order Prednisone [352].';
+    expect(resolveFindingSeverities(answer, REFERENCES, SAFETY_WARNINGS, [352]).get(352)).toBe('Moderate');
+  });
+});
+
 describe('a drug the claim COMPARES AGAINST is not its subject', () => {
   it('refuses where the subject sits one sentence back, behind a chart citation', () => {
     // Live-reproducible on the demo chart, and a Major/Moderate swap on the REAL ratings: the
