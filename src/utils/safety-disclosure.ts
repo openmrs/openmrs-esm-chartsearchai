@@ -817,12 +817,20 @@ function objectingSets(reading: ClaimReading): Set<string> {
  * objecting until it is decisive everywhere would fall silent on exactly the ambiguous answers
  * that need it, which is measured, not hypothetical — it shipped five rotated ratings.
  *
- * A set is withheld on any of four objections: a forward reading that identified a candidate at
+ * A set is withheld on any of FIVE objections: a forward reading that identified a candidate at
  * every cited citation and elects a different one here; a forward reading that NAMES a finding
- * the trailing reading claims for no citation of the set; the unconfined backward window no
- * longer singling out what the confined one elected; or the trailing reading not being sound in
- * the first place. Where nothing objects, orientation never mattered — and a single-candidate
- * set resolves the same either way, by the shortcut in `readClaims`.
+ * the trailing reading claims for no citation of the set; a candidate named past the answer's
+ * last marker that no citation of the set claims; the unconfined backward window no longer
+ * singling out what the confined one elected; or the trailing reading not being sound in the
+ * first place. Where nothing objects, orientation never mattered — and a single-candidate set
+ * resolves the same either way, by the shortcut in `readClaims`.
+ *
+ * Their weights are very unequal and it is worth knowing which. Forcing the first rule's gate
+ * open drops the live corpus from 98 ratings to ONE, which says that on real answers the
+ * forward reading disagrees somewhere almost always and that rule is nearly inert; what
+ * actually protects a real answer is the second and fourth. The third exists because the first
+ * two are both blind to a ROTATION — a permutation is invisible to a per-finding check, and the
+ * first rule's gate closes on exactly the answers a rotation needs.
  *
  * What no rule here can do is prefer one orientation on its merits. For any list the forward
  * reading is a rotation of the trailing one, so disagreement between them is the ordinary case
