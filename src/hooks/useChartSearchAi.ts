@@ -201,13 +201,9 @@ function applyTurnEnvelope(message: ChatMessage, payload: TurnEnvelope, phase: T
   return {
     ...message,
     answer: payload.answer ?? message.answer,
-    // A later event that carries no references, or an empty list, leaves the citations as they were:
-    // the trailing evidence event re-sends the list with verdicts, and an empty one says nothing new.
-    // Only the first list to arrive, or a non-empty one, replaces what is shown.
-    references:
-      Array.isArray(payload.references) && (payload.references.length > 0 || message.references.length === 0)
-        ? payload.references
-        : message.references,
+    // Absence means this event has no reference update. An explicit array is authoritative even
+    // when empty: answer validation may remove every draft citation when it edits the answer.
+    references: Array.isArray(payload.references) ? payload.references : message.references,
     safetyWarnings: payload.safetyWarnings ?? message.safetyWarnings,
     safetyStatus: payload.safetyStatus ?? message.safetyStatus,
     safetyCheck: payload.safetyCheck ?? message.safetyCheck,
@@ -444,15 +440,9 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       inFlightMessageIdRef.current = messageId;
 
       const done = (response: AiSearchResponse) => {
-        // Not gated on isMountedRef: this writes to the chat store, which outlives the panel, so
-        // closing the floating panel mid-answer must not drop the terminal event.
-        //
-        // The reason is that a `done` already decoded in the chunk in hand still arrives after
-        // the unmount effect calls abort() — NOT that a trailing `grounded` would otherwise
-        // land on the stranded message. It could not: that effect aborts unconditionally, and
-        // `grounded` is emitted only after the slower Tier-2 pass, so once the panel closes
-        // there is no stream left to carry it. This comment used to say so in three places and
-        // a test's prose said the opposite of its own sibling.
+        // This writes to the shared store, so it does not depend on component-mounted state.
+        // The terminal-phase guard below still prevents a decoded late event from replacing a
+        // turn that the user stopped or that panel cleanup already settled.
         if (abortControllerRef.current === abortController) {
           abortControllerRef.current = null;
         }
@@ -478,7 +468,8 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       };
 
       const fail = (errMessage: string) => {
-        // Ungated for the same reason as `done`: a message whose error is dropped stays loading.
+        // Not gated on isMountedRef: a genuine terminal error must still settle the shared store.
+        // A turn already stopped by the user is terminal, though, and must not be changed afterwards.
         if (abortControllerRef.current === abortController) {
           abortControllerRef.current = null;
         }
@@ -489,6 +480,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         updateMessages(patientUuid, (prev) => {
           const idx = prev.findIndex((m) => m.id === messageId);
           if (idx === -1) return prev;
+          if (isTerminal(prev[idx].phase)) return prev;
           const updated = [...prev];
           updated[idx] = {
             ...updated[idx],
@@ -690,13 +682,10 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
   );
 
   useEffect(() => {
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-        abortControllerRef.current = null;
-      }
-    };
-  }, []);
+    // The message store outlives this panel. Use the same terminal transition as the Stop action so
+    // closing the panel cannot leave an empty `answering` message that disables the next panel instance.
+    return () => stopCurrent();
+  }, [stopCurrent]);
 
   // Only the last message can ever be in flight; a new turn either blocks (answer not yet settled)
   // or preempts the trailing in-depth, so checking just the tail is sound. The composer locks only

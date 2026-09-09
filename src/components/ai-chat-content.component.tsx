@@ -102,7 +102,9 @@ const AiChatContent: React.FC<AiChatContentProps> = ({
         return;
       }
 
-      if (e.key !== 'Tab' || !rootRef.current) return;
+      // The docked panel is non-modal: keyboard users must still be able to reach the patient chart.
+      // Only the expanded panel has a backdrop and traps focus as a modal dialog.
+      if (!isExpanded || e.key !== 'Tab' || !rootRef.current) return;
 
       const focusable = rootRef.current.querySelectorAll<HTMLElement>(
         'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
@@ -120,7 +122,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({
         first.focus();
       }
     },
-    [mode, onClose],
+    [isExpanded, mode, onClose],
   );
 
   const prevMessagesLengthRef = useRef(0);
@@ -138,6 +140,8 @@ const AiChatContent: React.FC<AiChatContentProps> = ({
   // "Thinking..." scratchpad grows past the viewport and is clipped out of sight.
   const lastMessage = messages.length > 0 ? messages[messages.length - 1] : undefined;
   const lastAnswer = lastMessage?.answer ?? '';
+  const lastReasoning = lastMessage?.reasoning ?? '';
+  const lastPreliminary = lastMessage?.preliminaryReasoning ?? '';
   // In-depth arrives after the answer settles; track it so it keeps the transcript scrolled to
   // the bottom too.
   const lastInDepth = lastMessage?.inDepth?.answer ?? '';
@@ -145,7 +149,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({
     if (historyAreaRef.current) {
       historyAreaRef.current.scrollTop = historyAreaRef.current.scrollHeight;
     }
-  }, [lastAnswer, lastInDepth]);
+  }, [lastAnswer, lastReasoning, lastPreliminary, lastInDepth]);
 
   const lastValidationStatus = lastMessage?.answerValidation?.status;
   const previousValidationStatusRef = useRef(lastValidationStatus);
@@ -202,6 +206,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({
       }`}
       ref={rootRef}
       role={mode === 'floating' ? 'dialog' : undefined}
+      aria-modal={mode === 'floating' && isExpanded ? true : undefined}
       aria-label={mode === 'floating' ? t('aiChartSearch', 'AI Chart Search') : undefined}
       onKeyDown={handlePanelKeyDown}
     >

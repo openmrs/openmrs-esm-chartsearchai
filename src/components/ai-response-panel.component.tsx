@@ -46,8 +46,8 @@ interface AiResponsePanelProps extends AiAnswerLimits {
   preliminaryReasoning?: string;
   references: AiReference[];
   safetyWarnings?: AiSafetyWarning[];
-  /** checked/limited/unavailable — surfaced even when safetyWarnings is empty, so a clean check
-   *  is never visually indistinguishable from one that could not run. */
+  /** checked/limited/unavailable. Limited and unavailable remain visible with no warnings;
+   *  checked-clean may stay quiet, so inability to run is never mistaken for a clean check. */
   safetyStatus?: AiSafetyStatus;
   /** Canonical safety result; explains package approval and coverage limitations. */
   safetyCheck?: AiSafetyCheck;
@@ -824,12 +824,9 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     (safetyWarnings?.length ?? 0) > 0 || pairsSentence !== null || references.some(isReferenceData);
   const coverageNote = hasSafetyOutput ? coverageSentence : null;
 
-  // While the answer is still streaming its citations are not annotated at all (see
-  // `renderedAnswer`), so a limits block here would describe annotations the reader cannot see.
-  // It also keeps a measurement off a message the hook never completed: closing the panel
-  // mid-stream leaves `isLoading` true forever — the panel is gone, so nothing re-renders it,
-  // but the message stays in the store and comes back on reopen. (Not because a trailing
-  // `grounded` lands on it: the unmount effect aborts the stream unconditionally, so it cannot.)
+  // While the answer is still streaming it is rendered as plain text without citation markup, so a
+  // limits block here would describe annotations the reader cannot see.
+  // It also keeps a measurement off an answer whose final annotations have not arrived yet.
   const showLimits = !isLoading && (pairsSentence !== null || coverageNote !== null || orderClaimsSentence !== null);
 
   // The API layer emits a code (not display text) for session expiry so the wording can be localized
@@ -895,7 +892,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
       {sections && (
         <div className={styles.answerSection}>
           <ConfidenceSection
-            label="Answer"
+            label={t('answerSection', 'Answer')}
             body={sections.answerBody}
             section={confidence?.answer}
             answerValidation={answerValidation}
@@ -910,13 +907,16 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
             <div style={{ display: 'contents' }} data-indepth-status={inDepth.status}>
               {inDepth.status === 'pending' && (
                 <div className={styles.csec} data-testid="section-in-depth">
-                  <div className={styles.ctitle}>In Depth</div>
+                  <div className={styles.ctitle}>{t('inDepthSection', 'In Depth')}</div>
                   {inDepth.answer ? (
                     <div className={styles.ans}>
                       <MarkdownAnswer answer={inDepth.answer} references={references} patientUuid={patientUuid} />
                     </div>
                   ) : (
-                    <InlineLoading className={styles.streamingIndicator} description="Preparing in-depth..." />
+                    <InlineLoading
+                      className={styles.streamingIndicator}
+                      description={t('preparingInDepth', 'Preparing in-depth...')}
+                    />
                   )}
                 </div>
               )}
@@ -956,7 +956,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
               {inDepth.status === 'complete' && inDepth.answer && (
                 <>
                   <ConfidenceSection
-                    label="In Depth"
+                    label={t('inDepthSection', 'In Depth')}
                     body={inDepth.answer}
                     section={confidence?.in_depth}
                     answerValidation={inDepthValidation(inDepth.validation)}
@@ -974,7 +974,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
           )}
           {!inDepth && sections.inDepthBody && (
             <ConfidenceSection
-              label="In Depth"
+              label={t('inDepthSection', 'In Depth')}
               body={sections.inDepthBody}
               section={confidence?.in_depth}
               references={references}

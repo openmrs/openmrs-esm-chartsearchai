@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useChartSearchAi } from './useChartSearchAi';
-import { chatPatientChartStream, fetchChatHistory, startNewChat } from '../api/chartsearchai';
+import { type AiSearchResponse, chatPatientChartStream, fetchChatHistory, startNewChat } from '../api/chartsearchai';
 import { chatSessionStore } from '../store/chat-session.store';
 
 vi.mock('../api/chartsearchai', () => ({
@@ -826,6 +826,7 @@ describe('useChartSearchAi', () => {
 
     unmount();
     expect(abortController.signal.aborted).toBe(true);
+    expect(chatSessionStore.getState().messagesByPatient['patient-uuid']).toEqual([]);
   });
 
   it('records the resolved model from the streaming done event onto the message', async () => {
@@ -1365,7 +1366,7 @@ describe('useChartSearchAi answer-limit measurements', () => {
     expect(result.current.messages[0]).toMatchObject(disclosure);
   });
 
-  it('does not blank the citation list when a later event carries no references', async () => {
+  it('does not blank the citation list when a later event omits references', async () => {
     const { result, callbacks } = await startTurn();
     act(() => {
       callbacks.onAnswerDone({
@@ -1376,12 +1377,31 @@ describe('useChartSearchAi answer-limit measurements', () => {
     act(() => {
       callbacks.onEvidenceUpdated({
         answer: 'Has it [1]',
-        references: [],
         interactionPairs: { found: 3, reported: 2 },
-      });
+      } as AiSearchResponse);
     });
     expect(result.current.messages[0].references).toHaveLength(1);
     expect(result.current.messages[0].interactionPairs).toEqual({ found: 3, reported: 2 });
+  });
+
+  it('clears draft citations when answer validation supplies an authoritative empty list', async () => {
+    const { result, callbacks } = await startTurn();
+    act(() => {
+      callbacks.onAnswerDone({
+        answer: 'Draft claim [1].',
+        references: [{ index: 1, resourceType: 'condition', resourceUuid: 'uuid-7', date: '2022-11-13' }],
+        answerValidation: { status: 'checking', label: 'Checking answer' },
+      });
+    });
+    act(() => {
+      callbacks.onAnswerValidation({
+        answer: 'The checked answer makes no chart claim.',
+        references: [],
+        answerValidation: { status: 'edited', label: 'Updated after check' },
+      });
+    });
+
+    expect(result.current.messages[0].references).toEqual([]);
   });
 
   it('does not let a trailing evidence_updated event dress up an answer the user stopped', async () => {
@@ -1543,7 +1563,7 @@ describe('useChartSearchAi token streaming', () => {
 });
 
 describe('useChartSearchAi after the panel closes', () => {
-  it('still completes a message whose done event arrives after unmount', async () => {
+  it('does not resurrect an empty stopped message when a decoded done event arrives after unmount', async () => {
     mockChatStream.mockImplementation(() => {});
     const { result, unmount } = renderHook(() => useChartSearchAi('patient-uuid'));
     await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
@@ -1557,13 +1577,10 @@ describe('useChartSearchAi after the panel closes', () => {
       callbacks.onDone({ answer: 'Late answer.', references: [] });
     });
     const stored = chatSessionStore.getState().messagesByPatient['patient-uuid'];
-    expect(stored).toHaveLength(1);
-    expect(stored[0].phase).toBe('complete');
-    expect(stored[0].answer).toBe('Late answer.');
-    expect(stored[0].conditionRuleCoverage).toBe('absent');
+    expect(stored).toEqual([]);
   });
 
-  it('still settles a message whose error arrives after unmount', async () => {
+  it('preserves a partial answer and ignores an error arriving after unmount', async () => {
     mockChatStream.mockImplementation(() => {});
     const { result, unmount } = renderHook(() => useChartSearchAi('patient-uuid'));
     await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
@@ -1571,13 +1588,17 @@ describe('useChartSearchAi after the panel closes', () => {
       result.current.submitQuestion('patient-uuid', 'Q');
     });
     const callbacks = mockChatStream.mock.calls[0][3];
+    act(() => {
+      callbacks.onToken('Partial answer.');
+    });
     unmount();
     act(() => {
       callbacks.onError('boom');
     });
     const stored = chatSessionStore.getState().messagesByPatient['patient-uuid'];
-    expect(stored[0].phase).toBe('error');
-    expect(stored[0].error).toBe('boom');
+    expect(stored[0].phase).toBe('complete');
+    expect(stored[0].answer).toBe('Partial answer.');
+    expect(stored[0].error).toBeNull();
   });
 });
 

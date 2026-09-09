@@ -219,6 +219,34 @@ describe('AiChatContent', () => {
   });
 
   describe('auto-scroll', () => {
+    it('keeps streamed reasoning in view before answer text arrives', () => {
+      mockUseChartSearchAi.mockReturnValue({
+        messages: [message({ reasoning: 'Checking' })],
+        isAwaitingAnswer: true,
+        submitQuestion: mockSubmitQuestion,
+        stopCurrent: mockStopCurrent,
+        clearMessages: vi.fn(),
+        startNewChatSession: mockStartNewChatSession,
+      });
+      const { rerender } = render(<AiChatContent mode="workspace" patientUuid="p1" />);
+      const history = screen.getByRole('log');
+      const setScrollTop = vi.fn();
+      Object.defineProperty(history, 'scrollHeight', { configurable: true, value: 500 });
+      Object.defineProperty(history, 'scrollTop', { configurable: true, set: setScrollTop });
+
+      mockUseChartSearchAi.mockReturnValue({
+        messages: [message({ reasoning: 'Checking the chart' })],
+        isAwaitingAnswer: true,
+        submitQuestion: mockSubmitQuestion,
+        stopCurrent: mockStopCurrent,
+        clearMessages: vi.fn(),
+        startNewChatSession: mockStartNewChatSession,
+      });
+      rerender(<AiChatContent mode="workspace" patientUuid="p1" />);
+
+      expect(setScrollTop).toHaveBeenCalledWith(500);
+    });
+
     it('brings the answer check back into view when checking finishes', () => {
       const streaming = {
         id: 'm1',
@@ -352,6 +380,28 @@ describe('AiChatContent', () => {
     });
   });
   describe('floating mode keyboard handling', () => {
+    it('does not trap keyboard focus while the panel is docked', () => {
+      render(<AiChatContent mode="floating" patientUuid="p1" onClose={vi.fn()} onToggleExpand={vi.fn()} />);
+      const lastEnabledControl = screen.getByRole('button', { name: /voice input/i });
+      lastEnabledControl.focus();
+      const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+      lastEnabledControl.dispatchEvent(tab);
+
+      expect(tab.defaultPrevented).toBe(false);
+    });
+
+    it('marks only the expanded panel as modal', () => {
+      const { rerender } = render(
+        <AiChatContent mode="floating" patientUuid="p1" onClose={vi.fn()} onToggleExpand={vi.fn()} />,
+      );
+      expect(screen.getByRole('dialog')).not.toHaveAttribute('aria-modal');
+
+      rerender(
+        <AiChatContent mode="floating" patientUuid="p1" onClose={vi.fn()} onToggleExpand={vi.fn()} isExpanded />,
+      );
+      expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true');
+    });
+
     it('calls onClose when Escape is pressed', async () => {
       const onClose = vi.fn();
       const user = userEvent.setup();
