@@ -1,18 +1,11 @@
 import { TextEncoder, TextDecoder } from 'util';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi, type Mock, type MockInstance } from 'vitest';
-import { openmrsFetch } from '@openmrs/esm-framework';
-import {
-  searchPatientChart,
-  searchPatientChartStream,
-  SESSION_EXPIRED_ERROR_CODE,
-  type AiSearchResponse,
-} from './chartsearchai';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi, type MockInstance } from 'vitest';
+import conformance from '../conformance/dual-provider-conformance.v1.json';
+import { chatPatientChartStream, SESSION_EXPIRED_ERROR_CODE } from './chartsearchai';
 
 // Polyfill for jsdom
 (globalThis as unknown as Record<string, unknown>).TextEncoder = TextEncoder;
 (globalThis as unknown as Record<string, unknown>).TextDecoder = TextDecoder;
-
-const mockOpenmrsFetch = openmrsFetch as Mock;
 
 beforeAll(() => {
   (window as unknown as Record<string, unknown>).openmrsBase = '/openmrs';
@@ -62,519 +55,391 @@ function flushPromises(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-// ── searchPatientChart (sync) ──────────────────────────────────────────
+// ── chatPatientChartStream (SSE, product profile selection) ─────────
 
-describe('searchPatientChart', () => {
-  it('sends a POST and returns data', async () => {
-    const expected: AiSearchResponse = {
-      answer: 'Test answer',
-      references: [],
-    };
-    mockOpenmrsFetch.mockResolvedValueOnce({ data: expected });
-
-    const result = await searchPatientChart('uuid-1', 'What happened?');
-
-    expect(mockOpenmrsFetch).toHaveBeenCalledWith(
-      '/ws/rest/v1/chartsearchai/search',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({ patient: 'uuid-1', question: 'What happened?' }),
-      }),
-    );
-    expect(result).toEqual(expected);
-  });
-
-  it('passes the abort signal through', async () => {
-    mockOpenmrsFetch.mockResolvedValueOnce({ data: { answer: 'ok', references: [] } });
-    const ac = new AbortController();
-
-    await searchPatientChart('uuid-1', 'q', ac);
-
-    expect(mockOpenmrsFetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ signal: ac.signal }));
-  });
-});
-
-// ── searchPatientChartStream (SSE) ─────────────────────────────────────
-
-describe('searchPatientChartStream', () => {
+describe('chatPatientChartStream', () => {
   let fetchSpy: MockInstance;
 
   afterEach(() => {
     fetchSpy?.mockRestore();
   });
 
-  function callStream(callbacks: { onToken: Mock; onDone: Mock; onError: Mock }) {
-    searchPatientChartStream('uuid-1', 'question?', callbacks);
-  }
-
   function makeCallbacks() {
     return {
+      onSession: vi.fn(),
       onToken: vi.fn(),
+      onPreliminary: vi.fn(),
+      onReasoning: vi.fn(),
+      onAnswerDone: vi.fn(),
+      onAnswerValidation: vi.fn(),
+      onEvidenceUpdated: vi.fn(),
+      onInDepthPending: vi.fn(),
+      onInDepthDone: vi.fn(),
+      onInDepthError: vi.fn(),
       onDone: vi.fn(),
       onError: vi.fn(),
-      onReferences: vi.fn(),
-      onGrounded: vi.fn(),
-      onThinking: vi.fn(),
-      onPreliminary: vi.fn(),
     };
   }
 
-  it('parses a references event and delivers the citations to onReferences', async () => {
-    const cb = makeCallbacks();
-    fetchSpy = vi
-      .spyOn(window, 'fetch')
-      .mockResolvedValueOnce(
-        mockStreamResponse([
-          'event:references\ndata: {"references":[{"index":2,"resourceType":"condition","resourceUuid":"uuid-7","date":"2022-11-13"}]}\n\n',
-          'event:token\ndata: Has it [2]\n\n',
-          'event:done\ndata: {"answer":"Has it [2]","references":[{"index":2,"resourceType":"condition","resourceUuid":"uuid-7","date":"2022-11-13","grounded":true}]}\n\n',
-        ]),
-      );
+  function sentBody(): Record<string, unknown> {
+    return JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
+  }
 
-    callStream(cb);
+  it.each(conformance.provider_lifecycle.filter((testCase) => testCase.expected === 'accept'))(
+    'consumes the canonical lifecycle fixture $id',
+    async (testCase) => {
+      const cb = makeCallbacks();
+      const payload: Record<string, string> = {
+        turn_started: '{"session":"sess-1","messageId":"m1","provider":"hub"}',
+        // The three delta channels carry raw text, not JSON.
+        preliminary_delta: 'Scanning records',
+        reasoning_delta: 'Checking the chart',
+        answer_delta: 'Answer',
+        answer_done: '{"answer":"Answer.","references":[],"messageId":"m1"}',
+        answer_validation:
+          '{"answer":"Answer.","references":[],"messageId":"m1","answerValidation":{"status":"checked","label":"Checked"}}',
+        indepth_pending: '{"messageId":"m1","inDepth":{"status":"pending","answer":""}}',
+        indepth_done: '{"messageId":"m1","inDepth":{"status":"complete","answer":"Detail."}}',
+        turn_done: '{"answer":"Answer.","references":[],"session":"sess-1","messageId":"m1","provider":"hub"}',
+        turn_error: '{"problemCode":"provider_unavailable"}',
+      };
+      const chunks = testCase.events.map((event) => `event:${event}\ndata: ${payload[event]}\n\n`);
+      fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(mockStreamResponse(chunks));
+
+      chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, 'single-e4b-checked', 'hub');
+      await flushPromises();
+
+      if (testCase.events.includes('turn_error')) {
+        expect(cb.onError).toHaveBeenCalledWith('provider_unavailable');
+        expect(cb.onDone).not.toHaveBeenCalled();
+      } else {
+        expect(cb.onDone).toHaveBeenCalledOnce();
+        expect(cb.onError).not.toHaveBeenCalled();
+      }
+      if (testCase.events.includes('answer_done')) {
+        expect(cb.onAnswerDone).toHaveBeenCalledOnce();
+      }
+    },
+  );
+
+  it('delivers answer_delta and reasoning_delta frames as text, one leading space stripped per SSE line', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(
+      mockStreamResponse([
+        'event:turn_started\ndata: {"session":"sess-1","messageId":"m1","provider":"bundled"}\n\n',
+        'event:preliminary_delta\ndata: Scanning records\n\n',
+        'event:reasoning_delta\ndata: Checking the chart\n\n',
+        'event:answer_delta\ndata: Hello\n\n',
+        // the token " world" is framed as "data:  world": the SSE space plus the token's own space
+        'event:answer_delta\ndata:  world\n\n',
+        'event:answer_done\ndata: {"answer":"Hello world","references":[],"messageId":"m1"}\n\n',
+        'event:turn_done\ndata: {"answer":"Hello world","references":[],"session":"sess-1","messageId":"m1","provider":"bundled"}\n\n',
+      ]),
+    );
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled');
     await flushPromises();
 
-    // Early (pre-grounding) citations arrive without a grounding verdict.
-    expect(cb.onReferences).toHaveBeenCalledWith([
-      { index: 2, resourceType: 'condition', resourceUuid: 'uuid-7', date: '2022-11-13' },
-    ]);
-    expect(cb.onDone).toHaveBeenCalled();
-    expect(cb.onError).not.toHaveBeenCalled();
+    expect(cb.onPreliminary.mock.calls.map((c) => c[0])).toEqual(['Scanning records']);
+    expect(cb.onReasoning.mock.calls.map((c) => c[0])).toEqual(['Checking the chart']);
+    expect(cb.onToken.mock.calls.map((c) => c[0])).toEqual(['Hello', ' world']);
+    expect(cb.onAnswerDone).toHaveBeenCalledOnce();
+    expect(cb.onDone).toHaveBeenCalledOnce();
   });
 
-  it('delivers an empty references event as an empty array', async () => {
+  it('rejects terminal success that omits the final answer envelope', async () => {
     const cb = makeCallbacks();
     fetchSpy = vi
       .spyOn(window, 'fetch')
-      .mockResolvedValueOnce(
-        mockStreamResponse([
-          'event:references\ndata: {"references":[]}\n\n',
-          'event:done\ndata: {"answer":"No record.","references":[]}\n\n',
-        ]),
-      );
+      .mockResolvedValueOnce(mockStreamResponse(['event:turn_done\ndata: {"session":"sess-1"}\n\n']));
 
-    callStream(cb);
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, 'single-e4b-checked', 'hub');
     await flushPromises();
 
-    expect(cb.onReferences).toHaveBeenCalledWith([]);
-  });
-
-  it('ignores a malformed references event without erroring the stream', async () => {
-    const cb = makeCallbacks();
-    fetchSpy = vi
-      .spyOn(window, 'fetch')
-      .mockResolvedValueOnce(
-        mockStreamResponse([
-          'event:references\ndata: {bad json}\n\n',
-          'event:done\ndata: {"answer":"a","references":[]}\n\n',
-        ]),
-      );
-
-    callStream(cb);
-    await flushPromises();
-
-    // `done` is authoritative — a broken early event must not call onReferences or onError.
-    expect(cb.onReferences).not.toHaveBeenCalled();
-    expect(cb.onError).not.toHaveBeenCalled();
-    expect(cb.onDone).toHaveBeenCalled();
-  });
-
-  it('parses thinking events and delivers the reasoning chunks to onThinking', async () => {
-    // The server streams the model's chain-of-thought before the answer so the UI can show
-    // live progress instead of a dead spinner during the (long, CPU-bound) reasoning phase.
-    const cb = makeCallbacks();
-    fetchSpy = vi
-      .spyOn(window, 'fetch')
-      .mockResolvedValueOnce(
-        mockStreamResponse([
-          'event:thinking\ndata: The query asks about medications. \n\n',
-          'event:thinking\ndata: Records [1] and [3] are drug orders.\n\n',
-          'event:token\ndata: Aspirin [1]\n\n',
-          'event:done\ndata: {"answer":"Aspirin [1]","references":[]}\n\n',
-        ]),
-      );
-
-    callStream(cb);
-    await flushPromises();
-
-    expect(cb.onThinking).toHaveBeenNthCalledWith(1, 'The query asks about medications. ');
-    expect(cb.onThinking).toHaveBeenNthCalledWith(2, 'Records [1] and [3] are drug orders.');
-    expect(cb.onDone).toHaveBeenCalled();
-    expect(cb.onError).not.toHaveBeenCalled();
-  });
-
-  it('parses preliminary events and delivers preview reasoning to onPreliminary', async () => {
-    // Progressive reasoning: the server streams a fast preview over the focused chart on its own
-    // "preliminary" event, ahead of the committed "thinking" reasoning, so the UI can show it as
-    // provisional and replace it when the real reasoning arrives. It is a distinct channel from
-    // onThinking.
-    const cb = makeCallbacks();
-    fetchSpy = vi
-      .spyOn(window, 'fetch')
-      .mockResolvedValueOnce(
-        mockStreamResponse([
-          'event:preliminary\ndata: Quick look: records [2] mention BP.\n\n',
-          'event:thinking\ndata: Reviewing the full chart.\n\n',
-          'event:token\ndata: Yes [2]\n\n',
-          'event:done\ndata: {"answer":"Yes [2]","references":[]}\n\n',
-        ]),
-      );
-
-    callStream(cb);
-    await flushPromises();
-
-    expect(cb.onPreliminary).toHaveBeenCalledWith('Quick look: records [2] mention BP.');
-    expect(cb.onThinking).toHaveBeenCalledWith('Reviewing the full chart.');
-    expect(cb.onDone).toHaveBeenCalled();
-    expect(cb.onError).not.toHaveBeenCalled();
-  });
-
-  it('parses a trailing grounded event after done and delivers the verdicts to onGrounded', async () => {
-    // chartsearchai.grounding.async=true: done arrives with verdict-less references, then a
-    // trailing grounded event re-sends them with verdicts once Tier-2 verification finishes.
-    const cb = makeCallbacks();
-    fetchSpy = vi
-      .spyOn(window, 'fetch')
-      .mockResolvedValueOnce(
-        mockStreamResponse([
-          'event:token\ndata: Has it [2]\n\n',
-          'event:done\ndata: {"answer":"Has it [2]","references":[{"index":2,"resourceType":"condition","resourceUuid":"uuid-7","date":"2022-11-13"}],"questionId":"q-9"}\n\n',
-          'event:grounded\ndata: {"references":[{"index":2,"resourceType":"condition","resourceUuid":"uuid-7","date":"2022-11-13","grounded":true}],"questionId":"q-9"}\n\n',
-        ]),
-      );
-
-    callStream(cb);
-    await flushPromises();
-
-    expect(cb.onDone).toHaveBeenCalled();
-    // The whole payload is handed over, not the references alone: under async grounding this
-    // event is the only place safetyWarnings and the answer-limit measurements arrive.
-    expect(cb.onGrounded).toHaveBeenCalledWith({
-      references: [{ index: 2, resourceType: 'condition', resourceUuid: 'uuid-7', date: '2022-11-13', grounded: true }],
-      questionId: 'q-9',
-    });
-    // done must have been delivered before the verdicts.
-    expect(cb.onDone.mock.invocationCallOrder[0]).toBeLessThan(cb.onGrounded.mock.invocationCallOrder[0]);
-    expect(cb.onError).not.toHaveBeenCalled();
-  });
-
-  it('ignores a malformed grounded event without erroring the finished stream', async () => {
-    const cb = makeCallbacks();
-    fetchSpy = vi
-      .spyOn(window, 'fetch')
-      .mockResolvedValueOnce(
-        mockStreamResponse([
-          'event:done\ndata: {"answer":"a","references":[]}\n\n',
-          'event:grounded\ndata: {bad json}\n\n',
-        ]),
-      );
-
-    callStream(cb);
-    await flushPromises();
-
-    // The answer is already complete; broken verdicts just leave citations unverified.
-    expect(cb.onGrounded).not.toHaveBeenCalled();
-    expect(cb.onError).not.toHaveBeenCalled();
-    expect(cb.onDone).toHaveBeenCalled();
-  });
-
-  it('parses token events and delivers them to onToken', async () => {
-    const cb = makeCallbacks();
-    fetchSpy = vi
-      .spyOn(window, 'fetch')
-      .mockResolvedValueOnce(
-        mockStreamResponse([
-          'event:token\ndata: Hello\n\nevent:token\ndata:  world\n\n',
-          'event:done\ndata: {"answer":"Hello world","references":[]}\n\n',
-        ]),
-      );
-
-    callStream(cb);
-    await flushPromises();
-
-    expect(cb.onToken).toHaveBeenCalledWith('Hello');
-    expect(cb.onToken).toHaveBeenCalledWith(' world');
-    expect(cb.onDone).toHaveBeenCalledWith({
-      answer: 'Hello world',
-      references: [],
-    });
-    expect(cb.onError).not.toHaveBeenCalled();
-  });
-
-  it('concatenates multiple data: lines with newlines per SSE spec', async () => {
-    const cb = makeCallbacks();
-    fetchSpy = vi
-      .spyOn(window, 'fetch')
-      .mockResolvedValueOnce(
-        mockStreamResponse([
-          'event:token\ndata: line1\ndata: line2\ndata: line3\n\n',
-          'event:done\ndata: {"answer":"a","references":[]}\n\n',
-        ]),
-      );
-
-    callStream(cb);
-    await flushPromises();
-
-    expect(cb.onToken).toHaveBeenCalledWith('line1\nline2\nline3');
-  });
-
-  it('handles data split across chunks (partial buffer)', async () => {
-    const cb = makeCallbacks();
-    // Split "event:token\ndata: partial\n\n" across two chunks
-    fetchSpy = vi
-      .spyOn(window, 'fetch')
-      .mockResolvedValueOnce(
-        mockStreamResponse([
-          'event:tok',
-          'en\ndata: partial\n\n',
-          'event:done\ndata: {"answer":"p","references":[]}\n\n',
-        ]),
-      );
-
-    callStream(cb);
-    await flushPromises();
-
-    expect(cb.onToken).toHaveBeenCalledWith('partial');
-    expect(cb.onDone).toHaveBeenCalled();
-  });
-
-  it('strips only a single leading space from data field value', async () => {
-    const cb = makeCallbacks();
-    fetchSpy = vi
-      .spyOn(window, 'fetch')
-      .mockResolvedValueOnce(
-        mockStreamResponse([
-          'event:token\ndata:  two spaces\n\n',
-          'event:done\ndata: {"answer":"","references":[]}\n\n',
-        ]),
-      );
-
-    callStream(cb);
-    await flushPromises();
-
-    // "data:  two spaces" → strip first space → " two spaces"
-    expect(cb.onToken).toHaveBeenCalledWith(' two spaces');
-  });
-
-  it('handles data field with no space after colon', async () => {
-    const cb = makeCallbacks();
-    fetchSpy = vi
-      .spyOn(window, 'fetch')
-      .mockResolvedValueOnce(
-        mockStreamResponse(['event:token\ndata:noSpace\n\n', 'event:done\ndata:{"answer":"","references":[]}\n\n']),
-      );
-
-    callStream(cb);
-    await flushPromises();
-
-    expect(cb.onToken).toHaveBeenCalledWith('noSpace');
-    expect(cb.onDone).toHaveBeenCalled();
-  });
-
-  it('dispatches error event from SSE stream', async () => {
-    const cb = makeCallbacks();
-    fetchSpy = vi
-      .spyOn(window, 'fetch')
-      .mockResolvedValueOnce(mockStreamResponse(['event:error\ndata: Something went wrong\n\n']));
-
-    callStream(cb);
-    await flushPromises();
-
-    expect(cb.onError).toHaveBeenCalledWith('Something went wrong');
     expect(cb.onDone).not.toHaveBeenCalled();
-  });
-
-  it('calls onError when stream ends without done or error event', async () => {
-    const cb = makeCallbacks();
-    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(mockStreamResponse(['event:token\ndata: hello\n\n']));
-
-    callStream(cb);
-    await flushPromises();
-
-    expect(cb.onToken).toHaveBeenCalledWith('hello');
-    expect(cb.onError).toHaveBeenCalledWith('Stream ended unexpectedly without a response');
-  });
-
-  it('calls onError when done event contains invalid JSON', async () => {
-    const cb = makeCallbacks();
-    fetchSpy = vi
-      .spyOn(window, 'fetch')
-      .mockResolvedValueOnce(mockStreamResponse(['event:done\ndata: {not json}\n\n']));
-
-    callStream(cb);
-    await flushPromises();
-
     expect(cb.onError).toHaveBeenCalledWith('Failed to parse final response');
   });
 
-  it('calls onError on non-OK HTTP status with JSON error body', async () => {
-    const cb = makeCallbacks();
-    const resp = {
-      ok: false,
-      status: 403,
-      body: null,
-      json: () => Promise.resolve({ error: 'Forbidden: missing privilege' }),
-    } as unknown as Response;
-    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(resp);
-
-    callStream(cb);
-    await flushPromises();
-
-    expect(cb.onError).toHaveBeenCalledWith('Forbidden: missing privilege');
-  });
-
-  // A bare (non-JSON) 500 on the SSE endpoint is OpenMRS's expired-session login redirect failing
-  // with "sendRedirect() after the response has been committed" (the stream already committed the
-  // response), not a controller error — controller errors are always JSON. Surface it as expiry.
-  it('treats a non-JSON 500 as session expiry (sendRedirect-after-commit)', async () => {
-    const cb = makeCallbacks();
-    const resp = {
-      ok: false,
-      status: 500,
-      body: null,
-      json: () => Promise.reject(new Error('no body')),
-    } as unknown as Response;
-    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(resp);
-
-    callStream(cb);
-    await flushPromises();
-
-    expect(cb.onError).toHaveBeenCalledWith(SESSION_EXPIRED_ERROR_CODE);
-  });
-
-  // Guards the bodyError-first ordering: a genuine controller 500 (JSON body) must surface its own
-  // message, NOT be masked as session expiry — only the bare/no-body 500 is the committed-redirect case.
-  it('surfaces a JSON 500 error verbatim rather than as session expiry', async () => {
-    const cb = makeCallbacks();
-    const resp = {
-      ok: false,
-      status: 500,
-      body: null,
-      json: () => Promise.resolve({ error: 'Internal error' }),
-    } as unknown as Response;
-    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(resp);
-
-    callStream(cb);
-    await flushPromises();
-
-    expect(cb.onError).toHaveBeenCalledWith('Internal error');
-  });
-
-  it('treats a non-JSON 401 as session expiry', async () => {
-    const cb = makeCallbacks();
-    const resp = {
-      ok: false,
-      status: 401,
-      body: null,
-      json: () => Promise.reject(new Error('no body')),
-    } as unknown as Response;
-    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(resp);
-
-    callStream(cb);
-    await flushPromises();
-
-    expect(cb.onError).toHaveBeenCalledWith(SESSION_EXPIRED_ERROR_CODE);
-  });
-
-  it('still reports a generic server error for a non-auth status with no JSON body', async () => {
-    const cb = makeCallbacks();
-    const resp = {
-      ok: false,
-      status: 400,
-      body: null,
-      json: () => Promise.reject(new Error('no body')),
-    } as unknown as Response;
-    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(resp);
-
-    callStream(cb);
-    await flushPromises();
-
-    expect(cb.onError).toHaveBeenCalledWith('Server error: 400');
-  });
-
-  it('calls onError when streaming is not supported (no body)', async () => {
-    const cb = makeCallbacks();
-    const resp = {
-      ok: true,
-      status: 200,
-      headers: { get: () => 'text/event-stream' },
-      body: null,
-    } as unknown as Response;
-    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(resp);
-
-    callStream(cb);
-    await flushPromises();
-
-    expect(cb.onError).toHaveBeenCalledWith('Streaming not supported by this browser.');
-  });
-
-  it('calls onError with session expired message on redirect (302 to login)', async () => {
-    const cb = makeCallbacks();
-    const resp = {
-      type: 'opaqueredirect',
-      ok: false,
-      status: 0,
-      body: null,
-    } as unknown as Response;
-    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(resp);
-
-    callStream(cb);
-    await flushPromises();
-
-    expect(cb.onError).toHaveBeenCalledWith(SESSION_EXPIRED_ERROR_CODE);
-  });
-
-  it('ignores blank lines that have no pending event (no false dispatch)', async () => {
+  it('sends only the selected product profile as the inference override', async () => {
     const cb = makeCallbacks();
     fetchSpy = vi
       .spyOn(window, 'fetch')
       .mockResolvedValueOnce(
-        mockStreamResponse(['\n\n\nevent:token\ndata: hi\n\n', 'event:done\ndata: {"answer":"","references":[]}\n\n']),
+        mockStreamResponse(['event:turn_done\ndata: {"answer":"","references":[],"session":"sess-1"}\n\n']),
       );
 
-    callStream(cb);
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, 'team-med-checked', 'hub');
     await flushPromises();
 
-    expect(cb.onToken).toHaveBeenCalledTimes(1);
-    expect(cb.onToken).toHaveBeenCalledWith('hi');
+    expect(sentBody()).toMatchObject({
+      patient: 'uuid-1',
+      question: 'q?',
+      profile: 'team-med-checked',
+    });
+    expect(sentBody()).not.toHaveProperty('endpointUrl');
+    expect(sentBody()).not.toHaveProperty('modelName');
+    expect(sentBody()).not.toHaveProperty('staged');
   });
 
-  it('does not call onError when fetch is aborted', async () => {
+  it('sends the selected provider in the request body', async () => {
     const cb = makeCallbacks();
-    const abortError = new DOMException('The operation was aborted.', 'AbortError');
-    fetchSpy = vi.spyOn(window, 'fetch').mockRejectedValueOnce(abortError);
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse(['event:turn_done\ndata: {"answer":"","references":[],"session":"s"}\n\n']),
+      );
 
-    const ac = new AbortController();
-    searchPatientChartStream('uuid-1', 'q', cb, ac);
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, 'team-med-checked', 'hub');
     await flushPromises();
 
+    expect(sentBody()).toMatchObject({ provider: 'hub' });
+  });
+
+  it('sends bundled turns without a hub profile', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse(['event:turn_done\ndata: {"answer":"","references":[],"session":"s"}\n\n']),
+      );
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled');
+    await flushPromises();
+
+    expect(sentBody()).toMatchObject({ provider: 'bundled' });
+    expect(sentBody()).not.toHaveProperty('profile');
+  });
+
+  it('rejects an empty hub profile instead of relying on a relay fallback', () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi.spyOn(window, 'fetch');
+
+    expect(() => chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, '', 'hub')).toThrow(
+      'A product profile is required',
+    );
+    expect(window.fetch).not.toHaveBeenCalled();
+  });
+
+  it('emits the localizable session-expired code for an authentication redirect', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce({
+      type: 'opaqueredirect',
+      status: 0,
+    } as Response);
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled');
+    await flushPromises();
+
+    expect(cb.onError).toHaveBeenCalledWith(SESSION_EXPIRED_ERROR_CODE);
+    expect(cb.onDone).not.toHaveBeenCalled();
+  });
+
+  it("maps the answer_done event's `model` field onto resolvedModel", async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:answer_done\ndata: {"answer":"ok","references":[],"model":"med-agent-team"}\n\n',
+          'event:turn_done\ndata: {"answer":"ok","references":[],"model":"med-agent-team","session":"sess-1"}\n\n',
+        ]),
+      );
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, 'single-e4b-checked', 'hub');
+    await flushPromises();
+
+    expect(cb.onAnswerDone).toHaveBeenCalledWith(expect.objectContaining({ resolvedModel: 'med-agent-team' }));
     expect(cb.onError).not.toHaveBeenCalled();
   });
 
-  it('calls onError on non-abort fetch failure', async () => {
+  it('parses staged answer and in-depth events before final done', async () => {
     const cb = makeCallbacks();
-    fetchSpy = vi.spyOn(window, 'fetch').mockRejectedValueOnce(new TypeError('Failed to fetch'));
-
-    callStream(cb);
-    await flushPromises();
-
-    expect(cb.onError).toHaveBeenCalledWith('Failed to fetch');
-  });
-
-  it('dispatches pending event at end of stream (no trailing blank line)', async () => {
-    const cb = makeCallbacks();
-    // Stream ends with data but no trailing \n\n
     fetchSpy = vi
       .spyOn(window, 'fetch')
-      .mockResolvedValueOnce(mockStreamResponse(['event:done\ndata: {"answer":"a","references":[]}\n']));
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:answer_done\ndata: {"answer":"Direct answer","references":[],"messageId":"m1","model":"med-agent-team-high-validated","safetyStatus":"limited","safetyCheck":{"schema_version":"drug_safety.v1","status":"limited","package":{"id":"research-seed-v1","review_state":"proposed"},"issues":["source_not_clinically_approved"]},"answerValidation":{"status":"checking","label":"Checking answer"},"inDepth":{"status":"pending","answer":""}}\n\n',
+          'event:answer_validation\ndata: {"answer":"Direct answer checked","references":[],"messageId":"m1","model":"med-agent-team-high-validated","answerValidation":{"status":"edited","label":"Updated after check","originalAnswer":"Direct answer [1]","originalReferences":[{"index":1,"resourceType":"Observation"}]}}\n\n',
+          'event:indepth_pending\ndata: {"messageId":"m1","inDepth":{"status":"pending","answer":""}}\n\n',
+          'event:indepth_done\ndata: {"inDepth":{"status":"complete","answer":"- background","reviewDraft":"- rejected [1]","reviewReferences":[{"index":1,"resourceType":"Observation"}]}}\n\n',
+          'event:turn_done\ndata: {"answer":"Direct answer checked","references":[],"messageId":"m1","model":"med-agent-team-high-validated","provider":"hub","session":"sess-1","answerValidation":{"status":"edited","label":"Updated after check","originalAnswer":"Direct answer [1]","originalReferences":[{"index":1,"resourceType":"Observation"}]},"inDepth":{"status":"complete","answer":"- background","reviewDraft":"- rejected [1]","reviewReferences":[{"index":1,"resourceType":"Observation"}]}}\n\n',
+        ]),
+      );
 
-    callStream(cb);
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, 'team-med-checked', 'hub');
     await flushPromises();
 
-    expect(cb.onDone).toHaveBeenCalledWith({
-      answer: 'a',
-      references: [],
+    expect(sentBody()).toMatchObject({ profile: 'team-med-checked' });
+    expect(cb.onAnswerDone).toHaveBeenCalledWith(
+      expect.objectContaining({
+        answer: 'Direct answer',
+        resolvedModel: 'med-agent-team-high-validated',
+        safetyStatus: 'limited',
+        safetyCheck: {
+          schema_version: 'drug_safety.v1',
+          status: 'limited',
+          package: { id: 'research-seed-v1', review_state: 'proposed' },
+          issues: ['source_not_clinically_approved'],
+        },
+        answerValidation: { status: 'checking', label: 'Checking answer' },
+        inDepth: { status: 'pending', answer: '' },
+      }),
+    );
+    expect(cb.onAnswerValidation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        answer: 'Direct answer checked',
+        answerValidation: {
+          status: 'edited',
+          label: 'Updated after check',
+          originalAnswer: 'Direct answer [1]',
+          originalReferences: [{ index: 1, resourceType: 'Observation' }],
+        },
+      }),
+    );
+    expect(cb.onInDepthPending).toHaveBeenCalledWith({
+      messageId: 'm1',
+      inDepth: { status: 'pending', answer: '' },
     });
+    expect(cb.onInDepthDone).toHaveBeenCalledWith({
+      inDepth: {
+        status: 'complete',
+        answer: '- background',
+        reviewDraft: '- rejected [1]',
+        reviewReferences: [{ index: 1, resourceType: 'Observation' }],
+      },
+    });
+    expect(cb.onDone).toHaveBeenCalledWith(expect.objectContaining({ session: 'sess-1' }));
+    expect(cb.onError).not.toHaveBeenCalled();
+  });
+
+  it('delivers final bundled evidence updates before the terminal marker', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:answer_done\ndata: {"answer":"A [1].","references":[{"index":1,"groundingStatus":"checking"}],"messageId":"m1"}\n\n',
+          'event:evidence_updated\ndata: {"answer":"A [1].","references":[{"index":1,"resolutionStatus":"resolved","groundingStatus":"verified"}],"messageId":"m1"}\n\n',
+          'event:turn_done\ndata: {"answer":"A [1].","references":[{"index":1,"resolutionStatus":"resolved","groundingStatus":"verified"}],"session":"sess-1","messageId":"m1","provider":"bundled"}\n\n',
+        ]),
+      );
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled');
+    await flushPromises();
+
+    expect(cb.onEvidenceUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        references: [expect.objectContaining({ groundingStatus: 'verified' })],
+      }),
+    );
+    expect(cb.onError).not.toHaveBeenCalled();
+  });
+
+  it('ignores lifecycle events after a terminal marker', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:turn_done\ndata: {"answer":"A","references":[],"session":"sess-1","messageId":"m1","provider":"bundled"}\n\n',
+          'event:evidence_updated\ndata: {"references":[{"index":1,"groundingStatus":"verified"}]}\n\n',
+          'event:indepth_pending\ndata: {"inDepth":{"status":"pending","answer":""}}\n\n',
+        ]),
+      );
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled');
+    await flushPromises();
+
+    expect(cb.onDone).toHaveBeenCalledOnce();
+    expect(cb.onEvidenceUpdated).not.toHaveBeenCalled();
+    expect(cb.onInDepthPending).not.toHaveBeenCalled();
+    expect(cb.onError).not.toHaveBeenCalled();
+  });
+
+  it('rejects the retired flat in-depth event wire', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse(['event:indepth_done\ndata: {"status":"complete","answer":"retired wire"}\n\n']),
+      );
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, 'single-e4b-checked');
+    await flushPromises();
+
+    expect(cb.onInDepthDone).not.toHaveBeenCalled();
+    expect(cb.onError).toHaveBeenCalledWith('Failed to parse in-depth response');
+  });
+
+  it('treats a malformed clinical event as terminal even if turn_done follows', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:answer_validation\ndata: {not-json}\n\n',
+          'event:turn_done\ndata: {"answer":"must not replace error","references":[]}\n\n',
+        ]),
+      );
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, 'single-e4b-checked', 'hub');
+    await flushPromises();
+
+    expect(cb.onError).toHaveBeenCalledOnce();
+    expect(cb.onError).toHaveBeenCalledWith('Failed to parse answer validation response');
+    expect(cb.onDone).not.toHaveBeenCalled();
+  });
+
+  // ── canonical turn lifecycle wire (turn_started / turn_done / turn_error) ──
+
+  it('finalizes on turn_done and preserves the staged answer', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:answer_done\ndata: {"answer":"Direct answer","references":[],"messageId":"m1"}\n\n',
+          'event:turn_done\ndata: {"answer":"Direct answer","references":[],"session":"sess-1","messageId":"m1","provider":"hub"}\n\n',
+        ]),
+      );
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, 'team-med-checked');
+    await flushPromises();
+
+    expect(cb.onAnswerDone).toHaveBeenCalledWith(expect.objectContaining({ answer: 'Direct answer' }));
+    expect(cb.onDone).toHaveBeenCalledWith(expect.objectContaining({ session: 'sess-1' }));
+    expect(cb.onError).not.toHaveBeenCalled();
+  });
+
+  it('surfaces turn_error through onError with the problem code', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(mockStreamResponse(['event:turn_error\ndata: {"problemCode":"hub_not_configured"}\n\n']));
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, 'team-med-checked');
+    await flushPromises();
+
+    expect(cb.onError).toHaveBeenCalledWith(expect.stringContaining('hub_not_configured'));
+    expect(cb.onDone).not.toHaveBeenCalled();
+  });
+
+  it('captures the conversation session from turn_started', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:turn_started\ndata: {"session":"sess-42","messageId":"m1","provider":"hub"}\n\n',
+          'event:answer_done\ndata: {"answer":"A","references":[],"messageId":"m1"}\n\n',
+          'event:turn_done\ndata: {"answer":"A","references":[],"session":"sess-42","messageId":"m1","provider":"hub"}\n\n',
+        ]),
+      );
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, 'team-med-checked');
+    await flushPromises();
+
+    expect(cb.onSession).toHaveBeenCalledWith('sess-42');
     expect(cb.onError).not.toHaveBeenCalled();
   });
 });

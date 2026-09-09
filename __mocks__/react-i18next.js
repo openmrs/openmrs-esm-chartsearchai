@@ -11,7 +11,12 @@ function interpolate(text, options) {
 module.exports = {
   ...reactI18next,
   useTranslation: () => ({
-    t: (key, defaultValue, options) => interpolate(defaultValue ?? key, options),
+    // Both call shapes the app uses: t(key, 'default', {vars}) and t(key, {defaultValue, ...vars}).
+    t: (key, defaultValue, options = {}) => {
+      const values = typeof defaultValue === 'object' && defaultValue !== null ? defaultValue : options;
+      const template = typeof defaultValue === 'object' && defaultValue !== null ? defaultValue.defaultValue : defaultValue;
+      return interpolate(String(template ?? key), values);
+    },
     i18n: { language: 'en' },
   }),
 };

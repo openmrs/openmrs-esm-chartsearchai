@@ -8,6 +8,195 @@
   gap: layout.$spacing-04;
 }
 
+// Per-section validator confidence. Flags precede the response, which remains visible for review.
+.csec {
+  margin-top: layout.$spacing-04;
+}
+
+.ctitle {
+  @include type.type-style('label-01');
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: colors.$gray-60;
+  margin-bottom: layout.$spacing-02;
+}
+
+.cchip {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 0.625rem;
+  margin-left: layout.$spacing-02;
+  vertical-align: middle;
+}
+
+.answerValidation {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 0.625rem;
+  margin-left: layout.$spacing-02;
+  vertical-align: middle;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.answerValidation_checking {
+  background: #edf5ff;
+  color: #0043ce;
+  border: 1px solid #78a9ff;
+}
+
+.answerValidation_checked {
+  background: #defbe6;
+  color: #0e6027;
+  border: 1px solid #42be65;
+}
+
+.answerValidation_edited {
+  background: #fcf4d6;
+  color: #684e00;
+  border: 1px solid #f1c21b;
+}
+
+.answerValidation_needs_review {
+  background: #fff1f1;
+  color: #a2191f;
+  border: 1px solid #da1e28;
+}
+
+.answerValidation_unavailable {
+  background: colors.$gray-10;
+  color: colors.$gray-70;
+  border: 1px solid colors.$gray-30;
+}
+
+.answerValidationSummary {
+  margin: layout.$spacing-03 0 layout.$spacing-04;
+  padding: layout.$spacing-04;
+  border: 1px solid colors.$gray-30;
+  border-left: 4px solid colors.$gray-30;
+  color: colors.$gray-100;
+  overflow-wrap: anywhere;
+}
+
+.answerValidationSummaryHeading {
+  @include type.type-style('heading-compact-01');
+  color: colors.$gray-100;
+  margin-bottom: layout.$spacing-02;
+}
+
+.answerValidationSummaryBody {
+  @include type.type-style('body-compact-01');
+  color: colors.$gray-90;
+  line-height: 1.45;
+  white-space: pre-line;
+}
+
+.answerValidationSummary_checking {
+  border-color: colors.$blue-20;
+  border-left-color: colors.$blue-40;
+  background: colors.$blue-10;
+}
+
+.answerValidationSummary_checked {
+  border-color: colors.$green-20;
+  border-left-color: colors.$green-40;
+  background: colors.$green-10;
+}
+
+.answerValidationSummary_edited {
+  border-color: colors.$yellow-20;
+  border-left-color: colors.$yellow-30;
+  background: colors.$yellow-10;
+}
+
+.answerValidationSummary_needs_review {
+  border-color: colors.$red-20;
+  border-left-color: colors.$red-60;
+  background: colors.$red-10;
+}
+
+.answerValidationSummary_unavailable {
+  border-color: colors.$gray-30;
+  border-left-color: colors.$gray-30;
+  background: colors.$gray-10;
+}
+
+.caveat {
+  border-radius: 6px;
+  padding: layout.$spacing-03 layout.$spacing-04;
+  font-size: 0.75rem;
+  margin: layout.$spacing-02 0;
+}
+
+.caveatRed {
+  background: #fff1f1;
+  border: 1px solid #da1e28;
+  color: #a2191f;
+}
+
+.caveatYellow {
+  background: #fcf4d6;
+  border: 1px solid #f1c21b;
+  color: #684e00;
+}
+
+.collapse > summary {
+  cursor: pointer;
+  color: colors.$blue-60;
+  font-size: 0.6875rem;
+  padding: layout.$spacing-02 0;
+}
+
+.reviewDraft {
+  margin-top: layout.$spacing-04;
+  border-left: 3px solid colors.$red-60;
+  padding-left: layout.$spacing-04;
+
+  > summary {
+    cursor: pointer;
+    color: colors.$gray-80;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: layout.$spacing-02 0;
+
+    &:focus-visible {
+      outline: 2px solid colors.$blue-60;
+      outline-offset: 2px;
+    }
+  }
+}
+
+.reviewDraftNotice {
+  font-size: 0.75rem;
+  padding: layout.$spacing-03;
+  margin: layout.$spacing-02 0;
+}
+
+.reviewDraftEdited {
+  border-left-color: colors.$yellow-30;
+}
+
+.reviewDraftNoticeRejected {
+  background: #fff1f1;
+  color: #a2191f;
+}
+
+.reviewDraftNoticeEdited {
+  background: #fcf4d6;
+  color: #684e00;
+}
+
+.reviewDraftBody {
+  margin-top: layout.$spacing-03;
+}
+
+.ans {
+  margin-top: layout.$spacing-02;
+}
+
 .answerSection {
   position: relative;
 }
@@ -20,12 +209,65 @@
   margin: 0;
 }
 
+// Rendered-markdown answer (headers / bold / lists) with inline citation chips.
+.markdownAnswer {
+  @include type.type-style('body-01');
+  color: colors.$gray-90;
+  line-height: 1.5;
+
+  > :first-child {
+    margin-top: 0;
+  }
+
+  > :last-child {
+    margin-bottom: 0;
+  }
+
+  ul,
+  ol {
+    margin: layout.$spacing-02 0;
+    padding-left: layout.$spacing-06;
+  }
+
+  li {
+    margin-bottom: layout.$spacing-01;
+  }
+}
+
+.answerParagraph {
+  margin: 0 0 layout.$spacing-03 0;
+}
+
+.answerHeading {
+  @include type.type-style('heading-compact-01');
+  color: colors.$gray-100;
+  margin: layout.$spacing-04 0 layout.$spacing-02 0;
+}
+
 .actionsRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: layout.$spacing-03;
   margin-top: layout.$spacing-02;
+}
+
+.actionsLeft {
+  display: flex;
+  align-items: center;
+  gap: layout.$spacing-03;
+  min-width: 0;
+}
+
+// Subtle faded tag naming the hub product profile that produced this answer.
+.modelTag {
+  @include type.type-style('label-01');
+  color: colors.$gray-50;
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 16rem;
 }
 
 .streamingIndicator {
@@ -121,6 +363,82 @@
 .groundedTag {
   display: inline-flex;
   align-items: center;
+}
+
+.evidenceSection {
+  display: flex;
+  flex-direction: column;
+  gap: layout.$spacing-03;
+  padding-top: layout.$spacing-02;
+}
+
+.evidenceSectionTitle {
+  @include type.type-style('label-01');
+  color: colors.$gray-60;
+}
+
+.evidenceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: layout.$spacing-03;
+}
+
+.evidenceCard {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: layout.$spacing-02;
+  padding: layout.$spacing-03;
+  border: 1px solid colors.$gray-20;
+  border-radius: 6px;
+  background: colors.$white-0;
+}
+
+.evidenceMeta,
+.evidenceUuid {
+  @include type.type-style('label-01');
+  color: colors.$gray-60;
+  overflow-wrap: anywhere;
+}
+
+.evidenceBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: layout.$spacing-02;
+}
+
+.evidenceLink,
+.evidenceTitleText {
+  @include type.type-style('body-compact-01');
+  font-weight: 600;
+  color: colors.$gray-100;
+  overflow-wrap: anywhere;
+}
+
+.evidenceLink {
+  text-decoration: none;
+
+  &:hover {
+    color: colors.$blue-60;
+    text-decoration: underline;
+  }
+}
+
+.evidenceSource {
+  @include type.type-style('body-compact-01');
+  color: colors.$gray-80;
+  overflow-wrap: anywhere;
+}
+
+.evidenceMore {
+  margin-top: layout.$spacing-01;
+}
+
+.evidenceMore > summary {
+  cursor: pointer;
+  color: colors.$blue-60;
+  font-size: 0.6875rem;
+  padding: layout.$spacing-02 0;
 }
 
 // An inline citation the backend reports cannot be the drug order its sentence names.
@@ -277,13 +595,36 @@
   flex-direction: column;
   gap: layout.$spacing-02;
   padding: layout.$spacing-03;
-  background-color: colors.$red-10;
-  border-left: 3px solid colors.$red-60;
+  border-left: 3px solid colors.$gray-50;
   border-radius: 0.25rem;
+}
+
+.safetyWarnings_flagged {
+  background-color: colors.$red-10;
+  border-left-color: colors.$red-60;
+}
+
+.safetyWarnings_checked {
+  background-color: colors.$green-10;
+  border-left-color: colors.$green-50;
+}
+
+.safetyWarnings_limited {
+  background-color: colors.$yellow-10;
+  border-left-color: colors.$yellow-30;
+}
+
+.safetyWarnings_unavailable {
+  background-color: colors.$gray-10;
+  border-left-color: colors.$gray-50;
 }
 
 .safetyWarningsLabel {
   @include type.type-style('label-01');
+  color: colors.$gray-90;
+}
+
+.safetyWarnings_flagged .safetyWarningsLabel {
   color: colors.$red-70;
 }
 
@@ -318,4 +659,76 @@
   // and overflow-wrap breaks an over-long unbroken token (e.g. an ATC code) rather than overflowing.
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.safetyCheckSummary {
+  color: colors.$gray-90;
+  border-top: 1px solid colors.$gray-30;
+  padding-top: layout.$spacing-03;
+}
+
+.safetyCheckSummaryHeading {
+  @include type.type-style('label-01');
+  font-weight: 600;
+  margin-bottom: layout.$spacing-02;
+}
+
+.safetyCheckIssueList {
+  @include type.type-style('body-compact-01');
+  margin: 0;
+  padding-left: layout.$spacing-05;
+}
+
+.safetyCheckSources {
+  @include type.type-style('body-compact-01');
+  color: colors.$gray-90;
+  margin: layout.$spacing-03 0 0;
+  overflow-wrap: anywhere;
+}
+
+.safetyCheckSourceRow {
+  display: grid;
+  grid-template-columns: minmax(8rem, max-content) minmax(0, 1fr);
+  column-gap: layout.$spacing-03;
+
+  dt {
+    font-weight: 600;
+  }
+
+  dd {
+    margin: 0;
+  }
+
+  & + & {
+    margin-top: layout.$spacing-02;
+  }
+}
+
+.safetyCheckProvenance {
+  display: block;
+  color: colors.$gray-70;
+  margin-top: layout.$spacing-01;
+}
+
+@media (max-width: 42rem) {
+  .safetyCheckSourceRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+// Live reasoning streamed before the answer: subdued and provisional, never the answer itself.
+.reasoningText {
+  @include type.type-style('body-compact-01');
+  color: colors.$gray-60;
+  font-style: italic;
+  white-space: pre-wrap;
+}
+
+// The progressive preview: provisional, and visibly more tentative than committed reasoning, which
+// replaces it. Never styled as the answer.
+.preliminaryReasoningText {
+  @include type.type-style('label-01');
+  color: colors.$gray-50;
+  font-style: italic;
+  white-space: pre-wrap;
 }

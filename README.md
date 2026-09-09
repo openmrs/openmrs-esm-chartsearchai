@@ -14,18 +14,21 @@ A floating AI button appears on the patient chart page. Clicking it opens a sear
 - "Has she ever had a bad reaction to penicillin?"
 - "Is her diabetes getting better or worse?"
 
-The module streams an answer token-by-token (via SSE) with numbered citations (e.g. `[1]`, `[2]`) that link back to the relevant section of the patient chart (Results, Orders, Allergies, etc.).
+The module receives staged SSE updates from the backend. The bundled provider may stream reasoning and answer text token by token; hub profiles deliver the short answer as a whole stage and may follow it with answer validation and In-Depth analysis. Numbered citations (e.g. `[1]`, `[2]`) link back to the relevant section of the patient chart (Results, Orders, Allergies, etc.).
+
+When the selected med-agent-hub profile emits deterministic safety advisories, the panel shows non-blocking **safety-check** chips below the answer and renders knowledge-base citations as distinct, non-navigating reference chips.
+
+Low-confidence output remains visible with its warning so a clinician or evaluator can inspect it. If checks edit an Answer or remove In-Depth claims, the original model output appears in an open, clearly labeled review section. Rejected draft citations use their own source mappings and are never presented as final checked evidence.
 
 When the backend's optional [drug-reference feature](https://github.com/openmrs/openmrs-module-chartsearchai#drug-reference-injection--safety-validation) is enabled, the panel also shows non-blocking **safety-check** chips below the answer (overdose / interaction / contraindication), renders module-supplied reference citations (drug references, safety findings, drug-class notes) as distinct non-navigating reference chips, and states what the safety check did and did not cover — see [Fields that state the answer's limits](#fields-that-state-the-answers-limits).
 
 ## Backend
 
-This frontend requires the [Chart Search AI backend module](https://github.com/openmrs/openmrs-module-chartsearchai), which uses a RAG (Retrieval Augmented Generation) architecture:
+This frontend requires the [Chart Search AI backend module](https://github.com/openmrs/openmrs-module-chartsearchai). It is provider-neutral: the backend advertises the enabled provider and capabilities, then the frontend renders the returned lifecycle without choosing provider endpoints.
 
-1. **Retrieval** -- patient records are embedded with all-MiniLM-L6-v2 (ONNX, CPU) and narrowed to the top-K most relevant via cosine similarity.
-2. **Generation** -- the filtered records are sent to a local GGUF LLM (default: Llama 3.3 8B via llama.cpp) with a system prompt that produces cited, structured answers.
+The **bundled provider** keeps ChartSearchAI's local or configured remote engine, token-streaming answer path, and bundled context, safety, and grounding behavior. The **med-agent-hub provider** relays one staged hub profile request; the hub owns profile composition, optional context sources, temporal and safety checks, answer review, citation grounding, and In-Depth generation. Switching providers starts a new conversation, and there is no automatic fallback between them.
 
-See the [backend README](https://github.com/openmrs/openmrs-module-chartsearchai#readme) for full setup instructions, model downloads, and global property configuration.
+The frontend renders those lifecycle and evidence states. It does not choose provider endpoints, compose model stages, or maintain a model catalog.
 
 ## Prerequisites
 
@@ -47,25 +50,28 @@ yarn start
 
 The following options can be set via the OpenMRS 3.x config system:
 
-| Property              | Type      | Default                          | Description                                                 |
-| --------------------- | --------- | -------------------------------- | ----------------------------------------------------------- |
-| `aiSearchPlaceholder` | `string`  | `"Ask AI about this patient..."` | Placeholder text for the search input                       |
-| `maxQuestionLength`   | `number`  | `1000`                           | Maximum characters allowed in a question                    |
-| `useStreaming`        | `boolean` | `true`                           | Use the SSE streaming endpoint for token-by-token responses |
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `aiSearchPlaceholder` | `string` | `"Ask AI about this patient..."` | Placeholder text for the search input |
+| `maxQuestionLength` | `number` | `1000` | Maximum characters allowed in a question |
+| `showModelPicker` | `boolean` | `true` | Show configured providers and, when supported, the selected provider's profiles |
 
 ## API endpoints used
 
 All endpoints are served by the backend module under `/ws/rest/v1/chartsearchai/`:
 
-| Method | Path             | Description                                         |
-| ------ | ---------------- | --------------------------------------------------- |
-| POST   | `/search`        | Synchronous search (returns complete answer)        |
-| POST   | `/search/stream` | SSE streaming search (tokens streamed in real-time) |
+| Method | Path | Description |
+|---|---|---|
+| POST | `/chat` | Synchronous chat turn (returns the complete answer) |
+| POST | `/chat/stream` | SSE staged chat turn (answer/validation/in-depth phase events; multi-turn via `session`) |
+| GET | `/chat` | Hydrate a patient's active session + prior messages |
+| POST | `/chat/new` | Close the active session and open a fresh one |
+| GET | `/providers` | Discover enabled provider metadata and capabilities |
+| GET | `/models` | Discover med-agent-hub profiles when the hub provider is enabled |
 
-Request body: `{ "patient": "<uuid>", "question": "<text>" }`
+Request body: `{ "patient": "<uuid>", "question": "<text>", "session": "<uuid, optional>", "provider": "<configured provider, optional>", "profile": "<hub profile when selected, optional>" }`
 
-Response:
-
+Response (`POST /chat`, and the final `done` event of `POST /chat/stream`):
 ```json
 {
   "answer": "The patient is currently on metformin [1] and lisinopril [2]...",
@@ -85,6 +91,8 @@ Response:
     }
   ],
   "safetyWarnings": [],
+  "session": "session-uuid",
+  "messageId": "assistant-message-uuid",
   "misattributedOrderCitations": [],
   "unstatedFindingSeverities": [],
   "conditionRuleCoverage": "unloaded",
@@ -127,7 +135,15 @@ The third is a cost rather than a wrong reading, and it is the one most likely t
 - `references[].source` — the dataset a cited record's content came from (`"DDInter 2.0 (via openmrs-ddi-knowledge-base)"`), and `null` both for a chart record and for a module-derived finding, which is computed rather than quoted. Not drawn, so a clinician cannot see which dataset a drug-reference citation is quoting; the backend is explicit that a client must branch on the value rather than on `group`, since a `reference`-group entry may legitimately carry no attribution.
 - `safetyWarnings[].chartOrderBridges` — `{ substance, orderDisplay }`, saying _this chip's `Ibuprofen` is your `Advil 400mg` order_. This one is a partial: the panel **reads** it, as one of the three ORDER-FREE kinds of evidence the severity join weighs — they corroborate or contradict and none outranks another, which is why a disagreement refuses rather than being settled by precedence — but does not **display** it. The backend asks for it beside the chip, and until that is done a clinician reading a chip list next to the answer still has to work out whether `Advil` and `Ibuprofen` are one prescription or two.
 
-Under `chartsearchai.grounding.async=true` the SSE `done` event is emitted before validation runs, so `safetyWarnings` and every measurement taken _after_ the answer — `interactionPairs`, `misattributedOrderCitations`, `unstatedFindingSeverities` — arrive on the trailing `grounded` event instead. That is why the stream's `onGrounded` callback hands over the whole payload rather than the references alone. Two exceptions not to gate on that event: `conditionRuleCoverage` is read off the dataset load before the model is called and so is already final on `done`, and on an answer-cache hit no early `done` is emitted at all.
+Under `chartsearchai.grounding.async=true`, the canonical chat stream can emit `answer_done` before validation finishes. The final references, `safetyWarnings`, and measurements taken after generation then arrive in `evidence_updated`, followed by the complete envelope in `turn_done`. The client applies the whole evidence payload rather than updating references alone. `conditionRuleCoverage` is known before generation and can already be final on `answer_done`; an answer-cache hit may return final evidence immediately.
+
+Hub product profiles emit this staged sequence:
+`answer_done` (direct answer complete) → optional `answer_validation` (self-check result) →
+`indepth_pending` → `indepth_done` or `indepth_error` → `turn_done`. The hub does not token-stream the
+answer or in-depth text; each content phase is delivered whole. The bundled provider may instead
+emit `preliminary_delta`, `reasoning_delta`, and `answer_delta` events before `answer_done`, followed by
+optional `evidence_updated` and terminal `turn_done`. See the
+[backend README's streaming chat docs](https://github.com/openmrs/openmrs-module-chartsearchai#streaming-chat-sse) for the full event reference.
 
 The required privilege is **AI Query Patient Data**.
 
