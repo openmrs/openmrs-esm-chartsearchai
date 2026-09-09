@@ -13,8 +13,9 @@ interface ProviderPickerProps {
 
 /**
  * Clinical-answer provider picker (bundled local inference vs. the med-agent-hub
- * relay). It appears only when ChartSearchAI advertises more than one provider
- * (`pickerVisible`). Switching starts a fresh conversation because the backend
+ * relay). A single ready provider needs no picker. An unavailable saved selection
+ * stays visible so the user can explicitly choose a replacement. Switching starts
+ * a fresh conversation because the backend
  * attributes each conversation to a single provider, and it never silently falls
  * back to another provider.
  */
@@ -45,29 +46,22 @@ const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSwitched }) => {
     [providers],
   );
 
-  // Prefer an explicit usable selection, then a usable backend default, then the
-  // first usable provider. An unavailable advertised default remains visible as a
-  // disabled menu item but must not hide the providers that can serve a request.
-  const effectiveProviderId = useMemo(() => {
-    if (selectedProviderId && availableProviders.some((provider) => provider.id === selectedProviderId)) {
-      return selectedProviderId;
-    }
-    if (data?.defaultProvider && availableProviders.some((provider) => provider.id === data.defaultProvider)) {
-      return data.defaultProvider;
-    }
-    return availableProviders[0]?.id ?? null;
-  }, [availableProviders, data, selectedProviderId]);
+  // Availability never changes the provider bound to an existing conversation.
+  const effectiveProviderId = selectedProviderId ?? data?.defaultProvider ?? null;
 
   const effectiveProvider = useMemo(
-    () => availableProviders.find((provider) => provider.id === effectiveProviderId) ?? null,
-    [availableProviders, effectiveProviderId],
+    () => providers.find((provider) => provider.id === effectiveProviderId) ?? null,
+    [providers, effectiveProviderId],
   );
+  const providerReady = Boolean(effectiveProvider?.enabled && effectiveProvider.ready);
+  const providerLabel = effectiveProvider?.label ?? effectiveProviderId ?? t('providers', 'Providers');
+  const triggerLabel = providerReady ? providerLabel : `${providerLabel} (${t('unavailable', 'unavailable')})`;
 
   // Make the backend-advertised default explicit in shared state so provider-specific controls
   // know which contract applies. This does not start a new conversation: it records the provider
   // the backend would select anyway.
   useEffect(() => {
-    if (effectiveProviderId && effectiveProviderId !== selectedProviderId) {
+    if (effectiveProviderId && selectedProviderId === null) {
       chatSessionStore.setState({ selectedProviderId: effectiveProviderId });
     }
   }, [effectiveProviderId, selectedProviderId]);
@@ -83,7 +77,7 @@ const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSwitched }) => {
     [effectiveProviderId, onSwitched],
   );
 
-  if (!data || !data.pickerVisible || !effectiveProvider) {
+  if (!data || (!data.pickerVisible && providerReady)) {
     return null;
   }
 
@@ -92,7 +86,7 @@ const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSwitched }) => {
       <div className={styles.triggerRow}>
         <MenuButton
           data-testid="chartsearchai-provider-picker"
-          label={effectiveProvider.label}
+          label={triggerLabel}
           kind="ghost"
           size="sm"
           menuAlignment="top-end"
