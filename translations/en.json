@@ -29,6 +29,8 @@
   "interactionPairsWithheld": "Withheld pairs were dropped lowest-rated first — where many were found, severe pairs can be among them.",
   "microphonePermissionDenied": "Microphone access was denied. Please allow microphone permissions.",
   "misattributedCitationTitle": "The module reports that this citation may not be the medication order this sentence names, so it is not offered as a link. This is a report about the citation, not a verdict on the safety finding.",
+  "modelReasoning": "Model reasoning",
+  "modelReasoningCaveat": "The model’s working notes, not the answer. Nothing here was checked against the chart, and it can state things the answer does not.",
   "noPatientSelected": "No patient selected",
   "notGrounded": "Unsupported",
   "notGroundedTitle": "The cited record may not support this statement — verify against the chart.",

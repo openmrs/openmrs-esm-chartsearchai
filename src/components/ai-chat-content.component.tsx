@@ -7,6 +7,7 @@ import { useChartSearchAi } from '../hooks/useChartSearchAi';
 import { answerLimitsOf } from '../utils/answer-limits';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { type ChartSearchAiConfig } from '../config-schema';
+import AiReasoningDisclosure from './ai-reasoning-disclosure.component';
 import AiResponsePanel from './ai-response-panel.component';
 import styles from './ai-chat-content.scss';
 
@@ -188,6 +189,33 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
           <div key={msg.id} className={styles.messagePair}>
             <div className={styles.questionBubble}>{msg.question}</div>
             <div className={styles.answerBubble}>
+              {msg.isLoading && !msg.answer && (
+                <div>
+                  <InlineLoading description={t('thinkingEllipsis', 'Thinking...')} />
+                  {/* Provisional preview reasoning, shown only until the committed reasoning/answer
+                      arrives (the hook then clears preliminaryReasoning). Labelled so a clinician
+                      knows it may change. Gets no disclosure of its own, unlike the committed
+                      reasoning below: it is superseded within the same answer, so there would be
+                      nothing behind the row by the time a reader could open it. */}
+                  {!msg.reasoning && msg.preliminaryReasoning && (
+                    <p className={styles.preliminaryReasoning}>
+                      <span className={styles.preliminaryLabel}>
+                        {t('preliminaryReasoning', 'Reviewing the most relevant records…')}
+                      </span>{' '}
+                      {msg.preliminaryReasoning}
+                    </p>
+                  )}
+                </div>
+              )}
+              {/* Above the answer, which is where the reasoning happened in time, and OUTSIDE
+                  AiResponsePanel on purpose: that panel returns early on an error with no answer,
+                  and an errored run is the case where "what was it doing?" is worth most.
+                  The config test is not the hook's: the hook decides whether reasoning is
+                  ingested at all, this decides whether a transcript already on a message —
+                  one that predates an operator flipping the flag off — is still offered. */}
+              {config.showReasoning && msg.reasoning && (
+                <AiReasoningDisclosure reasoning={msg.reasoning} isStreaming={msg.isLoading && !msg.answer} />
+              )}
               <AiResponsePanel
                 answer={msg.answer}
                 references={msg.references}
@@ -199,23 +227,6 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
                 patientUuid={patientUuid ?? ''}
                 onFeedbackComplete={handleFeedbackComplete}
               />
-              {msg.isLoading && !msg.answer && (
-                <div>
-                  <InlineLoading description={t('thinkingEllipsis', 'Thinking...')} />
-                  {msg.reasoning && <p className={styles.liveReasoning}>{msg.reasoning}</p>}
-                  {/* Provisional preview reasoning, shown only until the committed reasoning/answer
-                      arrives (the hook then clears preliminaryReasoning). Labelled so a clinician
-                      knows it may change. */}
-                  {!msg.reasoning && msg.preliminaryReasoning && (
-                    <p className={styles.preliminaryReasoning}>
-                      <span className={styles.preliminaryLabel}>
-                        {t('preliminaryReasoning', 'Reviewing the most relevant records…')}
-                      </span>{' '}
-                      {msg.preliminaryReasoning}
-                    </p>
-                  )}
-                </div>
-              )}
             </div>
           </div>
         ))}

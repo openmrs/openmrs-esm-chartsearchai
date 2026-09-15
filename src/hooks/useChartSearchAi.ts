@@ -21,8 +21,12 @@ export interface ChatMessage extends MessageAnswerLimits {
   questionId: string;
   isLoading: boolean;
   error: string | null;
-  /** Live model reasoning while the answer is still being generated — a transient
-   *  "thinking" indicator, cleared when the answer completes. Never the answer. */
+  /** Model reasoning, streamed before the answer. KEPT once the answer completes — the chat
+   *  bubble offers it behind a collapsed disclosure, so a reader who wants to know how the model
+   *  got there has somewhere to go. Still never the answer: nothing in it was checked against the
+   *  chart, and it can state things the answer does not. Stays '' when the `showReasoning` config
+   *  is off — that switch is enforced here at ingestion, so nothing is held that will not be
+   *  drawn; the bubble tests it again for a transcript that predates the flag being turned off. */
   reasoning: string;
   /** Transient PRELIMINARY reasoning from the progressive-reasoning preview pass (server GP
    *  chartsearchai.progressiveReasoning.enabled): shown before {@link reasoning} on a slow host,
@@ -117,12 +121,23 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         if (idx === -1) return prev;
         const msg = prev[idx];
         if (!msg.isLoading) return prev;
-        if (!msg.answer) {
+        // Nothing to keep, so the abandoned question goes too: a stop before anything streamed is
+        // a clean "never mind".
+        //
+        // Reasoning counts as something to keep even with no answer, and that is the stop that
+        // matters — the reasoning phase is the long one, so it is where a reader actually presses
+        // Stop, often BECAUSE the notes were going somewhere they did not want, and the text was
+        // on screen when they did. Testing `!msg.answer` alone deleted exactly that.
+        //
+        // The PREVIEW deliberately does not count: it is never persisted, so a message holding
+        // only that would keep a disclosure row with nothing behind it.
+        if (!msg.answer && !msg.reasoning) {
           return prev.filter((_, i) => i !== idx);
         }
         const updated = [...prev];
-        // Mirror `done`: a settled message keeps no reasoning scratchpad, even when stopped mid-stream.
-        updated[idx] = { ...msg, isLoading: false, reasoning: '', preliminaryReasoning: '' };
+        // Mirror `done`: the reasoning is KEPT — a reader who stopped a run is exactly the reader
+        // who wants to see what the model was doing — while the provisional preview is dropped.
+        updated[idx] = { ...msg, isLoading: false, preliminaryReasoning: '' };
         return updated;
       });
     }
@@ -206,8 +221,11 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
             ...mergeDisclosure(updated[idx], response),
             questionId: response.questionId ?? '',
             isLoading: false,
-            // the scratchpad served its purpose as a live indicator; don't persist it
-            reasoning: '',
+            // `reasoning` is deliberately NOT cleared here: it is the transcript the bubble's
+            // collapsed disclosure offers, and clearing it is what left a reader who looked away
+            // during the reasoning phase with nothing to open. The PREVIEW is still dropped — it
+            // is provisional by construction, and its [N] markers index the focused chart rather
+            // than this answer's records, so it must never outlive the answer that supersedes it.
             preliminaryReasoning: '',
           };
           return updated;
@@ -243,6 +261,12 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
               // arrives (see onThinking/onToken), so a wrong preview can't linger.
               onPreliminary: (chunk) => {
                 if (!isMountedRef.current) return;
+                // Gated with the committed reasoning below, and for the same reason: the preview
+                // IS model reasoning, only earlier and less certain, so an operator who has said
+                // clinicians are not to be shown the model's working notes has said so about
+                // this too. Gating ingestion rather than the render is deliberate — reasoning
+                // that is never drawn is reasoning there is no reason to hold on a message.
+                if (!config.showReasoning) return;
                 updateMessages(patientUuid, (prev) => {
                   const idx = prev.findIndex((m) => m.id === messageId);
                   if (idx === -1) return prev;
@@ -259,6 +283,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
               // Live reasoning: shown while the model thinks, before any answer text exists.
               onThinking: (chunk) => {
                 if (!isMountedRef.current) return;
+                if (!config.showReasoning) return;
                 updateMessages(patientUuid, (prev) => {
                   const idx = prev.findIndex((m) => m.id === messageId);
                   if (idx === -1) return prev;
@@ -360,7 +385,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         fail(err instanceof Error ? err.message : 'An unknown error occurred');
       }
     },
-    [config.useStreaming],
+    [config.useStreaming, config.showReasoning],
   );
 
   useEffect(() => {

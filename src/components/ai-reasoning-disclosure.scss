@@ -1,0 +1,71 @@
+@use '@carbon/layout';
+@use '@carbon/colors';
+@use '@carbon/type';
+
+/* The model's reasoning, kept after the answer and offered behind a disclosure. Subdued
+   throughout: it is scratchpad a reader may ask for, never the answer. */
+.disclosure {
+  margin-bottom: layout.$spacing-03;
+}
+
+.summary {
+  @include type.type-style('label-01');
+  display: flex;
+  align-items: center;
+  gap: layout.$spacing-02;
+  width: fit-content;
+  color: colors.$gray-60;
+  cursor: pointer;
+  /* Both are needed to drop the native marker: `list-style` covers Firefox and Chromium,
+     the pseudo-element covers Safari and older WebKit. The chevron below replaces it. */
+  list-style: none;
+
+  &::-webkit-details-marker {
+    display: none;
+  }
+
+  &:hover {
+    color: colors.$gray-80;
+  }
+
+  &:focus-visible {
+    outline: 2px solid colors.$blue-60;
+    outline-offset: 2px;
+  }
+}
+
+.chevron {
+  flex-shrink: 0;
+  transform: rotate(-90deg);
+  transition: transform 0.15s ease;
+}
+
+.disclosure[open] .chevron {
+  transform: rotate(0deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
+}
+
+.transcript {
+  /* No left indent: the transcript's left edge lines up with the answer prose below it
+     (`.answerText` in ai-response-panel.scss carries `margin: 0`, and both sit inside the same
+     `.answerBubble` padding). It therefore sits flush with the summary's chevron rather than
+     hanging under the summary's label — re-indenting it to clear the chevron is what breaks the
+     alignment with the answer. */
+  margin: layout.$spacing-02 0 0;
+  font-size: 0.75rem;
+  font-style: italic;
+  color: colors.$gray-60;
+  white-space: pre-wrap;
+}
+
+/* Applied once the answer has arrived, so a long transcript a reader expands cannot push the
+   answer it annotates off the screen. */
+.transcriptCapped {
+  max-height: 12rem;
+  overflow-y: auto;
+}

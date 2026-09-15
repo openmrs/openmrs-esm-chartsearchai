@@ -190,8 +190,8 @@ describe('useChartSearchAi', () => {
     expect(result.current.messages[0].isLoading).toBe(false);
   });
 
-  it('accumulates live reasoning on the in-flight message and clears it on done', () => {
-    mockUseConfig.mockReturnValue({ useStreaming: true });
+  it('accumulates live reasoning on the in-flight message and keeps it after done', () => {
+    mockUseConfig.mockReturnValue({ useStreaming: true, showReasoning: true });
     const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
 
     act(() => {
@@ -207,16 +207,43 @@ describe('useChartSearchAi', () => {
     expect(result.current.messages[0].reasoning).toBe('The query asks about medications. Scanning drug orders.');
     expect(result.current.messages[0].isLoading).toBe(true);
 
-    // The scratchpad is a live indicator, not part of the persisted result — done clears it.
+    // The transcript SURVIVES `done`, and that is the whole point of keeping it: the bubble
+    // offers it behind a collapsed disclosure, and clearing it here is what left a reader who
+    // looked away during the reasoning phase with nothing to open. It is still not the answer —
+    // the two live on separate fields and only `answer` is rendered as prose.
     act(() => {
       callbacks.onDone({ answer: 'Aspirin [1]', references: [], questionId: 'q-1' });
     });
+    expect(result.current.messages[0].reasoning).toBe('The query asks about medications. Scanning drug orders.');
+    expect(result.current.messages[0].answer).toBe('Aspirin [1]');
+  });
+
+  it('ingests no reasoning at all when showReasoning is off', () => {
+    // The operator switch is enforced at INGESTION, not at the render: reasoning that will never
+    // be drawn is reasoning there is no reason to hold on a message. Covers the preview channel
+    // too — that is model reasoning as well, only earlier and less certain.
+    mockUseConfig.mockReturnValue({ useStreaming: true, showReasoning: false });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'What meds?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+
+    act(() => {
+      callbacks.onPreliminary('Quick look: records mention aspirin.');
+      callbacks.onThinking('Scanning drug orders.');
+      callbacks.onDone({ answer: 'Aspirin [1]', references: [], questionId: 'q-1' });
+    });
+
     expect(result.current.messages[0].reasoning).toBe('');
+    expect(result.current.messages[0].preliminaryReasoning).toBe('');
+    // The answer itself is untouched by the switch.
     expect(result.current.messages[0].answer).toBe('Aspirin [1]');
   });
 
   it('accumulates preliminary preview reasoning and replaces it when committed reasoning arrives', () => {
-    mockUseConfig.mockReturnValue({ useStreaming: true });
+    mockUseConfig.mockReturnValue({ useStreaming: true, showReasoning: true });
     const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
 
     act(() => {
@@ -246,7 +273,7 @@ describe('useChartSearchAi', () => {
   });
 
   it('strips a preview citation marker even when it is split across SSE chunks', () => {
-    mockUseConfig.mockReturnValue({ useStreaming: true });
+    mockUseConfig.mockReturnValue({ useStreaming: true, showReasoning: true });
     const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
 
     act(() => {
@@ -393,7 +420,7 @@ describe('useChartSearchAi', () => {
   });
 
   it('stopCurrent preserves history of completed messages when second message has partial answer', async () => {
-    mockUseConfig.mockReturnValue({ useStreaming: true });
+    mockUseConfig.mockReturnValue({ useStreaming: true, showReasoning: true });
     const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
 
     // First question resolves via streaming
@@ -427,8 +454,12 @@ describe('useChartSearchAi', () => {
     expect(result.current.messages[0].answer).toBe('Answer.');
     expect(result.current.messages[1].isLoading).toBe(false);
     expect(result.current.messages[1].answer).toBe('Partial...');
-    // The settled message keeps no leftover reasoning scratchpad (mirrors `done`).
-    expect(result.current.messages[1].reasoning).toBe('');
+    // The stopped message KEEPS its reasoning (mirrors `done`) — a reader who cut a run short is
+    // exactly the reader who wants to see what the model was doing. Asserted with the flag on,
+    // because with it off nothing is ingested and this would read green while testing nothing.
+    expect(result.current.messages[1].reasoning).toBe('Still thinking...');
+    // The provisional preview is still dropped.
+    expect(result.current.messages[1].preliminaryReasoning).toBe('');
   });
 
   it('stopCurrent aborts the in-flight request', async () => {
@@ -479,6 +510,59 @@ describe('useChartSearchAi', () => {
     // Empty-answer message is removed; history of first message preserved
     expect(result.current.messages).toHaveLength(1);
     expect(result.current.messages[0].answer).toBe('Answer.');
+  });
+
+  it('keeps a stopped message that streamed reasoning but no answer', () => {
+    // The stop that matters. The reasoning phase is the LONG one, so it is where a reader actually
+    // presses Stop — often BECAUSE the notes were going somewhere they did not want — and the text
+    // was on screen when they did. Removing the message deleted what they had just been shown,
+    // which is the one case the disclosure exists for.
+    //
+    // A stop with nothing streamed still removes the bubble: see the test above, which reaches
+    // this through the non-streaming path and so carries no reasoning.
+    mockUseConfig.mockReturnValue({ useStreaming: true, showReasoning: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'What meds?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+    act(() => {
+      callbacks.onThinking('Scanning drug orders, then active problems.');
+    });
+    expect(result.current.messages[0].answer).toBe('');
+
+    act(() => {
+      result.current.stopCurrent();
+    });
+
+    expect(result.current.messages).toHaveLength(1);
+    expect(result.current.messages[0].reasoning).toBe('Scanning drug orders, then active problems.');
+    expect(result.current.messages[0].isLoading).toBe(false);
+    expect(result.current.messages[0].answer).toBe('');
+  });
+
+  it('still removes a stopped message carrying only the provisional preview', () => {
+    // The asymmetry is deliberate: the preview is never persisted (its [N] markers index the
+    // focused chart, not the answer's records), so a message holding only that has nothing behind
+    // its disclosure row — an empty bubble rather than something a reader can open.
+    mockUseConfig.mockReturnValue({ useStreaming: true, showReasoning: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'What meds?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+    act(() => {
+      callbacks.onPreliminary('Quick look: records mention aspirin.');
+    });
+    expect(result.current.messages[0].preliminaryReasoning).toBe('Quick look: records mention aspirin.');
+
+    act(() => {
+      result.current.stopCurrent();
+    });
+
+    expect(result.current.messages).toHaveLength(0);
   });
 
   it('drops a second submitQuestion call while the first is in flight', () => {

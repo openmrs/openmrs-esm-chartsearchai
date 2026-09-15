@@ -233,18 +233,9 @@
   flex-shrink: 0;
 }
 
-/* Live model reasoning shown under the Thinking... spinner before any answer text exists.
-   Deliberately subdued: it is scratchpad, not the answer. */
-.liveReasoning {
-  margin-top: 0.25rem;
-  font-size: 0.75rem;
-  font-style: italic;
-  color: #6f6f6f;
-  white-space: pre-wrap;
-}
-
-/* Progressive-reasoning preview: visibly provisional (more subdued than liveReasoning) and
-   prefixed by a small badge, so a clinician reads it as a draft the committed answer replaces. */
+/* Progressive-reasoning preview: visibly provisional (more subdued than the committed reasoning
+   in ai-reasoning-disclosure.scss) and prefixed by a small badge, so a clinician reads it as a
+   draft the committed answer replaces. */
 .preliminaryReasoning {
   margin-top: 0.25rem;
   font-size: 0.75rem;
