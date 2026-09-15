@@ -121,7 +121,17 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         if (idx === -1) return prev;
         const msg = prev[idx];
         if (!msg.isLoading) return prev;
-        if (!msg.answer) {
+        // Nothing to keep, so the abandoned question goes too: a stop before anything streamed is
+        // a clean "never mind".
+        //
+        // Reasoning counts as something to keep even with no answer, and that is the stop that
+        // matters — the reasoning phase is the long one, so it is where a reader actually presses
+        // Stop, often BECAUSE the notes were going somewhere they did not want, and the text was
+        // on screen when they did. Testing `!msg.answer` alone deleted exactly that.
+        //
+        // The PREVIEW deliberately does not count: it is never persisted, so a message holding
+        // only that would keep a disclosure row with nothing behind it.
+        if (!msg.answer && !msg.reasoning) {
           return prev.filter((_, i) => i !== idx);
         }
         const updated = [...prev];

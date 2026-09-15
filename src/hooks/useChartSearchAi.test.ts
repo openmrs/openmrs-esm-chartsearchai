@@ -512,6 +512,59 @@ describe('useChartSearchAi', () => {
     expect(result.current.messages[0].answer).toBe('Answer.');
   });
 
+  it('keeps a stopped message that streamed reasoning but no answer', () => {
+    // The stop that matters. The reasoning phase is the LONG one, so it is where a reader actually
+    // presses Stop — often BECAUSE the notes were going somewhere they did not want — and the text
+    // was on screen when they did. Removing the message deleted what they had just been shown,
+    // which is the one case the disclosure exists for.
+    //
+    // A stop with nothing streamed still removes the bubble: see the test above, which reaches
+    // this through the non-streaming path and so carries no reasoning.
+    mockUseConfig.mockReturnValue({ useStreaming: true, showReasoning: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'What meds?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+    act(() => {
+      callbacks.onThinking('Scanning drug orders, then active problems.');
+    });
+    expect(result.current.messages[0].answer).toBe('');
+
+    act(() => {
+      result.current.stopCurrent();
+    });
+
+    expect(result.current.messages).toHaveLength(1);
+    expect(result.current.messages[0].reasoning).toBe('Scanning drug orders, then active problems.');
+    expect(result.current.messages[0].isLoading).toBe(false);
+    expect(result.current.messages[0].answer).toBe('');
+  });
+
+  it('still removes a stopped message carrying only the provisional preview', () => {
+    // The asymmetry is deliberate: the preview is never persisted (its [N] markers index the
+    // focused chart, not the answer's records), so a message holding only that has nothing behind
+    // its disclosure row — an empty bubble rather than something a reader can open.
+    mockUseConfig.mockReturnValue({ useStreaming: true, showReasoning: true });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => {
+      result.current.submitQuestion('patient-uuid', 'What meds?');
+    });
+    const callbacks = mockSearchPatientChartStream.mock.calls[0][2];
+    act(() => {
+      callbacks.onPreliminary('Quick look: records mention aspirin.');
+    });
+    expect(result.current.messages[0].preliminaryReasoning).toBe('Quick look: records mention aspirin.');
+
+    act(() => {
+      result.current.stopCurrent();
+    });
+
+    expect(result.current.messages).toHaveLength(0);
+  });
+
   it('drops a second submitQuestion call while the first is in flight', () => {
     mockSearchPatientChart.mockReturnValue(new Promise(() => {}));
     const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
