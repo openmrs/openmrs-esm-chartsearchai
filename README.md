@@ -16,6 +16,14 @@ A floating AI button appears on the patient chart page. Clicking it opens a sear
 
 The module streams an answer token-by-token (via SSE) with numbered citations (e.g. `[1]`, `[2]`) that link back to the relevant section of the patient chart (Results, Orders, Allergies, etc.).
 
+### Model reasoning
+
+The backend streams the model's reasoning before the answer, on its own `thinking` SSE event. The reasoning phase is long and CPU-bound, so the text shows itself while it arrives — a dead spinner says nothing about whether anything is happening — and then **collapses** to a `Model reasoning` row above the answer rather than disappearing. A reader who looked away, or who wants to know how an answer was reached, opens the row; the choice is remembered for the session, so wanting to watch it costs one click rather than one per answer.
+
+It is the model's scratchpad, not a finding: none of it goes through the grounding pass that verifies the answer's citations, and it can state things the answer does not. That caveat is the `Model reasoning` row's tooltip — a native `title`, so it is the summary's accessible description for a screen reader, but it appears on hover only. A touch user, or a reader who never hovers, sees no caveat on the transcript itself and has only the panel's own "AI-generated … verify against the records" disclaimer. The transcript is never copied by the answer's Copy button, never written to browser storage, and is dropped with the chat history at logout. `showReasoning: false` switches it off entirely — nothing is shown, and nothing is retained.
+
+The optional progressive-reasoning preview (backend GP `chartsearchai.progressiveReasoning.enabled`) gets no disclosure of its own: it is superseded within the same answer, so there would be nothing behind the row by the time a reader could open it.
+
 When the backend's optional [drug-reference feature](https://github.com/openmrs/openmrs-module-chartsearchai#drug-reference-injection--safety-validation) is enabled, the panel also shows non-blocking **safety-check** chips below the answer (overdose / interaction / contraindication), renders module-supplied reference citations (drug references, safety findings, drug-class notes) as distinct non-navigating reference chips, and states what the safety check did and did not cover — see [Fields that state the answer's limits](#fields-that-state-the-answers-limits).
 
 ## Backend
@@ -52,6 +60,7 @@ The following options can be set via the OpenMRS 3.x config system:
 | `aiSearchPlaceholder` | `string`  | `"Ask AI about this patient..."` | Placeholder text for the search input                       |
 | `maxQuestionLength`   | `number`  | `1000`                           | Maximum characters allowed in a question                    |
 | `useStreaming`        | `boolean` | `true`                           | Use the SSE streaming endpoint for token-by-token responses |
+| `showReasoning`       | `boolean` | `true`                           | Show the model's reasoning — see [Model reasoning](#model-reasoning) |
 
 ## API endpoints used
 

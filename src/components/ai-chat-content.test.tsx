@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { useConfig, usePatient } from '@openmrs/esm-framework';
 import { useChartSearchAi } from '../hooks/useChartSearchAi';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
+import { chatSessionStore } from '../store/chat-session.store';
 import AiChatContent from './ai-chat-content.component';
 
 vi.mock('../hooks/useChartSearchAi', () => ({
@@ -47,7 +48,8 @@ beforeEach(() => {
   mockSubmitQuestion = vi.fn();
   mockStopCurrent = vi.fn();
   speechCallback = null;
-  mockUseConfig.mockReturnValue({ aiSearchPlaceholder: 'Ask AI...', maxQuestionLength: 1000 });
+  mockUseConfig.mockReturnValue({ aiSearchPlaceholder: 'Ask AI...', maxQuestionLength: 1000, showReasoning: true });
+  chatSessionStore.setState({ reasoningExpanded: undefined });
   mockUsePatient.mockReturnValue({ patient: { id: 'p1' }, isLoading: false });
   mockUseChartSearchAi.mockReturnValue({
     messages: [],
@@ -94,10 +96,15 @@ describe('AiChatContent', () => {
     });
     render(<AiChatContent mode="workspace" />);
 
-    expect(screen.getByText('The query asks about medications. Scanning drug orders.')).toBeInTheDocument();
+    // `toBeVisible`, not `toBeInTheDocument`: a collapsed <details> keeps its content in the DOM,
+    // so the weaker matcher would pass whether or not the disclosure opens for the live phase —
+    // which is the one thing this test is about.
+    expect(screen.getByText('The query asks about medications. Scanning drug orders.')).toBeVisible();
   });
 
-  it('hides the reasoning once answer text starts streaming', () => {
+  it('collapses the reasoning behind a disclosure once answer text starts streaming', () => {
+    // It used to be UNMOUNTED here, which left a reader who looked away during the reasoning
+    // phase with nothing to open. It is kept, and collapsed, so the answer still leads.
     mockUseChartSearchAi.mockReturnValue({
       messages: [message({ answer: 'Aspirin [1]', reasoning: 'Scanning drug orders.' })],
       isAnyLoading: true,
@@ -107,6 +114,38 @@ describe('AiChatContent', () => {
     });
     render(<AiChatContent mode="workspace" />);
 
+    expect(screen.getByText('Model reasoning')).toBeInTheDocument();
+    expect(screen.getByText('Scanning drug orders.')).not.toBeVisible();
+  });
+
+  it('offers the reasoning of a settled answer, collapsed', () => {
+    mockUseChartSearchAi.mockReturnValue({
+      messages: [message({ answer: 'Aspirin [1]', reasoning: 'Scanning drug orders.', isLoading: false })],
+      isAnyLoading: false,
+      submitQuestion: mockSubmitQuestion,
+      stopCurrent: mockStopCurrent,
+      clearMessages: vi.fn(),
+    });
+    render(<AiChatContent mode="workspace" />);
+
+    expect(screen.getByText('Model reasoning')).toBeInTheDocument();
+    expect(screen.getByText('Scanning drug orders.')).not.toBeVisible();
+  });
+
+  it('draws no reasoning at all when showReasoning is off', () => {
+    // A transcript already on a message — one that predates an operator flipping the flag off —
+    // is not drawn either, which is why the render carries its own test of the config.
+    mockUseConfig.mockReturnValue({ aiSearchPlaceholder: 'Ask AI...', maxQuestionLength: 1000, showReasoning: false });
+    mockUseChartSearchAi.mockReturnValue({
+      messages: [message({ answer: 'Aspirin [1]', reasoning: 'Scanning drug orders.', isLoading: false })],
+      isAnyLoading: false,
+      submitQuestion: mockSubmitQuestion,
+      stopCurrent: mockStopCurrent,
+      clearMessages: vi.fn(),
+    });
+    render(<AiChatContent mode="workspace" />);
+
+    expect(screen.queryByText('Model reasoning')).not.toBeInTheDocument();
     expect(screen.queryByText('Scanning drug orders.')).not.toBeInTheDocument();
   });
 
