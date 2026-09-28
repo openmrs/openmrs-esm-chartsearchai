@@ -501,6 +501,30 @@ describe('AiResponsePanel current-medication chips', () => {
     expect(within(takenRow).getByText(MARK)).toBeInTheDocument();
   });
 
+  it('draws no chip the answer already states, and every chip it does not', () => {
+    // openmrs-module-chartsearchai ADR Decision 124: on a question asking only for her allergies the
+    // answer names her conflicting order and quotes the chip's finding, and marks the chip
+    // `statedInTheAnswer`. TAKEN and PROPOSED carry one sentence, so the row left is told apart by
+    // the mark.
+    renderResponse({
+      answer: ANSWER_BY_SUBSTANCE,
+      references: FIXTURE_REFERENCES,
+      safetyWarnings: [{ ...TAKEN, statedInTheAnswer: true }, PROPOSED],
+    });
+    expect(chipRows()).toHaveLength(1);
+    expect(within(chipRows()[0]).queryByText(MARK)).not.toBeInTheDocument();
+  });
+
+  it('draws no safety box at all when the answer states every chip', () => {
+    renderResponse({
+      answer: ANSWER_BY_SUBSTANCE,
+      references: FIXTURE_REFERENCES,
+      safetyWarnings: [{ ...TAKEN, statedInTheAnswer: true }],
+    });
+    expect(chipRows()).toHaveLength(0);
+    expect(screen.queryByText('Safety checks:')).not.toBeInTheDocument();
+  });
+
   it('marks nothing on a chip from a backend that predates the key', () => {
     // Measured before openmrs-module-chartsearchai#535, so no chip carries the key at all.
     expect(SAFETY_WARNINGS.some((warning) => 'aboutACurrentMedication' in warning)).toBe(false);
@@ -1225,6 +1249,19 @@ describe('AiResponsePanel answer-limit disclosure', () => {
       unstatedFindingSeverities: [],
     });
     expect(screen.getByText(/has no drug–condition rules/)).toBeInTheDocument();
+  });
+
+  it('states no coverage note where every chip is one the answer already states', () => {
+    // The allergy-question case: the answer states the chip, so nothing left on screen is a safety
+    // screen's output for the note to qualify.
+    renderPanel({
+      safetyWarnings: [{ ...SAFETY_WARNINGS[0], aboutACurrentMedication: true, statedInTheAnswer: true }],
+      interactionPairs: null,
+      references: CHART_ONLY_REFS,
+      misattributedOrderCitations: [],
+      unstatedFindingSeverities: [],
+    });
+    expect(limitsSection()).toBeNull();
   });
 
   it('keeps the ungrounded warning on a citation that is also misattributed', () => {

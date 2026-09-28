@@ -555,6 +555,16 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     };
   }, [interactionPairs, t]);
 
+  // The chips drawn in the safety box: every one but those the answer already states (backend ADR
+  // Decision 124 — on a question asking only for her allergies the answer names the conflicting order and
+  // quotes the chip). A chip stated there is not drawn again beside the list the clinician asked for, and
+  // does not count as safety output for the coverage note: nothing left on screen is a screen's output.
+  // The full list still feeds everything that reads a finding rather than draws one.
+  const shownSafetyWarnings = useMemo(
+    () => (safetyWarnings ?? []).filter((warning) => warning.statedInTheAnswer !== true),
+    [safetyWarnings],
+  );
+
   const coverageSentence = useMemo(
     () => COVERAGE_SENTENCE[conditionRuleCoverage as ConditionRuleCoverage]?.(t) ?? null,
     [conditionRuleCoverage, t],
@@ -643,8 +653,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
    * cites 22 records and not one is reference-group, so widening it this far does not reopen the
    * case it was added for.
    */
-  const hasSafetyOutput =
-    (safetyWarnings?.length ?? 0) > 0 || pairsSentence !== null || references.some(isReferenceData);
+  const hasSafetyOutput = shownSafetyWarnings.length > 0 || pairsSentence !== null || references.some(isReferenceData);
   const coverageNote = hasSafetyOutput ? coverageSentence : null;
 
   // While the answer is still streaming its citations are not annotated at all (see
@@ -778,14 +787,14 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
         </div>
       )}
 
-      {safetyWarnings && safetyWarnings.length > 0 && (
+      {shownSafetyWarnings.length > 0 && (
         // No live-region role: the panel already sits inside the chat history's
         // role="log" aria-live="polite", which announces this content in order. An
         // assertive role="alert" here would preempt the answer it annotates.
         <div className={styles.safetyWarningsSection}>
           <span className={styles.safetyWarningsLabel}>{t('safetyChecks', 'Safety checks')}:</span>
           <div className={styles.safetyWarningsList}>
-            {safetyWarnings.map((warning, i) => {
+            {shownSafetyWarnings.map((warning, i) => {
               const { tagType, label } = safetyWarningTag(warning.type, t);
               const endedOn = calendarDay(warning.endedOrderStopDate);
               return (

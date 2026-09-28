@@ -147,6 +147,14 @@ export interface AiSafetyWarning {
    * the local one: never render it as more exact than a day.
    */
   endedOrderStopDate?: string | null;
+  /**
+   * Whether the answer itself already states this finding (openmrs-module-chartsearchai ADR Decision
+   * 124): on a question asking only for the patient's allergies, the backend appends her conflicting
+   * order's name and this chip's own {@link detail} to the answer. A `true` chip is not drawn again.
+   * `false` says nothing about the answer's prose, and a backend that predates the key sends nothing,
+   * which reads the same as `false`.
+   */
+  statedInTheAnswer?: boolean;
 }
 
 /**
