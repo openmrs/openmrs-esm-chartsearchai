@@ -1,9 +1,13 @@
 import React from 'react';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import AiResponsePanel from './ai-response-panel.component';
 import { highlightReference } from '../utils/highlight-reference';
-import { SESSION_EXPIRED_ERROR_CODE } from '../api/chartsearchai';
+import { SESSION_EXPIRED_ERROR_CODE, type AiReference, type AiSafetyWarning } from '../api/chartsearchai';
+import {
+  ALLERGY_TO_A_CURRENT_MEDICATION,
+  ALLERGY_TO_A_PROPOSED_DRUG,
+} from '../__fixtures__/current-medication-responses';
 import {
   ANSWER_BARE_LIST,
   ANSWER_BY_ORDER_DISPLAY,
@@ -438,6 +442,85 @@ describe('AiResponsePanel safety warnings', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     // ...but the warning still renders.
     expect(screen.getByText('Safety checks:')).toBeInTheDocument();
+  });
+});
+
+describe('AiResponsePanel current-medication chips', () => {
+  const MARK = 'About a current medication';
+  const MARK_TITLE =
+    'The module raised this finding from one of the patient’s own active orders, so it is about a ' +
+    'medication the patient is already taking. The drug shown is the substance the module matched that ' +
+    'order to, which the order itself may name differently — a brand name, for example.';
+
+  function renderResponse(response: { answer: string; references: AiReference[]; safetyWarnings: AiSafetyWarning[] }) {
+    return render(
+      <AiResponsePanel
+        answer={response.answer}
+        references={response.references}
+        safetyWarnings={response.safetyWarnings}
+        questionId="q"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+  }
+
+  /** Each chip's row in list order, found by class for the reason `limitsSection` gives below. */
+  const chipRows = () =>
+    screen.queryAllByText((_content, element) => Boolean(element?.className?.includes?.('safetyWarningItem')));
+
+  const TAKEN = ALLERGY_TO_A_CURRENT_MEDICATION.safetyWarnings[1];
+  const PROPOSED = ALLERGY_TO_A_PROPOSED_DRUG.safetyWarnings[0];
+
+  it('marks every chip the backend raised from one of the patient’s own active orders', () => {
+    renderResponse(ALLERGY_TO_A_CURRENT_MEDICATION);
+    const rows = chipRows();
+    expect(rows).toHaveLength(2);
+    for (const row of rows) expect(within(row).getByText(MARK)).toBeInTheDocument();
+  });
+
+  it('leaves the same words unmarked where the question proposes the drug', () => {
+    // The premise, pinned: the two chips are one sentence, so nothing but the key tells them apart.
+    expect({ ...PROPOSED, aboutACurrentMedication: true }).toEqual(TAKEN);
+    renderResponse(ALLERGY_TO_A_PROPOSED_DRUG);
+    expect(chipRows()).toHaveLength(2);
+    expect(screen.queryByText(MARK)).not.toBeInTheDocument();
+  });
+
+  it('marks a chip by its own key, not by its words, when both are listed together', () => {
+    renderResponse({ ...ALLERGY_TO_A_PROPOSED_DRUG, safetyWarnings: [PROPOSED, TAKEN] });
+    const [proposedRow, takenRow] = chipRows();
+    expect(proposedRow).toHaveTextContent(PROPOSED.detail);
+    expect(takenRow).toHaveTextContent(TAKEN.detail);
+    expect(within(proposedRow).queryByText(MARK)).not.toBeInTheDocument();
+    expect(within(takenRow).getByText(MARK)).toBeInTheDocument();
+  });
+
+  it('marks nothing on a chip from a backend that predates the key', () => {
+    // Measured before openmrs-module-chartsearchai#535, so no chip carries the key at all.
+    expect(SAFETY_WARNINGS.some((warning) => 'aboutACurrentMedication' in warning)).toBe(false);
+    renderResponse({
+      answer: ANSWER_BY_SUBSTANCE,
+      references: FIXTURE_REFERENCES,
+      safetyWarnings: SAFETY_WARNINGS,
+    });
+    expect(chipRows()).toHaveLength(SAFETY_WARNINGS.length);
+    expect(screen.queryByText(MARK)).not.toBeInTheDocument();
+  });
+
+  it('says what the finding is about without naming the drug, and why on hover', () => {
+    // The backend README asks for exactly this: `drug` is the substance the module matched the
+    // patient's order to, which the order need not spell. This patient's ibuprofen order is Advil 400mg.
+    renderResponse(ALLERGY_TO_A_CURRENT_MEDICATION);
+    chipRows().forEach((row, i) => {
+      const mark = within(row).getByText(MARK);
+      const said = `${mark.textContent} ${mark.getAttribute('title')}`.toLowerCase();
+      const drugWords = ALLERGY_TO_A_CURRENT_MEDICATION.safetyWarnings[i].drug.toLowerCase().match(/[a-z]{5,}/g);
+      expect(drugWords?.length).toBeGreaterThan(0);
+      for (const word of drugWords ?? []) expect(said).not.toContain(word);
+      expect(mark).toHaveAttribute('title', MARK_TITLE);
+    });
   });
 });
 

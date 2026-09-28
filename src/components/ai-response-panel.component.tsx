@@ -743,6 +743,23 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                   </Tag>
                   <span className={styles.safetyWarningText}>
                     {warning.drug}: {warning.detail}
+                    {/* The chip's words are the same whether the patient takes this drug or a
+                        question proposed it, so this key is the only thing saying which. Only
+                        `true` is drawn: `false` does not say the patient is off the drug. */}
+                    {warning.aboutACurrentMedication === true && (
+                      <>
+                        {' '}
+                        <span
+                          className={styles.currentMedicationTag}
+                          title={t(
+                            'aboutACurrentMedicationTitle',
+                            'The module raised this finding from one of the patient’s own active orders, so it is about a medication the patient is already taking. The drug shown is the substance the module matched that order to, which the order itself may name differently — a brand name, for example.',
+                          )}
+                        >
+                          {t('aboutACurrentMedication', 'About a current medication')}
+                        </span>
+                      </>
+                    )}
                   </span>
                 </span>
               );

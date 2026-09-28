@@ -1,4 +1,6 @@
 {
+  "aboutACurrentMedication": "About a current medication",
+  "aboutACurrentMedicationTitle": "The module raised this finding from one of the patient’s own active orders, so it is about a medication the patient is already taking. The drug shown is the substance the module matched that order to, which the order itself may name differently — a brand name, for example.",
   "activeOrderClaimsAllCited": "Every statement about her active orders cites a chart record.",
   "activeOrderClaimsUncited": "Statements about her active orders citing no chart record: {{uncited}} of {{stated}}.",
   "activeOrderClaimsUncitedWhy": "A statement with no chart record behind it cannot be checked against the chart at all.",

@@ -114,6 +114,20 @@ export interface AiSafetyWarning {
    * *is* that substance, and never that the chart records those substances.
    */
   chartOrderBridges?: AiChartOrderBridge[] | null;
+  /**
+   * Whether the module raised this chip from one of the patient's own active orders, so that it is
+   * about a medication the patient is already taking rather than a drug a question proposed.
+   *
+   * Nothing else on the chip says so: the backend keeps {@link detail} the same words either way
+   * (openmrs-module-chartsearchai#527; #535 put this key on the wire). Only `true` is rendered.
+   * `false` is NOT a statement that the patient is off the drug — among others it is the answer
+   * for a drug the question named, even one the patient takes — and a backend that predates the
+   * key sends nothing, which reads the same as `false`.
+   *
+   * {@link drug} is the substance the module matched the order to, which the order's own name need
+   * not spell, so a rendering of `true` must not name the drug in that claim.
+   */
+  aboutACurrentMedication?: boolean;
 }
 
 /**

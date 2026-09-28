@@ -24,7 +24,7 @@ It is the model's scratchpad, not a finding: none of it goes through the groundi
 
 The optional progressive-reasoning preview (backend GP `chartsearchai.progressiveReasoning.enabled`) gets no disclosure of its own: it is superseded within the same answer, so there would be nothing behind the row by the time a reader could open it.
 
-When the backend's optional [drug-reference feature](https://github.com/openmrs/openmrs-module-chartsearchai#drug-reference-injection--safety-validation) is enabled, the panel also shows non-blocking **safety-check** chips below the answer (overdose / interaction / contraindication), renders module-supplied reference citations (drug references, safety findings, drug-class notes) as distinct non-navigating reference chips, and states what the safety check did and did not cover — see [Fields that state the answer's limits](#fields-that-state-the-answers-limits).
+When the backend's optional [drug-reference feature](https://github.com/openmrs/openmrs-module-chartsearchai#drug-reference-injection--safety-validation) is enabled, the panel also shows non-blocking **safety-check** chips below the answer (overdose / interaction / contraindication), renders module-supplied reference citations (drug references, safety findings, drug-class notes) as distinct non-navigating reference chips, and states what the safety check did and did not cover — see [Fields that state the answer's limits](#fields-that-state-the-answers-limits). A chip about a medication the patient already takes is marked as such — see [API endpoints used](#api-endpoints-used).
 
 ## Backend
 
@@ -101,7 +101,7 @@ Response:
 }
 ```
 
-`references[].resourceUuid` is the cited record's UUID (used to locate and highlight the chart row). `safetyWarnings` (each `{ type, drug, detail, severity, chartOrderBridges }`) is always present and empty unless the backend's optional drug-reference feature is enabled; the panel renders any entries as chips below the answer.
+`references[].resourceUuid` is the cited record's UUID (used to locate and highlight the chart row). `safetyWarnings` (each `{ type, drug, detail, severity, chartOrderBridges, aboutACurrentMedication }`) is always present and empty unless the backend's optional drug-reference feature is enabled; the panel renders any entries as chips below the answer. A chip whose `aboutACurrentMedication` is `true` is marked _About a current medication_, because the backend raised it from one of the patient's own active orders and nothing else on the chip says so: its `detail` is the same words whether the patient takes the drug or a question proposed it. The mark does not name the drug, since `drug` is the substance the module matched the order to and the order may be written another way (`Advil 400mg` for `Ibuprofen`). `false`, and a backend that predates the key, render nothing: `false` is not a statement that the patient is off the drug.
 
 ### Fields that state the answer's limits
 

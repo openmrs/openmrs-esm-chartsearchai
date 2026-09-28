@@ -169,6 +169,15 @@
   color: colors.$gray-70;
 }
 
+// Marks a safety chip raised from one of the patient's own active orders. Teal, not a severity
+// tone: it says what the finding is about, never how much it counts, which the backend does not
+// publish. Inline after the chip's text, so it reads as a note on that finding.
+.currentMedicationTag {
+  @extend %disclosureTagBase;
+  background-color: colors.$teal-10;
+  color: colors.$teal-70;
+}
+
 // The rating the answer states nowhere, rendered beside the sentence that dropped it.
 // `display: inline` (a span, not a Carbon Tag, which is a <div>) so it flows inside the answer
 // paragraph rather than breaking it — that override is the reason it cannot just be a Tag.
