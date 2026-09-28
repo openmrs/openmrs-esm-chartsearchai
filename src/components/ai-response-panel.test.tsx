@@ -1185,7 +1185,7 @@ describe('AiResponsePanel answer-limit disclosure', () => {
       unstatedFindingSeverities: [],
     });
     expect(limitsSection()).toBeNull();
-    expect(screen.queryByText(/were not screened/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/not checked against/)).not.toBeInTheDocument();
   });
 
   it('states the coverage note where a screen cited a reference record but raised no chip', () => {
@@ -1193,7 +1193,7 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     // active orders runs the contraindication screen, raises no chip and states no pair extent.
     // The backend says of exactly that — "Render it. That is what the key is for."
     renderPanel({ safetyWarnings: [], interactionPairs: null, conditionRuleCoverage: 'absent' });
-    expect(screen.getByText(/publishes no condition rules/)).toBeInTheDocument();
+    expect(screen.getByText(/has no drug–condition rules/)).toBeInTheDocument();
   });
 
   /** Chart-only citations, so no reference-group record can satisfy the coverage gate for free. */
@@ -1211,7 +1211,7 @@ describe('AiResponsePanel answer-limit disclosure', () => {
       misattributedOrderCitations: [],
       unstatedFindingSeverities: [],
     });
-    expect(screen.getByText(/publishes no condition rules/)).toBeInTheDocument();
+    expect(screen.getByText(/has no drug–condition rules/)).toBeInTheDocument();
   });
 
   it('states the coverage note where a chip was raised but no extent was measured', () => {
@@ -1224,7 +1224,7 @@ describe('AiResponsePanel answer-limit disclosure', () => {
       misattributedOrderCitations: [],
       unstatedFindingSeverities: [],
     });
-    expect(screen.getByText(/publishes no condition rules/)).toBeInTheDocument();
+    expect(screen.getByText(/has no drug–condition rules/)).toBeInTheDocument();
   });
 
   it('keeps the ungrounded warning on a citation that is also misattributed', () => {
@@ -1354,9 +1354,9 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     }
   });
 
-  it('says conditions were not screened, and why, on "absent"', () => {
+  it('says medications were not checked against the patient’s conditions, and why, on "absent"', () => {
     renderPanel();
-    expect(screen.getByText(/publishes no condition rules/)).toBeInTheDocument();
+    expect(screen.getByText(/has no drug–condition rules/)).toBeInTheDocument();
   });
 
   it('distinguishes "absent" from "unloaded" — a mapping test, not a reachable render', () => {
@@ -1368,8 +1368,8 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     // install ever shows the second one. See the reachability note beside COVERAGE_SENTENCE.
     // "We looked and there is none" is not "nobody looked".
     renderPanel({ conditionRuleCoverage: 'unloaded' });
-    expect(screen.getByText(/No drug-reference dataset was loaded/)).toBeInTheDocument();
-    expect(screen.queryByText(/publishes no condition rules/)).not.toBeInTheDocument();
+    expect(screen.getByText(/no drug-safety data is loaded on this system/)).toBeInTheDocument();
+    expect(screen.queryByText(/has no drug–condition rules/)).not.toBeInTheDocument();
   });
 
   it('claims nothing about conditions on "published"', () => {

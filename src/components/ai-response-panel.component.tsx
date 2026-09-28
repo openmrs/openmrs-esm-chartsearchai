@@ -213,12 +213,12 @@ const COVERAGE_SENTENCE: Record<ConditionRuleCoverage, ((t: Translate) => string
   absent: (t) =>
     t(
       'conditionRulesAbsent',
-      'Conditions were not screened. The loaded drug-reference dataset publishes no condition rules, so this patient’s recorded conditions were not checked.',
+      'Medications were not checked against this patient’s recorded conditions: this system’s drug-safety data has no drug–condition rules.',
     ),
   unloaded: (t) =>
     t(
       'conditionRulesUnloaded',
-      'Conditions were not screened. No drug-reference dataset was loaded, so nothing is known about condition coverage.',
+      'Medications were not checked against this patient’s recorded conditions: no drug-safety data is loaded on this system.',
     ),
   published: null,
 };
