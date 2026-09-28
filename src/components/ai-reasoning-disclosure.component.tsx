@@ -80,6 +80,11 @@ const AiReasoningDisclosure: React.FC<AiReasoningDisclosureProps> = ({ reasoning
     [isOpen],
   );
 
+  const caveat = t(
+    'modelReasoningCaveat',
+    'The model’s working notes, not the answer. Nothing here was checked against the chart, and it can state things the answer does not.',
+  );
+
   return (
     <details
       className={styles.disclosure}
@@ -89,23 +94,18 @@ const AiReasoningDisclosure: React.FC<AiReasoningDisclosureProps> = ({ reasoning
       // reader narrates every scratchpad chunk ahead of the answer the scratchpad precedes.
       aria-live="off"
     >
-      {/* The caveat rides on the summary as a native `title` rather than as a line of its own —
-          the same native-title approach the response panel's badges use. Two consequences worth
-          knowing: the summary already has naming content, so per HTML-AAM the title becomes its
-          accessible DESCRIPTION and screen-reader users are still told; but a title shows on
-          hover only, so a touch user and a sighted reader who never hovers see no caveat at all,
-          and the panel's own "AI-generated … verify against the records" disclaimer is then the
-          only qualifier on screen. */}
-      <summary
-        className={styles.summary}
-        title={t(
-          'modelReasoningCaveat',
-          'The model’s working notes, not the answer. Nothing here was checked against the chart, and it can state things the answer does not.',
-        )}
-      >
+      {/* The caveat is on the summary as a native `title`, the same approach the response panel's
+          badges use: the summary already has naming content, so per HTML-AAM the title becomes its
+          accessible DESCRIPTION, and hovering the collapsed row shows it. It is also drawn as a
+          line of its own inside the disclosure, so it is on screen whenever the transcript is: a
+          title shows on hover only, and the most exposed moment is the open, streaming panel
+          before any answer exists, when a touch user or a reader who never hovers would otherwise
+          see unverified notes with no qualifier on them (openmrs-module-chartsearchai#254). */}
+      <summary className={styles.summary} title={caveat}>
         <ChevronDown size={16} className={styles.chevron} />
         {t('modelReasoning', 'Model reasoning')}
       </summary>
+      <p className={styles.caveat}>{caveat}</p>
       {/* Capped and scrollable only once settled. While it streams the growth is what the chat
           history's scroll-to-bottom effect follows, and an inner scrollbox would hide the newest
           text behind a scrollbar nothing moves. */}

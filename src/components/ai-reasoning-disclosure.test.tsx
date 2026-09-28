@@ -6,6 +6,8 @@ import { chatSessionStore } from '../store/chat-session.store';
 import AiReasoningDisclosure from './ai-reasoning-disclosure.component';
 
 const TRANSCRIPT = 'Scanning drug orders, then active problems.';
+const CAVEAT =
+  'The model’s working notes, not the answer. Nothing here was checked against the chart, and it can state things the answer does not.';
 
 /**
  * `toBeVisible` rather than `toBeInTheDocument` throughout: a collapsed `<details>` keeps its
@@ -34,17 +36,33 @@ describe('AiReasoningDisclosure', () => {
   });
 
   it('carries the caveat on the summary, as its tooltip and accessible description', () => {
-    // The caveat is the licence for showing scratchpad to a clinician at all, and it lives on the
-    // summary's `title` rather than on a line of its own. Asserted on the attribute because that
-    // is the only place it exists — nothing renders it as text, by design.
+    // The caveat is the licence for showing scratchpad to a clinician at all. On the summary it is
+    // the `title`: what hovering the collapsed row shows, and the summary's accessible description.
     render(<AiReasoningDisclosure reasoning={TRANSCRIPT} isStreaming />);
 
-    expect(screen.getByText('Model reasoning')).toHaveAttribute(
-      'title',
-      'The model’s working notes, not the answer. Nothing here was checked against the chart, and it can state things the answer does not.',
-    );
-    // And it is NOT drawn as text anywhere: the transcript is the only prose in the disclosure.
-    expect(screen.queryByText(/working notes, not the answer/)).not.toBeInTheDocument();
+    expect(screen.getByText('Model reasoning')).toHaveAttribute('title', CAVEAT);
+  });
+
+  it('draws the caveat as a line of its own while the reasoning streams', () => {
+    // The most exposed moment: the panel is open and streaming before any answer exists, and a
+    // title shows on hover only, so without this line a touch user, or a reader who never hovers,
+    // sees unverified notes with no qualifier on them (openmrs-module-chartsearchai#254).
+    render(<AiReasoningDisclosure reasoning={TRANSCRIPT} isStreaming />);
+
+    expect(screen.getByText(CAVEAT)).toBeVisible();
+    expect(screen.getByText(TRANSCRIPT)).toBeVisible();
+  });
+
+  it('hides the caveat line with the transcript once collapsed, and shows it again on expansion', async () => {
+    // Inside the disclosure, not beside it: it frames the notes, so it is on screen exactly when
+    // they are, and a collapsed row stays one line.
+    render(<AiReasoningDisclosure reasoning={TRANSCRIPT} isStreaming={false} />);
+    expect(screen.getByText(CAVEAT)).not.toBeVisible();
+
+    await userEvent.setup().click(screen.getByText('Model reasoning'));
+
+    expect(screen.getByText(CAVEAT)).toBeVisible();
+    expect(screen.getByText(TRANSCRIPT)).toBeVisible();
   });
 
   it('collapses itself when the answer starts arriving', () => {

@@ -50,6 +50,15 @@
   }
 }
 
+/* The caveat line, drawn whenever the disclosure is open. Upright and a step darker than the
+   italic transcript, so it reads as the frame around the notes rather than as part of them; it
+   shares the transcript's left edge for the same alignment reason. */
+.caveat {
+  @include type.type-style('helper-text-01');
+  margin: layout.$spacing-02 0 0;
+  color: colors.$gray-70;
+}
+
 .transcript {
   /* No left indent: the transcript's left edge lines up with the answer prose below it
      (`.answerText` in ai-response-panel.scss carries `margin: 0`, and both sit inside the same
