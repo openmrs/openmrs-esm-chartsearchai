@@ -9,6 +9,10 @@ import {
   ALLERGY_TO_A_PROPOSED_DRUG,
 } from '../__fixtures__/current-medication-responses';
 import {
+  ENDED_ORDER_DRUG_PROPOSED,
+  ENDED_ORDER_NAMED_IN_A_HISTORY_QUESTION,
+} from '../__fixtures__/ended-order-responses';
+import {
   ANSWER_BARE_LIST,
   ANSWER_BY_ORDER_DISPLAY,
   ANSWER_BY_SUBSTANCE,
@@ -521,6 +525,200 @@ describe('AiResponsePanel current-medication chips', () => {
       for (const word of drugWords ?? []) expect(said).not.toContain(word);
       expect(mark).toHaveAttribute('title', MARK_TITLE);
     });
+  });
+});
+
+/** The UTC caveat both ended-order renderings share, because the backend's dates are UTC days. */
+const UTC_CALENDAR_DAY = 'The date is a calendar day in UTC, so it can be a day off the local date.';
+
+type LiveResponse = typeof ENDED_ORDER_NAMED_IN_A_HISTORY_QUESTION | typeof ENDED_ORDER_DRUG_PROPOSED;
+
+/** Renders a captured response the way the chat renders a finished message: every measurement passed. */
+function renderLiveResponse(
+  response: LiveResponse,
+  overrides: Partial<React.ComponentProps<typeof AiResponsePanel>> = {},
+) {
+  return render(
+    <AiResponsePanel
+      answer={response.answer}
+      references={response.references}
+      safetyWarnings={response.safetyWarnings}
+      misattributedOrderCitations={response.misattributedOrderCitations}
+      unstatedFindingSeverities={response.unstatedFindingSeverities}
+      conditionRuleCoverage={response.conditionRuleCoverage}
+      interactionPairs={response.interactionPairs}
+      activeOrderClaims={response.activeOrderClaims}
+      orderStopDates={response.orderStopDates}
+      questionId={response.questionId}
+      error={null}
+      isLoading={false}
+      patientUuid={patientUuid}
+      {...overrides}
+    />,
+  );
+}
+
+describe('AiResponsePanel ended-order chips', () => {
+  const MARK = 'About an order no longer in force';
+  const MARK_DATED = 'About an order no longer in force, ended 2026-09-23';
+  const MARK_TITLE =
+    'The chart records this drug only as an order no longer in force, so the finding is about what giving it ' +
+    'again would mean — not about a medication the patient is taking now.';
+  const CURRENT_MARK = 'About a current medication';
+
+  const chipRows = () =>
+    screen.queryAllByText((_content, element) => Boolean(element?.className?.includes?.('safetyWarningItem')));
+  /** Every ended-order mark inside one chip row, found by its text whether or not it is dated. */
+  const endedMarks = (row: HTMLElement) => within(row).queryAllByText(/^About an order no longer in force/);
+
+  const ENDED = ENDED_ORDER_NAMED_IN_A_HISTORY_QUESTION.safetyWarnings[0];
+  const PROPOSED = ENDED_ORDER_DRUG_PROPOSED.safetyWarnings[0];
+
+  it('marks the chip about a drug the chart holds only as an ended order, with the day it ended', () => {
+    renderLiveResponse(ENDED_ORDER_NAMED_IN_A_HISTORY_QUESTION);
+    const rows = chipRows();
+    expect(rows).toHaveLength(1);
+    const marks = endedMarks(rows[0]);
+    expect(marks).toHaveLength(1);
+    expect(marks[0]).toHaveTextContent(new RegExp(`^${MARK_DATED}$`));
+    expect(marks[0]).toHaveAttribute('title', `${MARK_TITLE} ${UTC_CALENDAR_DAY}`);
+    // A distinct mark from the current-medication tag: the backend keeps the two referents apart.
+    expect(within(rows[0]).queryByText(CURRENT_MARK)).not.toBeInTheDocument();
+    expect(marks[0].className).not.toContain('currentMedicationTag');
+  });
+
+  it('leaves the same words unmarked where the question proposes the drug', () => {
+    // The premise, pinned: the two chips are one finding, and only these two keys tell them apart.
+    expect({ ...PROPOSED, aboutAnEndedOrder: true, endedOrderStopDate: '2026-09-23' }).toEqual(ENDED);
+    renderLiveResponse(ENDED_ORDER_DRUG_PROPOSED);
+    const rows = chipRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent(PROPOSED.detail);
+    expect(endedMarks(rows[0])).toHaveLength(0);
+    expect(screen.queryByText(/no longer in force/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/2026-09-23/)).not.toBeInTheDocument();
+  });
+
+  it('marks a chip by its own key, not by its words, when both are listed together', () => {
+    renderLiveResponse(ENDED_ORDER_DRUG_PROPOSED, { safetyWarnings: [PROPOSED, ENDED] });
+    const [proposedRow, endedRow] = chipRows();
+    expect(endedMarks(proposedRow)).toHaveLength(0);
+    expect(endedMarks(endedRow)).toHaveLength(1);
+  });
+
+  it('marks the chip without a date where the ended order has none to state', () => {
+    renderLiveResponse(ENDED_ORDER_NAMED_IN_A_HISTORY_QUESTION, {
+      safetyWarnings: [{ ...ENDED, endedOrderStopDate: null }],
+      orderStopDates: [],
+    });
+    const marks = endedMarks(chipRows()[0]);
+    expect(marks).toHaveLength(1);
+    expect(marks[0]).toHaveTextContent(new RegExp(`^${MARK}$`));
+    expect(marks[0]).toHaveAttribute('title', MARK_TITLE);
+  });
+
+  it('never states the end more exactly than a calendar day', () => {
+    // Not a shape the backend sends: a date the panel cannot read as one day is withheld, not trimmed.
+    renderLiveResponse(ENDED_ORDER_NAMED_IN_A_HISTORY_QUESTION, {
+      safetyWarnings: [{ ...ENDED, endedOrderStopDate: '2026-09-23T08:32:31Z' }],
+      orderStopDates: [],
+    });
+    const row = chipRows()[0];
+    const marks = endedMarks(row);
+    expect(marks).toHaveLength(1);
+    expect(marks[0]).toHaveTextContent(new RegExp(`^${MARK}$`));
+    expect(row).not.toHaveTextContent('2026-09-23');
+    expect(row).not.toHaveTextContent('08:32');
+  });
+
+  it('marks nothing on a chip whose key is false, or from a backend that predates the key', () => {
+    expect(SAFETY_WARNINGS.some((warning) => 'aboutAnEndedOrder' in warning)).toBe(false);
+    render(
+      <AiResponsePanel
+        answer={ANSWER_BY_SUBSTANCE}
+        references={FIXTURE_REFERENCES}
+        safetyWarnings={[...SAFETY_WARNINGS, ...ALLERGY_TO_A_CURRENT_MEDICATION.safetyWarnings]}
+        questionId="q"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+    const rows = chipRows();
+    expect(rows).toHaveLength(SAFETY_WARNINGS.length + ALLERGY_TO_A_CURRENT_MEDICATION.safetyWarnings.length);
+    for (const row of rows) expect(endedMarks(row)).toHaveLength(0);
+  });
+});
+
+describe('AiResponsePanel order stop dates', () => {
+  const STOPPED = 'Stopped 2026-09-23';
+  const STOPPED_TITLE =
+    'The date this prescription stopped being in force — not the record’s own date shown beside it. ' +
+    UTC_CALENDAR_DAY;
+
+  /** Each reference chip, found by class for the reason `chipRows` is. */
+  const referenceItems = () =>
+    screen.queryAllByText((_content, element) => Boolean(element?.className?.includes?.('referenceItem')));
+  const itemFor = (index: number) => {
+    const item = referenceItems().find((el) => el.textContent?.startsWith(`[${index}]`));
+    expect(item).toBeDefined();
+    return item as HTMLElement;
+  };
+
+  it('shows when the cited prescription stopped beside that citation, apart from the record’s own date', () => {
+    renderLiveResponse(ENDED_ORDER_NAMED_IN_A_HISTORY_QUESTION);
+    const item = itemFor(6);
+    const stopped = within(item).getByText(STOPPED);
+    expect(stopped).toHaveAttribute('title', STOPPED_TITLE);
+    // The record's own date is a different fact and stays where it was, never replaced by this one.
+    expect(within(item).getByRole('link')).toHaveTextContent(/^\[6\] drug_order — 2026-06-01$/);
+    // Beside the link, not inside the navigation target.
+    expect(within(item).getByRole('link')).not.toContainElement(stopped);
+    // Only the citation the entry names carries it.
+    expect(itemFor(11)).not.toHaveTextContent(/Stopped/);
+    expect(screen.getAllByText(/^Stopped /)).toHaveLength(1);
+  });
+
+  it('draws nothing for an empty list, which is not a certificate that any order is current', () => {
+    renderLiveResponse(ENDED_ORDER_DRUG_PROPOSED);
+    expect(referenceItems()).toHaveLength(ENDED_ORDER_DRUG_PROPOSED.references.length);
+    expect(screen.queryByText(/Stopped/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/in force/)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['null', null],
+    ['missing', undefined],
+  ])('draws nothing where no measurement was stated (%s)', (_label, orderStopDates) => {
+    renderLiveResponse(ENDED_ORDER_NAMED_IN_A_HISTORY_QUESTION, { orderStopDates });
+    expect(referenceItems()).toHaveLength(ENDED_ORDER_NAMED_IN_A_HISTORY_QUESTION.references.length);
+    expect(screen.queryByText(/Stopped/)).not.toBeInTheDocument();
+  });
+
+  it('draws nothing for an entry naming a citation the answer does not carry', () => {
+    renderLiveResponse(ENDED_ORDER_NAMED_IN_A_HISTORY_QUESTION, {
+      orderStopDates: [{ citation: 7, stopDate: '2026-09-23' }],
+    });
+    expect(screen.queryByText(/Stopped/)).not.toBeInTheDocument();
+  });
+
+  it('never states the stop more exactly than a calendar day, nor a value it cannot read as one', () => {
+    renderLiveResponse(ENDED_ORDER_NAMED_IN_A_HISTORY_QUESTION, {
+      orderStopDates: [
+        { citation: 6, stopDate: '2026-09-23T08:32:31Z' },
+        { citation: 11, stopDate: 20260923 as unknown as string },
+      ],
+    });
+    expect(screen.queryByText(/Stopped/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/08:32/)).not.toBeInTheDocument();
+  });
+
+  it('survives a value that is not a list at all', () => {
+    renderLiveResponse(ENDED_ORDER_NAMED_IN_A_HISTORY_QUESTION, {
+      orderStopDates: '2026-09-23' as unknown as [],
+    });
+    expect(referenceItems()).toHaveLength(ENDED_ORDER_NAMED_IN_A_HISTORY_QUESTION.references.length);
+    expect(screen.queryByText(/Stopped/)).not.toBeInTheDocument();
   });
 });
 

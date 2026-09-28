@@ -16,6 +16,7 @@ export const NO_ANSWER_LIMITS: MessageAnswerLimits = {
   conditionRuleCoverage: null,
   interactionPairs: null,
   activeOrderClaims: null,
+  orderStopDates: null,
 };
 
 /**
@@ -45,6 +46,7 @@ export function mergeDisclosure(previous: MessageAnswerLimits, source: Partial<A
     conditionRuleCoverage: source.conditionRuleCoverage ?? previous.conditionRuleCoverage,
     interactionPairs: source.interactionPairs ?? previous.interactionPairs,
     activeOrderClaims: source.activeOrderClaims ?? previous.activeOrderClaims,
+    orderStopDates: source.orderStopDates ?? previous.orderStopDates,
   };
 }
 

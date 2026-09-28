@@ -1,6 +1,9 @@
 {
   "aboutACurrentMedication": "About a current medication",
   "aboutACurrentMedicationTitle": "The module raised this finding from one of the patient’s own active orders, so it is about a medication the patient is already taking. The drug shown is the substance the module matched that order to, which the order itself may name differently — a brand name, for example.",
+  "aboutAnEndedOrder": "About an order no longer in force",
+  "aboutAnEndedOrderOn": "About an order no longer in force, ended {{stopDate}}",
+  "aboutAnEndedOrderTitle": "The chart records this drug only as an order no longer in force, so the finding is about what giving it again would mean — not about a medication the patient is taking now.",
   "activeOrderClaimsAllCited": "Every statement about her active orders cites a chart record.",
   "activeOrderClaimsUncited": "Statements about her active orders citing no chart record: {{uncited}} of {{stated}}.",
   "activeOrderClaimsUncitedWhy": "A statement with no chart record behind it cannot be checked against the chart at all.",
@@ -38,6 +41,8 @@
   "notGroundedTitle": "The cited record may not support this statement — verify against the chart.",
   "notHelpful": "Not helpful",
   "notTheOrderNamed": "Not the order named",
+  "orderStopDate": "Stopped {{stopDate}}",
+  "orderStopDateTitle": "The date this prescription stopped being in force — not the record’s own date shown beside it.",
   "preliminaryReasoning": "Reviewing the most relevant records…",
   "reference": "Reference",
   "referenceMaterialCitation": "Module-supplied reference material — not this patient’s record.",
@@ -59,6 +64,7 @@
   "submitFeedback": "Submit",
   "thinkingEllipsis": "Thinking...",
   "unstatedSeverityTitle": "Rated by the reference dataset. This answer may not state the rating — it is shown here so the findings can be ranked.",
+  "utcCalendarDayTitle": "The date is a calendar day in UTC, so it can be a day off the local date.",
   "voiceInput": "Voice input",
   "wasThisHelpful": "Was this helpful?"
 }

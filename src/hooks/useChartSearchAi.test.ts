@@ -643,6 +643,8 @@ describe('useChartSearchAi answer-limit measurements', () => {
     // asserts on `disclosure` now asserts this key survives the early-`done`-then-`grounded`
     // path, refuses to be erased by a later null, and is refused after a stop.
     activeOrderClaims: { stated: 5, uncited: 3 },
+    // Not a limit, but it rides the same merge, so listing it here gives it the same coverage.
+    orderStopDates: [{ citation: 350, stopDate: '2026-09-23' }],
   };
 
   it('starts a message with no measurement stated', () => {

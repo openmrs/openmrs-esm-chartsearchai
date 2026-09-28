@@ -128,6 +128,37 @@ export interface AiSafetyWarning {
    * not spell, so a rendering of `true` must not name the drug in that claim.
    */
   aboutACurrentMedication?: boolean;
+  /**
+   * Whether this chip is about a drug the chart records only as an order no longer in force
+   * (openmrs-module-chartsearchai#472): a finding about what giving that drug again would mean, not
+   * about a medication the patient is taking now. The backend keeps it and
+   * {@link aboutACurrentMedication} exclusive, so the two are rendered as different marks.
+   *
+   * Only `true` is rendered. `false` is NOT a statement that the drug is current — it is also the
+   * answer for a drug a question proposes, for every chip the other checks raise, and wherever the
+   * module could not rule out that the patient is on it — and a backend that predates the key
+   * sends nothing, which reads the same as `false`.
+   */
+  aboutAnEndedOrder?: boolean;
+  /**
+   * The day the ended order behind {@link aboutAnEndedOrder} stopped being in force, `yyyy-MM-dd`,
+   * or `null` — on every chip answering `false`, and on one whose ended records carry no stop date.
+   * Of several ended orders of the drug, the latest. A UTC calendar date, so it can be a day off
+   * the local one: never render it as more exact than a day.
+   */
+  endedOrderStopDate?: string | null;
+}
+
+/**
+ * When one cited prescription stopped being in force (openmrs-module-chartsearchai#315, #432).
+ *
+ * `citation` is the {@link AiReference.index} it belongs to. `stopDate` is the ORDER's own end,
+ * `yyyy-MM-dd` in UTC, and not the record's clinical {@link AiReference.date}: the two are
+ * different facts, and one must never be shown in place of the other.
+ */
+export interface AiOrderStopDate {
+  citation: number;
+  stopDate: string;
 }
 
 /**
@@ -249,6 +280,16 @@ export interface AiSearchResponse {
   interactionPairs?: AiInteractionPairs | null;
   /** @see AiActiveOrderClaims */
   activeOrderClaims?: AiActiveOrderClaims | null;
+  /**
+   * When each cited prescription stopped being in force, one entry per cited chart record whose
+   * order is out of force and has an end date to state. Rendered beside that citation: the answer
+   * may say an order ended without saying when.
+   *
+   * An absent entry is never a claim that a cited order is still in force — an order can be out of
+   * force with no end date anywhere — so `[]` is not a certificate of anything. `null` is no
+   * measurement. Final on the early `done` under async grounding; the `grounded` event re-sends it.
+   */
+  orderStopDates?: AiOrderStopDate[] | null;
   questionId?: string;
 }
 
@@ -261,6 +302,9 @@ export interface AiSearchResponse {
  * the other four began, and it is not a sixth nice-to-have: it is the key that separates the two
  * readings of `misattributedOrderCitations: []`, so leaving it out left an already-rendered field
  * ambiguous in exactly the way that field's own doc warns about.
+ *
+ * `orderStopDates` is here too, though it states a date rather than a limit: it reaches the panel
+ * by the same path, and riding this merge is what delivers it from `done` and `grounded` alike.
  */
 export type AiAnswerLimits = Pick<
   AiSearchResponse,
@@ -269,6 +313,7 @@ export type AiAnswerLimits = Pick<
   | 'conditionRuleCoverage'
   | 'interactionPairs'
   | 'activeOrderClaims'
+  | 'orderStopDates'
 >;
 
 /**

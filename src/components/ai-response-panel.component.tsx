@@ -90,6 +90,20 @@ function buildReferenceUrl(ref: AiReference, patientUuid: string, misattributed:
   return `${window.spaBase}/patient/${patientUuid}/chart/${encodeURIComponent(chartPage ?? 'Patient Summary')}`;
 }
 
+const CALENDAR_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * An ended order's date as the panel may show it, or null where it must show none.
+ *
+ * The backend converts every date in UTC, so its `yyyy-MM-dd` can be a day off the local one, and
+ * the panel shows it verbatim: never parsed into a `Date`, which would shift it again by the
+ * viewer's own offset. Anything but that one shape is withheld rather than trimmed, so nothing more
+ * exact than a calendar day reaches the screen.
+ */
+function calendarDay(value: unknown): string | null {
+  return typeof value === 'string' && CALENDAR_DAY.test(value) ? value : null;
+}
+
 function handleReferenceNavigate(e: React.MouseEvent, url: string, ref: AiReference) {
   e.preventDefault();
   navigate({ to: url });
@@ -446,6 +460,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   conditionRuleCoverage,
   interactionPairs,
   activeOrderClaims,
+  orderStopDates,
   questionId,
   error,
   isLoading,
@@ -460,6 +475,17 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     () => new Set(Array.isArray(misattributedOrderCitations) ? misattributedOrderCitations : []),
     [misattributedOrderCitations],
   );
+
+  // Citation index → the day that cited prescription stopped. Array.isArray for the reason
+  // `misattributed` gives; an entry is kept only where its date reads as one calendar day.
+  const stopDates = useMemo(() => {
+    const byCitation = new Map<number, string>();
+    for (const entry of Array.isArray(orderStopDates) ? orderStopDates : []) {
+      const day = calendarDay(entry?.stopDate);
+      if (typeof entry?.citation === 'number' && day) byCitation.set(entry.citation, day);
+    }
+    return byCitation;
+  }, [orderStopDates]);
 
   const severities = useMemo(
     () => resolveFindingSeverities(answer, references, safetyWarnings ?? [], unstatedFindingSeverities),
@@ -629,6 +655,18 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   // `grounded` lands on it: the unmount effect aborts the stream unconditionally, so it cannot.)
   const showLimits = !isLoading && (pairsSentence !== null || coverageNote !== null || orderClaimsSentence !== null);
 
+  // What a chip about an ended order is about. The backend asks for exactly this reading: such a
+  // chip is about giving the drug again, not about two medications the patient takes now.
+  const endedOrderTitle = t(
+    'aboutAnEndedOrderTitle',
+    'The chart records this drug only as an order no longer in force, so the finding is about what giving it again would mean — not about a medication the patient is taking now.',
+  );
+  // Said of both ended-order dates: the backend converts them in UTC.
+  const utcDayTitle = t(
+    'utcCalendarDayTitle',
+    'The date is a calendar day in UTC, so it can be a day off the local date.',
+  );
+
   // The API layer emits a code (not display text) for session expiry so the wording can be localized
   // here; every other error is already a human-readable string from the server or browser.
   const displayError =
@@ -693,9 +731,22 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                   {label}
                 </span>
               );
+              const stopDate = stopDates.get(ref.index);
               return (
                 <span key={ref.index} className={styles.referenceItem}>
                   {link}
+                  {/* When this cited prescription stopped: the answer can say an order ended
+                      without saying when. Beside the record's own date, never in its place — the
+                      two are different facts. No entry draws nothing, and is no claim the order
+                      is current. */}
+                  {stopDate && (
+                    <span
+                      className={styles.orderStopDateTag}
+                      title={`${t('orderStopDateTitle', 'The date this prescription stopped being in force — not the record’s own date shown beside it.')} ${utcDayTitle}`}
+                    >
+                      {t('orderStopDate', 'Stopped {{stopDate}}', { stopDate })}
+                    </span>
+                  )}
                   {isMisattributed && (
                     <span className={styles.misattributedTag} title={misattributedTitle(t)}>
                       {t('notTheOrderNamed', 'Not the order named')}
@@ -736,6 +787,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
           <div className={styles.safetyWarningsList}>
             {safetyWarnings.map((warning, i) => {
               const { tagType, label } = safetyWarningTag(warning.type, t);
+              const endedOn = calendarDay(warning.endedOrderStopDate);
               return (
                 <span key={`${warning.type}-${warning.drug}-${i}`} className={styles.safetyWarningItem}>
                   <Tag type={tagType} size="sm" className={styles.safetyWarningBadge}>
@@ -757,6 +809,25 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                           )}
                         >
                           {t('aboutACurrentMedication', 'About a current medication')}
+                        </span>
+                      </>
+                    )}
+                    {/* The chip's words are also the same whether the chart holds this drug only as
+                        an ended order or a question proposed it. A mark of its own, not the tag
+                        above: the backend keeps the two referents apart. Only `true` is drawn —
+                        `false` does not say the drug is current. */}
+                    {warning.aboutAnEndedOrder === true && (
+                      <>
+                        {' '}
+                        <span
+                          className={styles.endedOrderTag}
+                          title={endedOn ? `${endedOrderTitle} ${utcDayTitle}` : endedOrderTitle}
+                        >
+                          {endedOn
+                            ? t('aboutAnEndedOrderOn', 'About an order no longer in force, ended {{stopDate}}', {
+                                stopDate: endedOn,
+                              })
+                            : t('aboutAnEndedOrder', 'About an order no longer in force')}
                         </span>
                       </>
                     )}
