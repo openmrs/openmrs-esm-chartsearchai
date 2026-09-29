@@ -839,6 +839,71 @@ describe('AiResponsePanel reference citation metadata', () => {
   });
 });
 
+describe('AiResponsePanel interactions below the warning threshold', () => {
+  const LINE =
+    'Not raised as a warning: Clarithromycin interacts with this patient’s lidocaine (Unknown), metoclopramide (Unknown) — the drug reference rates these below the warning threshold.';
+
+  function renderWith(interactionPairs: unknown, isLoading = false) {
+    return render(
+      <AiResponsePanel
+        answer="The records address Clarithromycin and list the following interactions: lidocaine [45]."
+        references={[
+          { index: 45, resourceType: 'drug_reference', resourceUuid: '21212', date: '', group: 'reference' },
+        ]}
+        interactionPairs={interactionPairs as never}
+        questionId="q"
+        error={null}
+        isLoading={isLoading}
+        patientUuid={patientUuid}
+      />,
+    );
+  }
+
+  const pairs = [
+    { drug: 'Clarithromycin', partner: 'lidocaine', severity: 'Unknown' },
+    { drug: 'Clarithromycin', partner: 'metoclopramide', severity: 'Unknown' },
+  ];
+
+  it('names her medications the screen related only below the floor, and that no warning was raised', () => {
+    renderWith({ found: 0, reported: 0, belowFloor: pairs });
+    const line = screen.getByText(LINE);
+    expect(line).toHaveAttribute(
+      'title',
+      'The drug reference lists these interactions with medications this patient has an order for, at a severity below the one the module raises warnings at. This is not a finding that the combination is safe.',
+    );
+  });
+
+  it('states one line per drug in play', () => {
+    renderWith({
+      found: 0,
+      reported: 0,
+      belowFloor: [...pairs, { drug: 'Erythromycin', partner: 'lidocaine', severity: null }],
+    });
+    expect(screen.getByText(LINE)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Not raised as a warning: Erythromycin interacts with this patient’s lidocaine — the drug reference rates these below the warning threshold.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('states nothing where nothing below the floor was measured, or measured none, or while streaming', () => {
+    for (const [value, loading] of [
+      [{ found: 0, reported: 0, belowFloor: null }, false],
+      [{ found: 0, reported: 0, belowFloor: [] }, false],
+      [{ found: 0, reported: 0 }, false],
+      [null, false],
+      [{ found: 0, reported: 0, belowFloor: 'lidocaine' }, false],
+      [{ found: 0, reported: 0, belowFloor: [{ drug: 'Clarithromycin' }, 5] }, false],
+      [{ found: 0, reported: 0, belowFloor: pairs }, true],
+    ] as const) {
+      const { unmount } = renderWith(value, loading);
+      expect(screen.queryByText(/Not raised as a warning/)).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+});
+
 describe('AiResponsePanel copy-to-clipboard', () => {
   const references = [
     { index: 1, resourceType: 'obs', resourceUuid: 'uuid-101', date: '2025-01-15' },

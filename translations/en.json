@@ -11,6 +11,8 @@
   "askAiAboutPatient": "Ask AI about this patient",
   "attachedByTheModule": "Added by the module",
   "attachedByTheModuleTitle": "The module supplied this citation — it is the chart record the cited safety finding fired on, so the answer’s text carries no marker for it. Opening it goes to the record.",
+  "belowFloorInteractions": "Not raised as a warning: {{drug}} interacts with this patient’s {{partners}} — the drug reference rates these below the warning threshold.",
+  "belowFloorInteractionsTitle": "The drug reference lists these interactions with medications this patient has an order for, at a severity below the one the module raises warnings at. This is not a finding that the combination is safe.",
   "cancel": "Cancel",
   "close": "Close",
   "copy": "Copy",

@@ -417,6 +417,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   safetyWarnings,
   misattributedOrderCitations,
   unstatedFindingSeverities,
+  interactionPairs,
   orderStopDates,
   questionId,
   error,
@@ -425,6 +426,32 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   onFeedbackComplete,
 }) => {
   const { t } = useTranslation();
+
+  // Her own medications the interaction screen related only BELOW the severity floor, one line per drug
+  // in play (backend ADR Decision 127). Without it, an answer listing four of her orders as a drug's
+  // general interactions sat beside no chip and nothing saying they were hers. Guarded per ENTRY: a
+  // malformed one is dropped rather than rendered as "undefined", and nothing here may throw.
+  const belowFloorLines = useMemo(() => {
+    const entries = Array.isArray(interactionPairs?.belowFloor) ? interactionPairs.belowFloor : [];
+    const byDrug = new Map<string, string[]>();
+    for (const entry of entries) {
+      if (!entry || typeof entry.drug !== 'string' || typeof entry.partner !== 'string') continue;
+      const partner =
+        typeof entry.severity === 'string' && entry.severity.trim()
+          ? `${entry.partner} (${entry.severity})`
+          : entry.partner;
+      byDrug.set(entry.drug, [...(byDrug.get(entry.drug) ?? []), partner]);
+    }
+    // escapeValue off: React escapes the text node, and i18next's own escaping would print a drug such as
+    // "Sulfamethoxazole / trimethoprim" with `&#x2F;`.
+    return [...byDrug].map(([drug, partners]) =>
+      t(
+        'belowFloorInteractions',
+        'Not raised as a warning: {{drug}} interacts with this patient’s {{partners}} — the drug reference rates these below the warning threshold.',
+        { drug, partners: partners.join(', '), interpolation: { escapeValue: false } },
+      ),
+    );
+  }, [interactionPairs, t]);
 
   // Array.isArray, not `?? []`: a non-iterable value here would throw inside this memo, and a
   // string would iterate its characters and silently match nothing.
@@ -684,6 +711,23 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
               );
             })}
           </div>
+        </div>
+      )}
+
+      {!isLoading && belowFloorLines.length > 0 && (
+        <div className={styles.belowFloorSection}>
+          {belowFloorLines.map((line) => (
+            <p
+              key={line}
+              className={styles.belowFloorLine}
+              title={t(
+                'belowFloorInteractionsTitle',
+                'The drug reference lists these interactions with medications this patient has an order for, at a severity below the one the module raises warnings at. This is not a finding that the combination is safe.',
+              )}
+            >
+              {line}
+            </p>
+          ))}
         </div>
       )}
 
