@@ -545,6 +545,15 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                 </span>
               );
               const stopDate = stopDates.get(ref.index);
+              const source = typeof ref.source === 'string' && ref.source.trim() ? ref.source : null;
+              // An integer count and nothing else: a string or a fraction here is a response this
+              // client does not understand, and drawing it would state a subset nobody measured.
+              const withheld =
+                typeof ref.withheldInteractions === 'number' &&
+                Number.isInteger(ref.withheldInteractions) &&
+                ref.withheldInteractions > 0
+                  ? ref.withheldInteractions
+                  : null;
               return (
                 <span key={ref.index} className={styles.referenceItem}>
                   {link}
@@ -558,6 +567,32 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                       title={`${t('orderStopDateTitle', 'The date this prescription stopped being in force — not the record’s own date shown beside it.')} ${utcDayTitle}`}
                     >
                       {t('orderStopDate', 'Stopped {{stopDate}}', { stopDate })}
+                    </span>
+                  )}
+                  {/* Where the cited record's content came from. Keyed on the value, never the group:
+                      a reference-group record may carry none, and the module's own finding does not. */}
+                  {source && (
+                    <span
+                      className={styles.referenceSourceTag}
+                      title={t('referenceSourceTitle', 'The dataset this reference entry quotes.')}
+                    >
+                      {source}
+                    </span>
+                  )}
+                  {/* The entry shows only some of the drug's interactions, so the answer's list is not
+                      the drug's whole list. Said as a subset and never "omitted for length": the backend
+                      withholds mostly the partners that are not relevant to this patient. */}
+                  {withheld !== null && (
+                    <span
+                      className={styles.referenceSourceTag}
+                      title={t(
+                        'withheldInteractionsTitle',
+                        'The answer can draw only on the interactions this entry shows, so its list is not every interaction of the drug.',
+                      )}
+                    >
+                      {t('withheldInteractions', 'Shows a subset of this entry’s interactions ({{count}} not shown)', {
+                        count: withheld,
+                      })}
                     </span>
                   )}
                   {isMisattributed && (

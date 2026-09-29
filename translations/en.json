@@ -39,6 +39,7 @@
   "referenceMaterialCitation": "Module-supplied reference material — not this patient’s record.",
   "referenceMaterialLabel": "Reference material",
   "references": "References",
+  "referenceSourceTitle": "The dataset this reference entry quotes.",
   "safetyChecks": "Safety checks",
   "safetyContraindication": "Contraindication",
   "safetyFindingCitation": "The module’s own safety finding, computed from this patient’s chart — not a chart record to open.",
@@ -57,5 +58,7 @@
   "unstatedSeverityTitle": "Rated by the reference dataset. This answer may not state the rating — it is shown here so the findings can be ranked.",
   "utcCalendarDayTitle": "The date is a calendar day in UTC, so it can be a day off the local date.",
   "voiceInput": "Voice input",
-  "wasThisHelpful": "Was this helpful?"
+  "wasThisHelpful": "Was this helpful?",
+  "withheldInteractions": "Shows a subset of this entry’s interactions ({{count}} not shown)",
+  "withheldInteractionsTitle": "The answer can draw only on the interactions this entry shows, so its list is not every interaction of the drug."
 }

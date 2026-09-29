@@ -788,6 +788,57 @@ describe('AiResponsePanel safety-check coverage', () => {
   });
 });
 
+describe('AiResponsePanel reference citation metadata', () => {
+  const DDINTER = 'DDInter 2.0 (via openmrs-ddi-knowledge-base)';
+
+  /** The rendered item for one citation — its chip and every tag beside it. */
+  const referenceItem = (index: number) =>
+    screen.getByText((_content, element) =>
+      Boolean(element?.className?.includes?.('referenceItem') && element.textContent?.startsWith(`[${index}] `)),
+    );
+
+  it('names the dataset a drug-reference citation came from, and that it shows a subset', () => {
+    // The captured response: [10] is Rifampicin's DDInter entry, 648 of whose interaction partners
+    // the record does not show, [11] the module's own finding, computed rather than quoted, and [5]
+    // her chart's drug order.
+    renderLiveResponse(ENDED_ORDER_DRUG_PROPOSED);
+    const drugReference = referenceItem(10);
+    expect(screen.getByText(DDINTER)).toHaveAttribute('title', 'The dataset this reference entry quotes.');
+    expect(drugReference).toHaveTextContent(`[10] Drug reference${DDINTER}`);
+    expect(drugReference).toHaveTextContent('Shows a subset of this entry’s interactions (648 not shown)');
+    expect(screen.getByText('Shows a subset of this entry’s interactions (648 not shown)')).toHaveAttribute(
+      'title',
+      'The answer can draw only on the interactions this entry shows, so its list is not every interaction of the drug.',
+    );
+
+    for (const index of [11, 5]) {
+      expect(referenceItem(index)).not.toHaveTextContent(DDINTER);
+      expect(referenceItem(index)).not.toHaveTextContent(/subset|not shown/);
+    }
+  });
+
+  it('states no subset where the record shows every partner, or the count is not a sane one', () => {
+    for (const withheldInteractions of [0, null, undefined, -3, 2.5, '648']) {
+      const references = ENDED_ORDER_DRUG_PROPOSED.references.map((ref) =>
+        ref.index === 10 ? { ...ref, withheldInteractions } : ref,
+      ) as typeof ENDED_ORDER_DRUG_PROPOSED.references;
+      const { unmount } = renderLiveResponse(ENDED_ORDER_DRUG_PROPOSED, { references });
+      expect(referenceItem(10)).not.toHaveTextContent(/subset|not shown/);
+      unmount();
+    }
+  });
+
+  it('branches on the source value, not the group', () => {
+    // The backend: a reference-group entry may carry no attribution, so key on the value.
+    const references = ENDED_ORDER_DRUG_PROPOSED.references.map((ref) =>
+      ref.index === 10 ? { ...ref, source: null } : ref,
+    ) as typeof ENDED_ORDER_DRUG_PROPOSED.references;
+    renderLiveResponse(ENDED_ORDER_DRUG_PROPOSED, { references });
+    expect(referenceItem(10)).not.toHaveTextContent(DDINTER);
+    expect(referenceItem(10)).toHaveTextContent('(648 not shown)');
+  });
+});
+
 describe('AiResponsePanel copy-to-clipboard', () => {
   const references = [
     { index: 1, resourceType: 'obs', resourceUuid: 'uuid-101', date: '2025-01-15' },

@@ -68,6 +68,18 @@ export interface AiReference {
    * do NOT together identify a module-supplied citation, which is why this key exists.
    */
   attachedByTheModule?: boolean | null;
+  /**
+   * The dataset the cited record's content came from — e.g. `DDInter 2.0 (via
+   * openmrs-ddi-knowledge-base)` for a drug-reference entry — and null for a chart record and for
+   * the module's own computed finding. The backend: branch on the value, never on `group`.
+   */
+  source?: string | null;
+  /**
+   * How many of the cited record's interaction partners the record does not show; 0 when it shows
+   * them all. The backend asks for "the citation shows a subset", never "omitted for length": a
+   * large count normally means the rest are not relevant to this patient.
+   */
+  withheldInteractions?: number | null;
 }
 
 /**
