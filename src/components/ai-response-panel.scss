@@ -238,54 +238,6 @@
   box-shadow: inset 0 0 0 1px colors.$gray-40;
 }
 
-// What the safety screen did and did not cover. Informational grey, NOT a caution: an arm the
-// loaded dataset cannot run is a limit of the dataset, not a finding about this patient, and an
-// amber or red treatment here reads as the latter.
-.limitsSection {
-  display: flex;
-  flex-direction: column;
-  gap: layout.$spacing-02;
-  padding: layout.$spacing-03;
-  background-color: colors.$gray-10;
-  border-radius: 0.25rem;
-}
-
-.limitsLabel {
-  @include type.type-style('label-01');
-  color: colors.$gray-70;
-}
-
-.limitsList {
-  display: flex;
-  flex-direction: column;
-  gap: layout.$spacing-02;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.limitItem {
-  @include type.type-style('body-compact-01');
-  display: flex;
-  align-items: flex-start;
-  gap: layout.$spacing-02;
-  color: colors.$gray-70;
-}
-
-// A truncated interaction list is the one statement here that is about this answer's own
-// completeness, so it carries a little more weight than the coverage notes beside it.
-.limitItemBounded {
-  @extend .limitItem;
-  color: colors.$orange-70;
-  font-weight: 600;
-}
-
-.limitIcon {
-  flex-shrink: 0;
-  // Nudge the 16px glyph onto the cap height of the first line of text beside it.
-  margin-top: 0.125rem;
-}
-
 // An inline citation pointing at injected drug-reference data (not a chart record).
 // Purple to match the reference chip and to read as "reference, not patient data";
 // non-navigating, so no pointer cursor.

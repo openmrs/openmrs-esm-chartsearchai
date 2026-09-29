@@ -470,7 +470,10 @@ describe('AiResponsePanel current-medication chips', () => {
     );
   }
 
-  /** Each chip's row in list order, found by class for the reason `limitsSection` gives below. */
+  /**
+   * Each chip's row in list order, found by class rather than by text: an assertion that names a
+   * heading goes dead the moment the heading is reworded, passing while examining nothing.
+   */
   const chipRows = () =>
     screen.queryAllByText((_content, element) => Boolean(element?.className?.includes?.('safetyWarningItem')));
 
@@ -746,6 +749,45 @@ describe('AiResponsePanel order stop dates', () => {
   });
 });
 
+describe('AiResponsePanel safety-check coverage', () => {
+  it('draws no "What the safety checks covered" block, whatever the response measured', () => {
+    // Removed from the panel: on a live clarithromycin answer listing four of the patient's own
+    // active orders as interactions, its "related no drug pairs" line read as "no interactions
+    // with her medications", because the screen skips the source's unrated pairs before relating
+    // any. So nothing of it is drawn, even where every measurement it rendered is on the response.
+    const response = {
+      ...ENDED_ORDER_DRUG_PROPOSED,
+      interactionPairs: { found: 18, reported: 10 },
+      activeOrderClaims: { stated: 4, uncited: 3 },
+      conditionRuleCoverage: 'absent',
+    };
+    render(
+      <AiResponsePanel
+        {...(response as object)}
+        answer={response.answer}
+        references={response.references}
+        questionId={response.questionId}
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+    // The answer itself still renders, so the absences below are not of an empty panel.
+    expect(
+      screen.getByText((_content, element) => Boolean(element?.className?.includes?.('answerText'))),
+    ).toHaveTextContent('Rifampicin');
+    expect(screen.queryByText(/What the safety checks covered/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        /Interaction pairs shown|related no drug pairs|severe pairs can be among them|recorded conditions|active orders cites|citing no chart record|cannot be checked against the chart/,
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText((_content, element) => Boolean(element?.className?.includes?.('limit'))),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe('AiResponsePanel copy-to-clipboard', () => {
   const references = [
     { index: 1, resourceType: 'obs', resourceUuid: 'uuid-101', date: '2025-01-15' },
@@ -835,106 +877,6 @@ describe('AiResponsePanel copy-to-clipboard', () => {
  * the fixture's prose and warnings and so depend on dataset-format details only the fixture
  * states.
  */
-describe('activeOrderClaims', () => {
-  function renderClaims(activeOrderClaims: unknown, misattributedOrderCitations: number[] | null = []) {
-    return render(
-      <AiResponsePanel
-        answer={ANSWER_BY_SUBSTANCE}
-        references={FIXTURE_REFERENCES}
-        safetyWarnings={SAFETY_WARNINGS}
-        misattributedOrderCitations={misattributedOrderCitations}
-        unstatedFindingSeverities={UNSTATED}
-        conditionRuleCoverage="published"
-        interactionPairs={null}
-        activeOrderClaims={activeOrderClaims as never}
-        questionId="q-379"
-        error={null}
-        isLoading={false}
-        patientUuid={patientUuid}
-      />,
-    );
-  }
-
-  it('is what separates the two readings of an empty misattributed list', () => {
-    // The reason this field is drawn at all. The backend states that
-    // `misattributedOrderCitations: []` is two different responses a client cannot tell apart —
-    // every active-order claim cited a chart record and none was rejected, or NO claim cited one —
-    // and that both have been recorded on one patient and one question. The `[]` is the same in
-    // both halves below; only this field distinguishes them, which is why drawing the other four
-    // without it left an ambiguity on screen that their own docs warn about.
-    const view = renderClaims({ stated: 5, uncited: 0 }, []);
-    expect(screen.getByText(/Every statement about her active orders cites a chart record\./)).toBeInTheDocument();
-    view.unmount();
-
-    renderClaims({ stated: 5, uncited: 5 }, []);
-    expect(screen.getByText(/Statements about her active orders citing no chart record: 5 of 5\./)).toBeInTheDocument();
-  });
-
-  it('says why an uncited claim matters', () => {
-    renderClaims({ stated: 4, uncited: 3 });
-    expect(screen.getByText(/citing no chart record: 3 of 4\./)).toBeInTheDocument();
-    expect(screen.getByText(/cannot be checked against the chart at all/)).toBeInTheDocument();
-  });
-
-  it('does not claim the cited records were the RIGHT ones', () => {
-    // `uncited: 0` says a record was offered for every claim and stops there. Whether the record
-    // was the order the sentence named is the neighbouring check's business, and the backend says
-    // that check cannot certify it either — so this must not read as "citations verified", and it
-    // must not carry the caveat clause that belongs to the uncited case.
-    renderClaims({ stated: 5, uncited: 0 });
-    expect(screen.getByText(/Every statement about her active orders cites a chart record\./)).toBeInTheDocument();
-    expect(screen.queryByText(/verified|confirmed|sound/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/cannot be checked against the chart at all/)).not.toBeInTheDocument();
-  });
-
-  it('does not affirm that every claim is cited while a citation is rejected', () => {
-    // `uncited: 0` is true of the MARKERS — every active-order sentence carries one — and the
-    // sibling test above is right that the sentence stops there. But it leads a block headed
-    // "What the safety checks covered", and under that heading, beside citations the
-    // neighbouring check has struck through, it reads as a statement about the RECORDS. Live on
-    // the #26 reproduction: `{stated: 5, uncited: 0}` with `misattributedOrderCitations`
-    // `[177, 166, 155]`, three markers rendered `Not the order named` directly above the
-    // affirmation. Silence here is the choice `misattributedOrderCitations: []` already makes
-    // one field over — no certificate.
-    renderClaims({ stated: 5, uncited: 0 }, [177, 166, 155]);
-    expect(
-      screen.queryByText(/Every statement about her active orders cites a chart record\./),
-    ).not.toBeInTheDocument();
-  });
-
-  it('still affirms it where nothing was rejected, and where no measurement was stated', () => {
-    // The scope of the refusal above, both directions. `[]` is a stated measurement of none, so
-    // the affirmation stands — that is the case the sibling test reasoned about. `null` is NO
-    // measurement, and must not suppress it either: absent evidence of a rejection is not a
-    // rejection, and treating it as one would silence the sentence on every deployment that
-    // does not run the check.
-    const view = renderClaims({ stated: 5, uncited: 0 }, []);
-    expect(screen.getByText(/Every statement about her active orders cites a chart record\./)).toBeInTheDocument();
-    view.unmount();
-
-    renderClaims({ stated: 5, uncited: 0 }, null);
-    expect(screen.getByText(/Every statement about her active orders cites a chart record\./)).toBeInTheDocument();
-  });
-
-  it('renders nothing for a null measurement or an answer that made no such claim', () => {
-    for (const value of [null, undefined, { stated: 0, uncited: 0 }]) {
-      const view = renderClaims(value);
-      expect(screen.queryByText(/active orders/)).not.toBeInTheDocument();
-      view.unmount();
-    }
-  });
-
-  it('survives a malformed measurement rather than taking the panel down', () => {
-    // Guarded per FIELD, not just on the object: this renders inside a memo with no error boundary
-    // above it, and a non-numeric count would reach the interpolation.
-    for (const value of [{ stated: '5', uncited: 2 }, { stated: 5 }, { uncited: 2 }, 'nonsense', 5]) {
-      const view = renderClaims(value);
-      expect(screen.queryByText(/active orders/)).not.toBeInTheDocument();
-      view.unmount();
-    }
-  });
-});
-
 describe('AiResponsePanel answer-limit disclosure', () => {
   function renderPanel(overrides: Record<string, unknown> = {}) {
     return render(
@@ -964,14 +906,6 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     (
       screen.getByText((_content, element) => Boolean(element?.className?.includes?.('answerText'))).textContent ?? ''
     ).replace(/\s+/g, ' ');
-
-  /**
-   * The limits block, or null. Queried by class rather than by its heading text: four
-   * assertions in this file used to name the heading and went dead the moment it was reworded,
-   * passing while examining nothing.
-   */
-  const limitsSection = () =>
-    screen.queryByText((_content, element) => Boolean(element?.className?.includes?.('limitsLabel')));
 
   it('renders each unstated rating immediately after the marker of the finding it rates', () => {
     renderPanel();
@@ -1154,116 +1088,6 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     expect(screen.getByText('[350] Safety finding').tagName).toBe('SPAN');
   });
 
-  it('says how much of the interaction screen is shown', () => {
-    renderPanel();
-    // Also the only assertion that pins `limitsSection`'s selector to the component: six
-    // sibling tests assert the block is ABSENT, and renaming the class left all six passing
-    // while examining nothing until this line existed.
-    expect(limitsSection()).not.toBeNull();
-    expect(screen.getByText('Interaction pairs shown: 5 of 5.')).toBeInTheDocument();
-    // found === reported means that check withheld nothing; it is not a claim of completeness.
-    expect(screen.queryByText(/severe pairs can be among them/i)).not.toBeInTheDocument();
-  });
-
-  it('reads grammatically when the screen related a single pair', () => {
-    // "1 of 1 drug pairs shown" is ungrammatical, and found: 1 is observed live — so the
-    // plural noun is detached from the count and agreement never arises.
-    renderPanel({ interactionPairs: { found: 1, reported: 1 } });
-    expect(screen.getByText('Interaction pairs shown: 1 of 1.')).toBeInTheDocument();
-  });
-
-  it('says so where the interaction list was truncated', () => {
-    renderPanel({ interactionPairs: { found: 18, reported: 10 } });
-    expect(screen.getByText(/Interaction pairs shown: 10 of 18/)).toBeInTheDocument();
-    expect(screen.getByText(/severe pairs can be among them/i)).toBeInTheDocument();
-  });
-
-  it('states no interaction extent where the response stated no measurement', () => {
-    renderPanel({ interactionPairs: null, conditionRuleCoverage: null });
-    expect(screen.queryByText(/Interaction pairs shown/)).not.toBeInTheDocument();
-    expect(limitsSection()).toBeNull();
-  });
-
-  it('states nothing rather than "undefined of 5" where one half of the measurement is missing', () => {
-    // Silent wrong output, not a crash: the interpolation would stringify the missing half, and
-    // `reported < found` would be false so the bounded warning would not fire to contradict it.
-    renderPanel({ interactionPairs: { found: 5 }, conditionRuleCoverage: null });
-    expect(screen.queryByText(/Interaction pairs shown/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/undefined/)).not.toBeInTheDocument();
-    expect(limitsSection()).toBeNull();
-  });
-
-  it('states no coverage note on an answer no safety screen produced anything for', () => {
-    // Measured on a live server: "What is her blood pressure trend?" comes back
-    // conditionRuleCoverage "absent" with no warnings and no pair measurement — "absent" is the
-    // verdict the shipped knowledge base yields, so an ungated note would sit under every
-    // answer on every install and imply a contraindication screen fell short where none ran.
-    renderPanel({
-      safetyWarnings: [],
-      interactionPairs: null,
-      conditionRuleCoverage: 'absent',
-      // The real payload: 22 obs citations and not one reference-group record, so nothing says a
-      // drug-safety screen produced anything.
-      references: [{ index: 1, resourceType: 'obs', resourceUuid: 'o-1', date: '2026-01-01', group: 'chart' }],
-      misattributedOrderCitations: [],
-      unstatedFindingSeverities: [],
-    });
-    expect(limitsSection()).toBeNull();
-    expect(screen.queryByText(/not checked against/)).not.toBeInTheDocument();
-  });
-
-  it('states the coverage note where a screen cited a reference record but raised no chip', () => {
-    // The load-bearing case: a prescribing question against a chart with conditions and no
-    // active orders runs the contraindication screen, raises no chip and states no pair extent.
-    // The backend says of exactly that — "Render it. That is what the key is for."
-    renderPanel({ safetyWarnings: [], interactionPairs: null, conditionRuleCoverage: 'absent' });
-    expect(screen.getByText(/has no drug–condition rules/)).toBeInTheDocument();
-  });
-
-  /** Chart-only citations, so no reference-group record can satisfy the coverage gate for free. */
-  const CHART_ONLY_REFS = [{ index: 1, resourceType: 'obs', resourceUuid: 'o-1', date: '2026-01-01', group: 'chart' }];
-
-  it('states the coverage note where an interaction screen ran but raised no chip', () => {
-    // A pair measurement is a screen on its own, so its extent is worth stating even with no
-    // warnings beside it. Chart-only references, because the default fixture cites five
-    // reference-group records that would satisfy the gate on their own — with them, deleting
-    // this disjunct from `hasSafetyOutput` left the whole suite green.
-    renderPanel({
-      safetyWarnings: [],
-      interactionPairs: { found: 0, reported: 0 },
-      references: CHART_ONLY_REFS,
-      misattributedOrderCitations: [],
-      unstatedFindingSeverities: [],
-    });
-    expect(screen.getByText(/has no drug–condition rules/)).toBeInTheDocument();
-  });
-
-  it('states the coverage note where a chip was raised but no extent was measured', () => {
-    // The third way a safety screen shows it produced something. Also chart-only references, for
-    // the same reason — this disjunct was unpinned too.
-    renderPanel({
-      safetyWarnings: [SAFETY_WARNINGS[1]],
-      interactionPairs: null,
-      references: CHART_ONLY_REFS,
-      misattributedOrderCitations: [],
-      unstatedFindingSeverities: [],
-    });
-    expect(screen.getByText(/has no drug–condition rules/)).toBeInTheDocument();
-  });
-
-  it('states no coverage note where every chip is one the answer already states', () => {
-    // The allergy-question case: the answer states the chip, so nothing left on screen is a safety
-    // screen's output for the note to qualify.
-    renderPanel({
-      safetyWarnings: [{ ...SAFETY_WARNINGS[0], aboutACurrentMedication: true, statedInTheAnswer: true }],
-      interactionPairs: null,
-      references: CHART_ONLY_REFS,
-      misattributedOrderCitations: [],
-      unstatedFindingSeverities: [],
-    });
-    expect(limitsSection()).toBeNull();
-  });
-
   it('keeps the ungrounded warning on a citation that is also misattributed', () => {
     // The two checks are independent and both can fire on one citation. The backend is explicit
     // that this key must render BESIDE the other statements about a citation, never over them:
@@ -1276,38 +1100,6 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     expect(marker).toHaveAttribute('title', expect.stringContaining('may not support this statement'));
     // ...and the chip's own verdict is still published.
     expect(screen.getByText('Unsupported')).toBeInTheDocument();
-  });
-
-  it('does not state a pair ratio where the screen related no pairs', () => {
-    // `found: 0` is a real measurement, but it is about the check that reported it and NOT about
-    // the findings beside it — which may come from another check. "Interaction pairs shown:
-    // 0 of 0." above a Major interaction chip reads as "no interactions found".
-    renderPanel({ interactionPairs: { found: 0, reported: 0 } });
-    expect(screen.queryByText(/0 of 0/)).not.toBeInTheDocument();
-    expect(screen.getByText(/related no drug pairs/)).toBeInTheDocument();
-  });
-
-  it('states nothing where the measurement is not a sane pair of counts', () => {
-    for (const interactionPairs of [
-      { found: 5, reported: 8 },
-      { found: -1, reported: 0 },
-      { found: 5.5, reported: 1 },
-    ]) {
-      const { unmount } = renderPanel({ interactionPairs, conditionRuleCoverage: null });
-      expect(screen.queryByText(/Interaction pairs shown/)).not.toBeInTheDocument();
-      expect(limitsSection()).toBeNull();
-      unmount();
-    }
-  });
-
-  it('states no limits while the answer is still streaming', () => {
-    // The citations are not annotated at all during streaming, so a limits block would describe
-    // annotations the reader cannot see — and closing the panel mid-stream leaves the message
-    // loading forever — the panel is gone so nothing re-renders it, while the store keeps the
-    // message. NOT because a trailing `grounded` lands on it: the unmount effect aborts the
-    // stream unconditionally, so it cannot, and the hook's own comment records that correction.
-    renderPanel({ isLoading: true });
-    expect(limitsSection()).toBeNull();
   });
 
   it('does not call the module’s own computed finding “reference data”', () => {
@@ -1389,31 +1181,5 @@ describe('AiResponsePanel answer-limit disclosure', () => {
       expect(screen.queryByText('Not the order named')).not.toBeInTheDocument();
       unmount();
     }
-  });
-
-  it('says medications were not checked against the patient’s conditions, and why, on "absent"', () => {
-    renderPanel();
-    expect(screen.getByText(/has no drug–condition rules/)).toBeInTheDocument();
-  });
-
-  it('distinguishes "absent" from "unloaded" — a mapping test, not a reachable render', () => {
-    // `renderPanel`'s defaults supply chips and a pair extent, which is what lets this reach the
-    // `unloaded` branch at all. A real `unloaded` payload cannot: it means no dataset was read,
-    // so there are no chips, no pair extent and no reference citations, and the coverage gate
-    // never opens. This asserts the two verdicts map to different sentences — which is worth
-    // asserting, since collapsing them is what the backend forbids — and not that a stock
-    // install ever shows the second one. See the reachability note beside COVERAGE_SENTENCE.
-    // "We looked and there is none" is not "nobody looked".
-    renderPanel({ conditionRuleCoverage: 'unloaded' });
-    expect(screen.getByText(/no drug-safety data is loaded on this system/)).toBeInTheDocument();
-    expect(screen.queryByText(/has no drug–condition rules/)).not.toBeInTheDocument();
-  });
-
-  it('claims nothing about conditions on "published"', () => {
-    // `published` says the DATASET can run the arm, never that any recorded condition was
-    // screened — so it must not produce a "conditions screened" affordance.
-    renderPanel({ conditionRuleCoverage: 'published', interactionPairs: null });
-    expect(limitsSection()).toBeNull();
-    expect(screen.queryByText(/conditions/i)).not.toBeInTheDocument();
   });
 });

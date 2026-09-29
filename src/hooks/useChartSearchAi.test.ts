@@ -882,8 +882,7 @@ describe('useChartSearchAi trailing grounded event', () => {
   it('does not let a trailing grounded event dress up an answer the user stopped', () => {
     // The `done` twin of this is above. `grounded` is the same hazard and worse: it carries the
     // four measurements, so a message whose answer is half a sentence would grow severity badges
-    // resolved against that fragment and a "What the safety checks covered" block stating the
-    // extent of a screen over an answer the reader never saw.
+    // resolved against that fragment.
     mockUseConfig.mockReturnValue({ useStreaming: true });
     const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
 

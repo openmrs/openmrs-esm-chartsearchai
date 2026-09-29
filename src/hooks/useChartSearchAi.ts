@@ -340,8 +340,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
                 // chunk already in hand. This one carries more, which is why the asymmetry was
                 // worth closing rather than reasoning away — `grounded` brings the four
                 // measurements, so a message whose answer is half a sentence would grow severity
-                // badges resolved against that fragment and a "What the safety checks covered"
-                // block stating the extent of a screen over an answer the reader never saw.
+                // badges resolved against that fragment.
                 if (stoppedMessageIdsRef.current.has(messageId)) return;
                 updateMessages(patientUuid, (prev) => {
                   const idx = prev.findIndex((m) => m.id === messageId);
