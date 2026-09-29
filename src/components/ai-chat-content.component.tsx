@@ -109,9 +109,30 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
     [mode, onClose],
   );
 
+  // Whether the history follows new content to the bottom. Only the reader moves it: a scroll UP that
+  // leaves the bottom unpins, and reaching the bottom again re-pins. Decided on scroll events rather
+  // than on where the view sits when a chunk lands, because content growing under a pinned view also
+  // leaves it short of the bottom. Before this, every streamed chunk re-set scrollTop, so a reader
+  // scrolling back through earlier answers was pulled down again within a chunk.
+  const pinnedToBottomRef = useRef(true);
+  const lastScrollTopRef = useRef(0);
+  const handleHistoryScroll = useCallback(() => {
+    const el = historyAreaRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 16;
+    if (atBottom) {
+      pinnedToBottomRef.current = true;
+    } else if (el.scrollTop < lastScrollTopRef.current) {
+      pinnedToBottomRef.current = false;
+    }
+    lastScrollTopRef.current = el.scrollTop;
+  }, []);
+
   const prevMessagesLengthRef = useRef(0);
   useEffect(() => {
     if (messages.length > prevMessagesLengthRef.current && historyAreaRef.current) {
+      // A question just asked is what the reader wants to see, wherever they had scrolled to.
+      pinnedToBottomRef.current = true;
       historyAreaRef.current.scrollTop = historyAreaRef.current.scrollHeight;
     }
     prevMessagesLengthRef.current = messages.length;
@@ -129,7 +150,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
   // it is hidden once committed reasoning or the answer arrives.
   const lastPreliminary = lastMessage?.preliminaryReasoning ?? '';
   useEffect(() => {
-    if (historyAreaRef.current) {
+    if (historyAreaRef.current && pinnedToBottomRef.current) {
       historyAreaRef.current.scrollTop = historyAreaRef.current.scrollHeight;
     }
   }, [lastAnswer, lastReasoning, lastPreliminary, isAnyLoading]);
@@ -176,7 +197,13 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
         </div>
       )}
 
-      <div className={styles.historyArea} ref={historyAreaRef} role="log" aria-live="polite">
+      <div
+        className={styles.historyArea}
+        ref={historyAreaRef}
+        role="log"
+        aria-live="polite"
+        onScroll={handleHistoryScroll}
+      >
         {messages.length === 0 && !isPatientLoading && patientUuid && (
           <p className={styles.emptyState}>{t('askAiAboutPatient', 'Ask AI about this patient')}</p>
         )}

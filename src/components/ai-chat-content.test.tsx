@@ -1,6 +1,6 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useConfig, usePatient } from '@openmrs/esm-framework';
 import { useChartSearchAi } from '../hooks/useChartSearchAi';
@@ -303,6 +303,88 @@ describe('AiChatContent', () => {
         stopCurrent: mockStopCurrent,
         clearMessages: vi.fn(),
       });
+      rerender(<AiChatContent mode="workspace" patientUuid="p1" />);
+
+      expect(log.scrollTop).toBe(1000);
+    });
+  });
+
+  describe('scrolling back while an answer streams', () => {
+    // Measured live on a 3.7.1 standalone: after two answers, a wheel-up during the third's stream was
+    // undone within 150 ms on every try, because each chunk re-set scrollTop to the bottom. Following
+    // the stream is right only while the reader is AT the bottom.
+    const thinking = {
+      id: 'm2',
+      question: 'Is it safe to start her on clarithromycin?',
+      answer: '',
+      references: [],
+      questionId: '',
+      isLoading: true,
+      error: null,
+      reasoning: 'Scanning',
+    };
+    const earlier = {
+      id: 'm1',
+      question: 'any allergies?',
+      answer: 'Lidocaine [1].',
+      references: [],
+      questionId: 'q1',
+      isLoading: false,
+      error: null,
+    };
+    const hookReturning = (messages: unknown[], isAnyLoading = true) =>
+      mockUseChartSearchAi.mockReturnValue({
+        messages,
+        isAnyLoading,
+        submitQuestion: mockSubmitQuestion,
+        stopCurrent: mockStopCurrent,
+        clearMessages: vi.fn(),
+      });
+
+    function streamingLog() {
+      hookReturning([earlier, thinking]);
+      const view = render(<AiChatContent mode="workspace" patientUuid="p1" />);
+      const log = screen.getByRole('log');
+      Object.defineProperty(log, 'scrollHeight', { configurable: true, value: 1000 });
+      Object.defineProperty(log, 'clientHeight', { configurable: true, value: 300 });
+      return { ...view, log };
+    }
+
+    /** What a reader's own scroll does: the position moves, then the browser fires `scroll`. */
+    function readerScrollsTo(log: HTMLElement, top: number) {
+      log.scrollTop = top;
+      fireEvent.scroll(log);
+    }
+
+    it('leaves the reader where they scrolled to when the next chunk arrives', () => {
+      const { log, rerender } = streamingLog();
+      readerScrollsTo(log, 700);
+      readerScrollsTo(log, 100);
+
+      hookReturning([earlier, { ...thinking, reasoning: 'Scanning her orders, then the drug reference…' }]);
+      rerender(<AiChatContent mode="workspace" patientUuid="p1" />);
+
+      expect(log.scrollTop).toBe(100);
+    });
+
+    it('follows the stream again once the reader scrolls back to the bottom', () => {
+      const { log, rerender } = streamingLog();
+      readerScrollsTo(log, 700);
+      readerScrollsTo(log, 100);
+      readerScrollsTo(log, 690);
+
+      hookReturning([earlier, { ...thinking, reasoning: 'Scanning her orders, then the drug reference…' }]);
+      rerender(<AiChatContent mode="workspace" patientUuid="p1" />);
+
+      expect(log.scrollTop).toBe(1000);
+    });
+
+    it('jumps to a question the reader has just asked, wherever they had scrolled', () => {
+      const { log, rerender } = streamingLog();
+      readerScrollsTo(log, 700);
+      readerScrollsTo(log, 100);
+
+      hookReturning([earlier, { ...thinking, isLoading: false, answer: 'Done.' }, { ...thinking, id: 'm3' }]);
       rerender(<AiChatContent mode="workspace" patientUuid="p1" />);
 
       expect(log.scrollTop).toBe(1000);
