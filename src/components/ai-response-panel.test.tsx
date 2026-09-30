@@ -1304,9 +1304,31 @@ describe('AiResponsePanel chip the answer already cites', () => {
     expect(chipItems()).toHaveLength(1);
     const chip = chipItems()[0];
     expect(chip).toHaveTextContent('Acetylsalicylic acid (aspirin) — Metoclopramide (Minor)');
-    expect(chip).toHaveTextContent('Cited in the answer');
+    // The marker the answer cites the finding at, so a clinician can find the sentence to check.
+    expect(ASPIRIN_CHIP_THE_ANSWER_CITES.answer).toContain('[46]');
+    expect(chip).toHaveTextContent('See [46] in the answer');
+    expect(chip).not.toHaveTextContent('Cited in the answer');
     expect(chip).not.toHaveTextContent(DROPPED_SENTENCE);
     expect(within(chip).getByRole('button', { name: 'Show details' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('names every marker the answer cites the finding at, in order', () => {
+    const finding = ASPIRIN_CHIP_THE_ANSWER_CITES.references.find((ref) => ref.resourceType === 'safety_finding');
+    expect(finding?.index).toBe(46);
+    renderAspirin({
+      answer: `${ASPIRIN_CHIP_THE_ANSWER_CITES.answer} Restated at [47].`,
+      references: [...ASPIRIN_CHIP_THE_ANSWER_CITES.references, { ...finding, index: 47 }],
+    });
+    openSafetyChecks();
+    expect(chipItems()[0]).toHaveTextContent('See [46], [47] in the answer');
+  });
+
+  it('names no marker the answer does not carry', () => {
+    // A second record of the finding the answer never cites is not somewhere to look.
+    const finding = ASPIRIN_CHIP_THE_ANSWER_CITES.references.find((ref) => ref.resourceType === 'safety_finding');
+    renderAspirin({ references: [...ASPIRIN_CHIP_THE_ANSWER_CITES.references, { ...finding, index: 47 }] });
+    openSafetyChecks();
+    expect(chipItems()[0]).toHaveTextContent('See [46] in the answer');
   });
 
   it('shows the full detail, including what the answer left out, when expanded', () => {
@@ -1438,9 +1460,9 @@ describe('AiResponsePanel safety box every chip of which the answer cites', () =
     renderAspirin({ safetyWarnings: [ASPIRIN_CHIP, allergy] });
     expect(screen.queryByRole('button', { name: 'Show safety checks' })).not.toBeInTheDocument();
     expect(chipItems()).toHaveLength(2);
-    expect(chipItems()[0]).toHaveTextContent('Cited in the answer');
+    expect(chipItems()[0]).toHaveTextContent('See [46] in the answer');
     expect(chipItems()[1]).toHaveTextContent('The patient has a recorded allergy to Acetylsalicylic acid (aspirin).');
-    expect(chipItems()[1]).not.toHaveTextContent('Cited in the answer');
+    expect(chipItems()[1]).not.toHaveTextContent(/See \[\d+\] in the answer/);
   });
 
   it('summarises two qualifying chips in the plural', () => {
