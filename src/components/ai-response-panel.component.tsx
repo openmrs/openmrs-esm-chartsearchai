@@ -419,12 +419,13 @@ function hadNothingToCheckAgainst(coverage: unknown): boolean {
 
 /**
  * The cited findings a record the module attached is the source of, from `attachedFor` — only
- * where the module says it attached the record, and only whole-number indexes, so a malformed value
- * draws no tag rather than a wrong one.
+ * where the module says it attached the record, and only indexes naming a `safety_finding` among
+ * this answer's citations, so a malformed or dangling value draws no tag rather than one pointing
+ * at a finding the clinician cannot find.
  */
-function attachedForOf(ref: AiReference): number[] {
+function attachedForOf(ref: AiReference, citedFindings: ReadonlySet<number>): number[] {
   if (ref.attachedByTheModule !== true || !Array.isArray(ref.attachedFor)) return [];
-  return ref.attachedFor.filter((index): index is number => Number.isInteger(index));
+  return ref.attachedFor.filter((index): index is number => Number.isInteger(index) && citedFindings.has(index));
 }
 
 const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
@@ -466,6 +467,18 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     }
     return byCitation;
   }, [orderStopDates]);
+
+  // The indexes of this answer's safety-finding citations: what an attached record's `attachedFor`
+  // may name, and the only findings a "source of" tag may point a clinician at.
+  const citedFindings = useMemo(
+    () =>
+      new Set(
+        (Array.isArray(references) ? references : [])
+          .filter((ref) => ref && referenceKind(ref) === 'safety_finding')
+          .map((ref) => ref.index),
+      ),
+    [references],
+  );
 
   const severities = useMemo(
     () => resolveFindingSeverities(answer, references, safetyWarnings ?? [], unstatedFindingSeverities),
@@ -716,6 +729,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                 </span>
               );
               const stopDate = stopDates.get(ref.index);
+              const sourceOf = attachedForOf(ref, citedFindings);
               const source = typeof ref.source === 'string' && ref.source.trim() ? ref.source : null;
               // An integer count and nothing else: a string or a fraction here is a response this
               // client does not understand, and drawing it would state a subset nobody measured.
@@ -777,7 +791,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                       tag says what the record is to the answer: the source of the cited findings it
                       backs (`attachedFor`), never who attached it, which a clinician cannot act on.
                       Nothing where the response names no finding for it. */}
-                  {attachedForOf(ref).length > 0 && (
+                  {sourceOf.length > 0 && (
                     <span
                       className={styles.attachedTag}
                       title={t(
@@ -786,9 +800,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                       )}
                     >
                       {t('sourceOfFindings', 'source of {{citations}}', {
-                        citations: attachedForOf(ref)
-                          .map((index) => `[${index}]`)
-                          .join(', '),
+                        citations: sourceOf.map((index) => `[${index}]`).join(', '),
                       })}
                     </span>
                   )}
@@ -873,14 +885,26 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
             : age
               ? t('notCheckedAge', 'Not checked against this patient’s age.')
               : t('notCheckedConditions', 'Not checked against this patient’s recorded conditions.');
-        return (
-          <p
-            className={styles.notCheckedNote}
-            title={t(
+        // `absent` is a dataset read with no such rule, `unloaded` no dataset read at all, and the two
+        // must not be told as one. A note joining both (the backend reads both keys off one load, so it
+        // should not occur) says only that the checks did not consider them.
+        const shown = [age && doseCeilingCoverage, conditions && conditionRuleCoverage].filter(Boolean);
+        const title = shown.every((coverage) => coverage === 'absent')
+          ? t(
               'notCheckedTitle',
               'The drug-safety data on this system has nothing to check these against, so the safety checks behind this answer did not consider them. This is not a finding that the drug is suitable.',
-            )}
-          >
+            )
+          : shown.every((coverage) => coverage === 'unloaded')
+            ? t(
+                'notCheckedUnloadedTitle',
+                'No drug-safety data was loaded on this system, so the safety checks behind this answer did not consider them. This is not a finding that the drug is suitable.',
+              )
+            : t(
+                'notCheckedMixedTitle',
+                'The safety checks behind this answer did not consider them. This is not a finding that the drug is suitable.',
+              );
+        return (
+          <p className={styles.notCheckedNote} title={title}>
             {text}
           </p>
         );

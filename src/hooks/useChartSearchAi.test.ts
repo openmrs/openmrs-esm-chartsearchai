@@ -4,6 +4,7 @@ import { useConfig } from '@openmrs/esm-framework';
 import { useChartSearchAi } from './useChartSearchAi';
 import { searchPatientChart, searchPatientChartStream } from '../api/chartsearchai';
 import { chatSessionStore } from '../store/chat-session.store';
+import { NO_ANSWER_LIMITS } from '../utils/answer-limits';
 
 const mockUseConfig = useConfig as Mock;
 
@@ -645,7 +646,18 @@ describe('useChartSearchAi answer-limit measurements', () => {
     activeOrderClaims: { stated: 5, uncited: 3 },
     // Not a limit, but it rides the same merge, so listing it here gives it the same coverage.
     orderStopDates: [{ citation: 350, stopDate: '2026-09-23' }],
+    // Every key the merge carries is listed, for the same reason: a key left out of this object is
+    // one whose loss between `done`, `grounded` and the message no test here can see.
+    doseCeilingCoverage: 'unloaded',
+    unfoundedFindingSeverities: [{ citation: 351, rating: 'Major' }],
+    unfaithfullyRenderedCitations: [177],
+    cautionLedOverWithholding: [{ citation: 350, rating: 'Major' }],
+    interactionClaimPairs: { judged: 2, misattributedCitations: [166], unfounded: 1 },
   };
+
+  it('lists every key the merge carries', () => {
+    expect(Object.keys(disclosure).sort()).toEqual(Object.keys(NO_ANSWER_LIMITS).sort());
+  });
 
   it('starts a message with no measurement stated', () => {
     mockSearchPatientChart.mockReturnValue(new Promise(() => {}));
