@@ -231,17 +231,6 @@
   color: colors.$cool-gray-70;
 }
 
-// Where a cited reference record came from, and that it shows a subset of its interactions. Purple,
-// with the reference badge beside it: both are about the reference entry, not this patient's record.
-// The item wraps rather than squeezing each tag into a column: in the side panel, the attribution and
-// the subset tag beside a chip left every one of them a few words wide.
-.referenceSourceTag {
-  @extend %disclosureTagBase;
-  background-color: colors.$purple-10;
-  color: colors.$purple-70;
-  white-space: normal;
-}
-
 // Long enough, with its date, to run past the side panel's edge, where it was clipped mid-date on
 // the live page. So it wraps, unlike the shorter tags.
 .endedOrderTag {

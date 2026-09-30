@@ -116,7 +116,7 @@ describe('translations/en.json', () => {
   it('recognises a counted call as plural, so the keys above are the ones it reads', () => {
     // Without this, a lexer that stopped reporting `count` would make every plural call look
     // singular and send the two checks above back to asking for a key i18next never reads.
-    expect(pluralKeys.has('withheldInteractions')).toBe(true);
+    expect(pluralKeys.has('safetyChecksCitedInTheAnswer')).toBe(true);
   });
 
   it("reads a counted call's own plural default into its _other key", () => {
