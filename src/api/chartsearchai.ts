@@ -159,6 +159,17 @@ export interface AiSafetyWarning {
    */
   aboutAnEndedOrder?: boolean;
   /**
+   * Whether this chip is about one of the patient's own medications OTHER than the drug the response is
+   * about: a contraindication raised by checking one of her prescriptions against her own records, on a
+   * response that put another drug in play. {@link aboutACurrentMedication} cannot say it, since that is
+   * also `true` for a drug the question names that she takes — which is what was asked.
+   *
+   * Only `true` is rendered, as a chip drawn apart from the findings about the drug in question. `false`
+   * is NOT a claim the chip is about that drug, and a backend that predates the key sends nothing, which
+   * reads the same as `false`.
+   */
+  aboutAnotherOfHerMedications?: boolean;
+  /**
    * The day the ended order behind {@link aboutAnEndedOrder} stopped being in force, `yyyy-MM-dd`,
    * or `null` — on every chip answering `false`, and on one whose ended records carry no stop date.
    * Of several ended orders of the drug, the latest. A UTC calendar date, so it can be a day off

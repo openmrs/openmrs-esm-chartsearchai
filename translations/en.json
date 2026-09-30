@@ -40,6 +40,8 @@
   "notTheOrderNamed": "Not the order named",
   "orderStopDate": "Stopped {{stopDate}}",
   "orderStopDateTitle": "The date this prescription stopped being in force — not the record’s own date shown beside it.",
+  "otherMedicationFindings_one": "{{count}} finding about another of this patient’s medications",
+  "otherMedicationFindings_other": "{{count}} findings about other medications this patient takes",
   "preliminaryReasoning": "Reviewing the most relevant records…",
   "reference": "Reference",
   "referenceMaterialCitation": "Module-supplied reference material — not this patient’s record.",

@@ -7,6 +7,7 @@ import { SESSION_EXPIRED_ERROR_CODE, type AiReference, type AiSafetyWarning } fr
 import { ASPIRIN_CHIP_THE_ANSWER_CITES } from '../__fixtures__/aspirin-response';
 import { SCREEN_WITH_ATTACHED_ALLERGY_RECORDS } from '../__fixtures__/attached-records-response';
 import { ASPIRIN_WITH_NOTHING_TO_CHECK_AGE_AGAINST } from '../__fixtures__/screening-coverage-response';
+import { IBUPROFEN_BESIDE_HER_OWN_ALLERGIES } from '../__fixtures__/other-medication-response';
 import {
   ALLERGY_TO_A_CURRENT_MEDICATION,
   ALLERGY_TO_A_PROPOSED_DRUG,
@@ -1632,5 +1633,73 @@ describe('AiResponsePanel what the safety check could not check', () => {
   it('says nothing while the answer is still streaming', () => {
     renderAspirin({}, true);
     expect(screen.queryByText(/^Not checked against/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * A chip about another of the patient's medications than the drug the answer is about is drawn apart from
+ * the findings about that drug: the live ibuprofen answer, beside which her lidocaine and tiotropium
+ * allergies were raised because the answer named those orders as interaction partners.
+ */
+describe('AiResponsePanel chips about her other medications', () => {
+  const LIDOCAINE = 'Lidocaine: The patient has a recorded allergy to Lidocaine.';
+  const LINE = /^2 findings about other medications this patient takes/;
+
+  function renderIbuprofen(overrides: Record<string, unknown> = {}) {
+    const response = { ...IBUPROFEN_BESIDE_HER_OWN_ALLERGIES, ...overrides };
+    return render(
+      <AiResponsePanel
+        {...(response as object)}
+        answer={response.answer as string}
+        references={response.references as unknown as AiReference[]}
+        safetyWarnings={response.safetyWarnings as AiSafetyWarning[]}
+        questionId={response.questionId as string}
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+  }
+
+  it('keeps them behind a line of their own, closed', () => {
+    renderIbuprofen();
+    expect(screen.getByText(LINE)).toBeInTheDocument();
+    expect(screen.queryByText(LIDOCAINE)).not.toBeInTheDocument();
+    expect(screen.queryByText('Tiotropium: The patient has a recorded allergy to Tiotropium.')).not.toBeInTheDocument();
+  });
+
+  it('opens them in full on a click', () => {
+    renderIbuprofen();
+    fireEvent.click(screen.getByRole('button', { name: 'Show details' }));
+    expect(screen.getByText(LIDOCAINE)).toBeInTheDocument();
+    expect(screen.getByText('Tiotropium: The patient has a recorded allergy to Tiotropium.')).toBeInTheDocument();
+  });
+
+  it('draws a chip in full where the key is false, absent, or not the boolean true', () => {
+    for (const value of [false, undefined, 'true']) {
+      const safetyWarnings = IBUPROFEN_BESIDE_HER_OWN_ALLERGIES.safetyWarnings.map((warning) => ({
+        ...warning,
+        aboutAnotherOfHerMedications: value,
+      }));
+      const { unmount } = renderIbuprofen({ safetyWarnings });
+      expect(screen.getByText(LIDOCAINE)).toBeInTheDocument();
+      expect(screen.queryByText(LINE)).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('leaves a finding about the drug in question open beside them', () => {
+    const aboutTheDrug = {
+      ...IBUPROFEN_BESIDE_HER_OWN_ALLERGIES.safetyWarnings[0],
+      drug: 'Ibuprofen',
+      detail: 'The patient has a recorded allergy to Ibuprofen.',
+      aboutACurrentMedication: false,
+      currentMedicationOrders: [],
+      aboutAnotherOfHerMedications: false,
+    };
+    renderIbuprofen({ safetyWarnings: [aboutTheDrug, ...IBUPROFEN_BESIDE_HER_OWN_ALLERGIES.safetyWarnings] });
+    expect(screen.getByText('Ibuprofen: The patient has a recorded allergy to Ibuprofen.')).toBeInTheDocument();
+    expect(screen.getByText(LINE)).toBeInTheDocument();
+    expect(screen.queryByText(LIDOCAINE)).not.toBeInTheDocument();
   });
 });

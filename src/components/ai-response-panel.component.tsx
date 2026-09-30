@@ -524,9 +524,22 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   // The whole safety box collapses to a summary line only where EVERY chip it draws qualifies for the
   // one-line form. One chip that does not keeps the box open: that is the finding a clinician must not
   // have to go looking for, and the box is where an answer that dropped or softened one still shows it.
-  const safetyBoxCollapsible =
-    shownSafetyWarnings.length > 0 && shownSafetyWarnings.every((warning) => compactWarnings.has(warning));
+  //
+  // A chip about another of her medications than the drug the answer is about (backend
+  // aboutAnotherOfHerMedications) is drawn apart from those, behind a line of its own: still in the box
+  // and one click away, but it neither keeps the box open nor sits among the findings about that drug.
+  // Only `true` moves a chip; `false` is no claim it is about the drug in question.
+  const mainWarnings = useMemo(
+    () => shownSafetyWarnings.filter((warning) => warning.aboutAnotherOfHerMedications !== true),
+    [shownSafetyWarnings],
+  );
+  const otherWarnings = useMemo(
+    () => shownSafetyWarnings.filter((warning) => warning.aboutAnotherOfHerMedications === true),
+    [shownSafetyWarnings],
+  );
+  const safetyBoxCollapsible = mainWarnings.length > 0 && mainWarnings.every((warning) => compactWarnings.has(warning));
   const [safetyBoxOpen, setSafetyBoxOpen] = useState(false);
+  const [otherMedicationsOpen, setOtherMedicationsOpen] = useState(false);
   const toggleWarning = useCallback((warning: AiSafetyWarning) => {
     setExpandedWarnings((previous) => {
       const next = new Set(previous);
@@ -554,6 +567,96 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     error === SESSION_EXPIRED_ERROR_CODE
       ? t('sessionExpired', 'Your session has expired. Please log in again.')
       : error;
+
+  // One chip as the safety box draws it, in either of its two lists.
+  const renderWarning = (warning: AiSafetyWarning, i: number) => {
+    const { tagType, label } = safetyWarningTag(warning.type, t);
+    const endedOn = calendarDay(warning.endedOrderStopDate);
+    const compact = compactWarnings.has(warning);
+    const collapsed = compact && !expandedWarnings.has(warning);
+    const partners = Array.isArray(warning.namedPartners)
+      ? warning.namedPartners.filter((partner) => typeof partner === 'string' && partner.trim())
+      : [];
+    const severity = typeof warning.severity === 'string' && warning.severity.trim() ? warning.severity : null;
+    return (
+      <span key={`${warning.type}-${warning.drug}-${i}`} className={styles.safetyWarningItem}>
+        <Tag type={tagType} size="sm" className={styles.safetyWarningBadge}>
+          {label}
+        </Tag>
+        <span className={styles.safetyWarningText}>
+          {collapsed ? (
+            <>
+              {warning.drug}
+              {partners.length > 0 && ` — ${partners.join(', ')}`}
+              {severity && ` (${severity})`}
+            </>
+          ) : (
+            <>
+              {warning.drug}: {warning.detail}
+            </>
+          )}
+          {compact && (
+            <>
+              {' '}
+              <span
+                className={styles.statedInAnswerTag}
+                title={t(
+                  'citedInTheAnswerTitle',
+                  'The answer cites this finding and the module’s checks of how it was rendered found nothing, so its detail is collapsed rather than repeated. The answer may still word it differently or leave part of it out; open the detail to read the finding in full.',
+                )}
+              >
+                {t('citedInTheAnswer', 'Cited in the answer')}
+              </span>{' '}
+              <button
+                type="button"
+                className={styles.detailsToggle}
+                aria-expanded={!collapsed}
+                onClick={() => toggleWarning(warning)}
+              >
+                {collapsed ? t('showDetails', 'Show details') : t('hideDetails', 'Hide details')}
+              </button>
+            </>
+          )}
+          {/* The chip's words are the same whether the patient takes this drug or a
+            question proposed it, so this key is the only thing saying which. Only
+            `true` is drawn: `false` does not say the patient is off the drug. */}
+          {warning.aboutACurrentMedication === true && (
+            <>
+              {' '}
+              <span
+                className={styles.currentMedicationTag}
+                title={t(
+                  'aboutACurrentMedicationTitle',
+                  'The module raised this finding from one of the patient’s own active orders, so it is about a medication the patient is already taking. The drug shown is the substance the module matched that order to, which the order itself may name differently — a brand name, for example.',
+                )}
+              >
+                {t('aboutACurrentMedication', 'About a current medication')}
+              </span>
+            </>
+          )}
+          {/* The chip's words are also the same whether the chart holds this drug only as
+            an ended order or a question proposed it. A mark of its own, not the tag
+            above: the backend keeps the two referents apart. Only `true` is drawn —
+            `false` does not say the drug is current. */}
+          {warning.aboutAnEndedOrder === true && (
+            <>
+              {' '}
+              <span
+                className={styles.endedOrderTag}
+                title={endedOn ? `${endedOrderTitle} ${utcDayTitle}` : endedOrderTitle}
+              >
+                {endedOn
+                  ? t('aboutAnEndedOrderOn', 'About an order no longer in force, ended {{stopDate}}', {
+                      stopDate: endedOn,
+                    })
+                  : t('aboutAnEndedOrder', 'About an order no longer in force')}
+              </span>
+            </>
+          )}
+        </span>
+      </span>
+    );
+  };
 
   if (error && !answer) {
     return (
@@ -709,7 +812,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                 {' '}
                 <span className={styles.safetyWarningsSummary}>
                   {t('safetyChecksCitedInTheAnswer', '{{count}} finding, cited in the answer', {
-                    count: shownSafetyWarnings.length,
+                    count: mainWarnings.length,
                     defaultValue_other: '{{count}} findings, each cited in the answer',
                   })}
                 </span>{' '}
@@ -726,98 +829,29 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
               </>
             )}
           </span>
-          {(!safetyBoxCollapsible || safetyBoxOpen) && (
-            <div className={styles.safetyWarningsList}>
-              {shownSafetyWarnings.map((warning, i) => {
-                const { tagType, label } = safetyWarningTag(warning.type, t);
-                const endedOn = calendarDay(warning.endedOrderStopDate);
-                const compact = compactWarnings.has(warning);
-                const collapsed = compact && !expandedWarnings.has(warning);
-                const partners = Array.isArray(warning.namedPartners)
-                  ? warning.namedPartners.filter((partner) => typeof partner === 'string' && partner.trim())
-                  : [];
-                const severity =
-                  typeof warning.severity === 'string' && warning.severity.trim() ? warning.severity : null;
-                return (
-                  <span key={`${warning.type}-${warning.drug}-${i}`} className={styles.safetyWarningItem}>
-                    <Tag type={tagType} size="sm" className={styles.safetyWarningBadge}>
-                      {label}
-                    </Tag>
-                    <span className={styles.safetyWarningText}>
-                      {collapsed ? (
-                        <>
-                          {warning.drug}
-                          {partners.length > 0 && ` — ${partners.join(', ')}`}
-                          {severity && ` (${severity})`}
-                        </>
-                      ) : (
-                        <>
-                          {warning.drug}: {warning.detail}
-                        </>
-                      )}
-                      {compact && (
-                        <>
-                          {' '}
-                          <span
-                            className={styles.statedInAnswerTag}
-                            title={t(
-                              'citedInTheAnswerTitle',
-                              'The answer cites this finding and the module’s checks of how it was rendered found nothing, so its detail is collapsed rather than repeated. The answer may still word it differently or leave part of it out; open the detail to read the finding in full.',
-                            )}
-                          >
-                            {t('citedInTheAnswer', 'Cited in the answer')}
-                          </span>{' '}
-                          <button
-                            type="button"
-                            className={styles.detailsToggle}
-                            aria-expanded={!collapsed}
-                            onClick={() => toggleWarning(warning)}
-                          >
-                            {collapsed ? t('showDetails', 'Show details') : t('hideDetails', 'Hide details')}
-                          </button>
-                        </>
-                      )}
-                      {/* The chip's words are the same whether the patient takes this drug or a
-                        question proposed it, so this key is the only thing saying which. Only
-                        `true` is drawn: `false` does not say the patient is off the drug. */}
-                      {warning.aboutACurrentMedication === true && (
-                        <>
-                          {' '}
-                          <span
-                            className={styles.currentMedicationTag}
-                            title={t(
-                              'aboutACurrentMedicationTitle',
-                              'The module raised this finding from one of the patient’s own active orders, so it is about a medication the patient is already taking. The drug shown is the substance the module matched that order to, which the order itself may name differently — a brand name, for example.',
-                            )}
-                          >
-                            {t('aboutACurrentMedication', 'About a current medication')}
-                          </span>
-                        </>
-                      )}
-                      {/* The chip's words are also the same whether the chart holds this drug only as
-                        an ended order or a question proposed it. A mark of its own, not the tag
-                        above: the backend keeps the two referents apart. Only `true` is drawn —
-                        `false` does not say the drug is current. */}
-                      {warning.aboutAnEndedOrder === true && (
-                        <>
-                          {' '}
-                          <span
-                            className={styles.endedOrderTag}
-                            title={endedOn ? `${endedOrderTitle} ${utcDayTitle}` : endedOrderTitle}
-                          >
-                            {endedOn
-                              ? t('aboutAnEndedOrderOn', 'About an order no longer in force, ended {{stopDate}}', {
-                                  stopDate: endedOn,
-                                })
-                              : t('aboutAnEndedOrder', 'About an order no longer in force')}
-                          </span>
-                        </>
-                      )}
-                    </span>
-                  </span>
-                );
-              })}
-            </div>
+          {mainWarnings.length > 0 && (!safetyBoxCollapsible || safetyBoxOpen) && (
+            <div className={styles.safetyWarningsList}>{mainWarnings.map(renderWarning)}</div>
+          )}
+          {otherWarnings.length > 0 && (
+            <>
+              <span className={styles.otherMedicationsLine}>
+                {t('otherMedicationFindings', '{{count}} finding about another of this patient’s medications', {
+                  count: otherWarnings.length,
+                  defaultValue_other: '{{count}} findings about other medications this patient takes',
+                })}{' '}
+                <button
+                  type="button"
+                  className={styles.detailsToggle}
+                  aria-expanded={otherMedicationsOpen}
+                  onClick={() => setOtherMedicationsOpen((open) => !open)}
+                >
+                  {otherMedicationsOpen ? t('hideDetails', 'Hide details') : t('showDetails', 'Show details')}
+                </button>
+              </span>
+              {otherMedicationsOpen && (
+                <div className={styles.safetyWarningsList}>{otherWarnings.map(renderWarning)}</div>
+              )}
+            </>
           )}
         </div>
       )}
