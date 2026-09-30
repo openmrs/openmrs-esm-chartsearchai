@@ -412,6 +412,16 @@ function renderAnswerWithCitations(answer: string, ctx: CitationContext): React.
   return parts;
 }
 
+/**
+ * The cited findings a record the module attached is the source of, from `attachedFor` — only
+ * where the module says it attached the record, and only whole-number indexes, so a malformed value
+ * draws no tag rather than a wrong one.
+ */
+function attachedForOf(ref: AiReference): number[] {
+  if (ref.attachedByTheModule !== true || !Array.isArray(ref.attachedFor)) return [];
+  return ref.attachedFor.filter((index): index is number => Number.isInteger(index));
+}
+
 const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   answer,
   references,
@@ -650,22 +660,25 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                       {t('notTheOrderNamed', 'Not the order named')}
                     </span>
                   )}
-                  {/* This citation IS the chart record the cited safety finding fired on — the
+                  {/* An attached citation IS the chart record a cited safety finding fired on — the
                       recorded allergy or condition whose match raised it — so the answer's prose
-                      carries no [N] marker for it. (Not "attached from the finding": the finding
-                      fires on the record, and the wording said it the other way round until the
-                      README's own sentence was read against it.) Saying so is the only way a
-                      clinician can tell why the number appears nowhere above, and the chip is the
-                      only place it appears at all. */}
-                  {ref.attachedByTheModule === true && (
+                      carries no [N] marker for it, and this chip is the only place it appears. The
+                      tag says what the record is to the answer: the source of the cited findings it
+                      backs (`attachedFor`), never who attached it, which a clinician cannot act on.
+                      Nothing where the response names no finding for it. */}
+                  {attachedForOf(ref).length > 0 && (
                     <span
                       className={styles.attachedTag}
                       title={t(
-                        'attachedByTheModuleTitle',
-                        'The module supplied this citation — it is the chart record the cited safety finding fired on, so the answer’s text carries no marker for it. Opening it goes to the record.',
+                        'sourceOfFindingsTitle',
+                        'The chart record the cited safety finding is based on. The answer has no marker for it, since it cites the finding; opening it goes to the record.',
                       )}
                     >
-                      {t('attachedByTheModule', 'Added by the module')}
+                      {t('sourceOfFindings', 'source of {{citations}}', {
+                        citations: attachedForOf(ref)
+                          .map((index) => `[${index}]`)
+                          .join(', '),
+                      })}
                     </span>
                   )}
                   {badge}

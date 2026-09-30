@@ -69,6 +69,12 @@ export interface AiReference {
    */
   attachedByTheModule?: boolean | null;
   /**
+   * The citation indexes of the cited findings this record was attached FOR — the safety findings
+   * whose match fired on it, e.g. `[46]`. Empty for a citation the model emitted; absent from a
+   * backend that predates the key. Rendered as "source of [46]".
+   */
+  attachedFor?: number[] | null;
+  /**
    * The dataset the cited record's content came from — e.g. `DDInter 2.0 (via
    * openmrs-ddi-knowledge-base)` for a drug-reference entry — and null for a chart record and for
    * the module's own computed finding. The backend: branch on the value, never on `group`.
