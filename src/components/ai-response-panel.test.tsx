@@ -5,6 +5,7 @@ import AiResponsePanel from './ai-response-panel.component';
 import { highlightReference } from '../utils/highlight-reference';
 import { SESSION_EXPIRED_ERROR_CODE, type AiReference, type AiSafetyWarning } from '../api/chartsearchai';
 import { ASPIRIN_CHIP_THE_ANSWER_CITES } from '../__fixtures__/aspirin-response';
+import { SCREEN_WITH_ATTACHED_ALLERGY_RECORDS } from '../__fixtures__/attached-records-response';
 import {
   ALLERGY_TO_A_CURRENT_MEDICATION,
   ALLERGY_TO_A_PROPOSED_DRUG,
@@ -1151,14 +1152,17 @@ describe('AiResponsePanel answer-limit disclosure', () => {
     expect(screen.getByText('177', { selector: 'a' })).toBeInTheDocument();
   });
 
-  it('gives a module-attached citation somewhere to appear and says who supplied it', () => {
+  it('gives a module-attached citation somewhere to appear, and tags nothing it cannot name', () => {
     renderPanel();
     // The trap: this citation has NO [N] marker in the prose, so a reference list built by
     // scanning the answer text drops it silently — here it is the recorded-allergy record
     // behind the answer's load-bearing claim.
     expect(ANSWER_BY_SUBSTANCE).not.toContain('[3]');
     expect(screen.getByText('[3] allergy')).toBeInTheDocument();
-    expect(screen.getByText('Added by the module')).toBeInTheDocument();
+    // This fixture predates `attachedFor`, so nothing says which finding the record backs, and the
+    // chip says nothing rather than "Added by the module", which a clinician could not act on.
+    expect(screen.queryByText('Added by the module')).not.toBeInTheDocument();
+    expect(screen.queryByText(/^source of /)).not.toBeInTheDocument();
   });
 
   it('omits the date separator for a record that carries no date', () => {
@@ -1474,5 +1478,76 @@ describe('AiResponsePanel safety box every chip of which the answer cites', () =
     renderAspirin({ unfaithfullyRenderedCitations: [46] });
     expect(screen.queryByRole('button', { name: 'Show safety checks' })).not.toBeInTheDocument();
     expect(chipItems()).toHaveLength(1);
+  });
+});
+
+/**
+ * A chart record the module attached says what it is to the answer: the source of the cited finding
+ * it backs, from `attachedFor`, rather than who attached it.
+ */
+describe('AiResponsePanel record the module attached', () => {
+  function renderScreen(overrides: Record<string, unknown> = {}) {
+    const response = { ...SCREEN_WITH_ATTACHED_ALLERGY_RECORDS, ...overrides };
+    return render(
+      <AiResponsePanel
+        {...(response as object)}
+        answer={response.answer as string}
+        references={response.references as unknown as AiReference[]}
+        safetyWarnings={response.safetyWarnings as AiSafetyWarning[]}
+        questionId={response.questionId as string}
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+  }
+
+  /** The reference chip for index `n`, found by its own label. */
+  const chipFor = (label: string) =>
+    screen.getByText((_content, element) =>
+      Boolean(element?.className?.includes?.('referenceItem') && element.textContent?.startsWith(label)),
+    );
+
+  it('names the finding each attached record is the source of', () => {
+    renderScreen();
+    expect(within(chipFor('[3] allergy')).getByText('source of [45]')).toBeInTheDocument();
+    expect(within(chipFor('[1] allergy')).getByText('source of [46]')).toBeInTheDocument();
+    expect(screen.queryByText('Added by the module')).not.toBeInTheDocument();
+  });
+
+  it('tags no citation the model made itself', () => {
+    renderScreen();
+    for (const label of [
+      '[47] Safety finding',
+      '[48] Safety finding',
+      '[49] Safety finding',
+      '[45] Safety finding',
+      '[46] Safety finding',
+    ]) {
+      expect(within(chipFor(label)).queryByText(/^source of /)).not.toBeInTheDocument();
+    }
+  });
+
+  it('lists every finding one record backs', () => {
+    const references = (SCREEN_WITH_ATTACHED_ALLERGY_RECORDS.references as unknown as AiReference[]).map((ref) =>
+      ref.index === 1 ? { ...ref, attachedFor: [45, 46] } : ref,
+    );
+    renderScreen({ references });
+    expect(within(chipFor('[1] allergy')).getByText('source of [45], [46]')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['absent', undefined],
+    ['null', null],
+    ['empty', []],
+    ['not an array', '46'],
+    ['holding a non-number', ['46']],
+  ])('tags nothing where attachedFor is %s', (_label, value) => {
+    const references = (SCREEN_WITH_ATTACHED_ALLERGY_RECORDS.references as unknown as AiReference[]).map((ref) =>
+      ref.index === 1 ? { ...ref, attachedFor: value } : ref,
+    );
+    renderScreen({ references });
+    expect(within(chipFor('[1] allergy')).queryByText(/^source of /)).not.toBeInTheDocument();
+    expect(within(chipFor('[3] allergy')).getByText('source of [45]')).toBeInTheDocument();
   });
 });
