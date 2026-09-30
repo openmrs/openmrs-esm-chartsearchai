@@ -8,6 +8,7 @@ import { ASPIRIN_CHIP_THE_ANSWER_CITES } from '../__fixtures__/aspirin-response'
 import { SCREEN_WITH_ATTACHED_ALLERGY_RECORDS } from '../__fixtures__/attached-records-response';
 import { IBUPROFEN_BESIDE_HER_OWN_ALLERGIES } from '../__fixtures__/other-medication-response';
 import { LIDOCAINE_QUESTION_ABOUT_HER_OWN_ORDER } from '../__fixtures__/own-medication-question-response';
+import { RIFAMPICIN_ANSWER_CLAIMING_AN_ENDED_ORDER } from '../__fixtures__/ended-order-claim-response';
 import {
   ALLERGY_TO_A_CURRENT_MEDICATION,
   ALLERGY_TO_A_PROPOSED_DRUG,
@@ -1715,5 +1716,69 @@ describe('AiResponsePanel already-prescribed mark', () => {
       ...rest,
     ]);
     expect(screen.getByText('Already prescribed: Advil 400mg, Nurofen 200mg')).toBeInTheDocument();
+  });
+});
+
+/**
+ * An answer saying an order has ended where no record it was built from says so (backend ADR
+ * Decision 135) gets one line under it naming the drug: the rifampicin answer that said nevirapine's
+ * order was no longer in force, of a chart holding no nevirapine order.
+ */
+describe('AiResponsePanel an ended order no record states', () => {
+  const response = RIFAMPICIN_ANSWER_CLAIMING_AN_ENDED_ORDER;
+  const LINE = 'No record says the Nevirapine order has ended — the answer states it without one.';
+
+  function renderRifampicin(overrides: Record<string, unknown> = {}, isLoading = false) {
+    const merged = { ...response, ...overrides };
+    return render(
+      <AiResponsePanel
+        {...(merged as object)}
+        answer={merged.answer as string}
+        references={merged.references as unknown as AiReference[]}
+        safetyWarnings={merged.safetyWarnings as AiSafetyWarning[]}
+        questionId={merged.questionId as string}
+        error={null}
+        isLoading={isLoading}
+        patientUuid={patientUuid}
+      />,
+    );
+  }
+
+  it('says under the answer that no record states the ended order, and why on hover', () => {
+    renderRifampicin();
+    const line = screen.getByText(LINE);
+    expect(line).toHaveAttribute(
+      'title',
+      'The answer says this order is no longer in force, but none of the records the answer was built from marks it that way. Check the patient’s medication list before relying on it.',
+    );
+    // Under the answer, not in the safety box: it is about the answer's wording.
+    expect(
+      screen.getByText(
+        (_content, element) =>
+          Boolean(element?.className?.includes?.('answerSection')) && Boolean(element?.textContent?.includes(LINE)),
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('names every drug, in the plural', () => {
+    renderRifampicin({ unsupportedEndedOrderClaims: ['Nevirapine', 'Stavudine'] });
+    expect(
+      screen.getByText(
+        'No record says the Nevirapine, Stavudine orders have ended — the answer states it without one.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('says nothing where the list is empty, absent, or not a list of names', () => {
+    for (const value of [[], null, undefined, 'Nevirapine', [''], [7]]) {
+      const { unmount } = renderRifampicin({ unsupportedEndedOrderClaims: value });
+      expect(screen.queryByText(/^No record says the/)).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('says nothing while the answer is still streaming', () => {
+    renderRifampicin({}, true);
+    expect(screen.queryByText(/^No record says the/)).not.toBeInTheDocument();
   });
 });

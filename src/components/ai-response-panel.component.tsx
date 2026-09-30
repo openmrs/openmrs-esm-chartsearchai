@@ -434,6 +434,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   unfaithfullyRenderedCitations,
   cautionLedOverWithholding,
   interactionClaimPairs,
+  unsupportedEndedOrderClaims,
   questionId,
   error,
   isLoading,
@@ -695,6 +696,37 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
       {answer && (
         <div className={styles.answerSection}>
           <p className={styles.answerText}>{renderedAnswer}</p>
+          {/* An order the answer says has ended that no record it was built from says so (backend ADR
+              Decision 135). Said under the answer rather than inside it: the key names drugs, not the
+              sentence, and a second reading of which sentence claims which drug is the backend's to make.
+              Only a non-empty list of names is drawn, and never while streaming. */}
+          {(() => {
+            if (isLoading || !Array.isArray(unsupportedEndedOrderClaims)) return null;
+            const drugs = unsupportedEndedOrderClaims.filter(
+              (name): name is string => typeof name === 'string' && name.trim().length > 0,
+            );
+            if (drugs.length === 0) return null;
+            return (
+              <p
+                className={styles.unsupportedClaimNote}
+                title={t(
+                  'unsupportedEndedOrderClaimTitle',
+                  'The answer says this order is no longer in force, but none of the records the answer was built from marks it that way. Check the patient’s medication list before relying on it.',
+                )}
+              >
+                {t(
+                  'unsupportedEndedOrderClaim',
+                  'No record says the {{drugs}} order has ended — the answer states it without one.',
+                  {
+                    drugs: drugs.join(', '),
+                    count: drugs.length,
+                    defaultValue_other:
+                      'No record says the {{drugs}} orders have ended — the answer states it without one.',
+                  },
+                )}
+              </p>
+            );
+          })()}
           {isLoading && <InlineLoading className={styles.streamingIndicator} />}
         </div>
       )}
