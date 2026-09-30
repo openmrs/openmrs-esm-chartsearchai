@@ -700,9 +700,9 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
               <>
                 {' '}
                 <span className={styles.safetyWarningsSummary}>
-                  {t('safetyChecksStatedInTheAnswer', '{{count}} finding, stated in the answer', {
+                  {t('safetyChecksCitedInTheAnswer', '{{count}} finding, cited in the answer', {
                     count: shownSafetyWarnings.length,
-                    defaultValue_other: '{{count}} findings, each stated in the answer',
+                    defaultValue_other: '{{count}} findings, each cited in the answer',
                   })}
                 </span>{' '}
                 <button
@@ -757,7 +757,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                               'The answer cites this finding and the module’s checks of how it was rendered found nothing, so its detail is collapsed rather than repeated. The answer may still word it differently or leave part of it out; open the detail to read the finding in full.',
                             )}
                           >
-                            {t('citedInTheAnswer', 'Stated in the answer')}
+                            {t('citedInTheAnswer', 'Cited in the answer')}
                           </span>{' '}
                           <button
                             type="button"

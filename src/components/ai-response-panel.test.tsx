@@ -1311,7 +1311,7 @@ describe('AiResponsePanel chip the answer already cites', () => {
     expect(chipItems()).toHaveLength(1);
     const chip = chipItems()[0];
     expect(chip).toHaveTextContent('Acetylsalicylic acid (aspirin) — Metoclopramide (Minor)');
-    expect(chip).toHaveTextContent('Stated in the answer');
+    expect(chip).toHaveTextContent('Cited in the answer');
     expect(chip).not.toHaveTextContent(DROPPED_SENTENCE);
     expect(within(chip).getByRole('button', { name: 'Show details' })).toHaveAttribute('aria-expanded', 'false');
   });
@@ -1418,7 +1418,7 @@ describe('AiResponsePanel safety box every chip of which the answer cites', () =
 
   it('collapses the box to a summary line where every chip qualifies', () => {
     renderAspirin();
-    expect(screen.getByText(/1 finding, stated in the answer/)).toBeInTheDocument();
+    expect(screen.getByText(/1 finding, cited in the answer/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Show safety checks' })).toHaveAttribute('aria-expanded', 'false');
     expect(chipItems()).toHaveLength(0);
   });
@@ -1444,9 +1444,9 @@ describe('AiResponsePanel safety box every chip of which the answer cites', () =
     renderAspirin({ safetyWarnings: [ASPIRIN_CHIP, allergy] });
     expect(screen.queryByRole('button', { name: 'Show safety checks' })).not.toBeInTheDocument();
     expect(chipItems()).toHaveLength(2);
-    expect(chipItems()[0]).toHaveTextContent('Stated in the answer');
+    expect(chipItems()[0]).toHaveTextContent('Cited in the answer');
     expect(chipItems()[1]).toHaveTextContent('The patient has a recorded allergy to Acetylsalicylic acid (aspirin).');
-    expect(chipItems()[1]).not.toHaveTextContent('Stated in the answer');
+    expect(chipItems()[1]).not.toHaveTextContent('Cited in the answer');
   });
 
   it('summarises two qualifying chips in the plural', () => {
@@ -1470,7 +1470,7 @@ describe('AiResponsePanel safety box every chip of which the answer cites', () =
       ],
       safetyWarnings: [ASPIRIN_CHIP, allergy],
     });
-    expect(screen.getByText(/2 findings, each stated in the answer/)).toBeInTheDocument();
+    expect(screen.getByText(/2 findings, each cited in the answer/)).toBeInTheDocument();
     expect(chipItems()).toHaveLength(0);
   });
 

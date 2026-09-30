@@ -122,8 +122,8 @@ describe('translations/en.json', () => {
   it("reads a counted call's own plural default into its _other key", () => {
     // Without this, a lexer that stopped reporting `defaultValue_other` would compare the plural
     // wording against the singular and pass only while the two happen to be equal.
-    expect(occurrences.get('safetyChecksStatedInTheAnswer_other')?.[0]?.text).toBe(
-      '{{count}} findings, each stated in the answer',
+    expect(occurrences.get('safetyChecksCitedInTheAnswer_other')?.[0]?.text).toBe(
+      '{{count}} findings, each cited in the answer',
     );
   });
 });
