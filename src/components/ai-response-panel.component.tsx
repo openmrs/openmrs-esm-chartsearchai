@@ -412,11 +412,6 @@ function renderAnswerWithCitations(answer: string, ctx: CitationContext): React.
   return parts;
 }
 
-/** Whether a coverage verdict says the dataset had nothing to check against: `absent` or `unloaded`. */
-function hadNothingToCheckAgainst(coverage: unknown): boolean {
-  return coverage === 'absent' || coverage === 'unloaded';
-}
-
 /**
  * The cited findings a record the module attached is the source of, from `attachedFor` — only
  * where the module says it attached the record, and only indexes naming a `safety_finding` among
@@ -439,9 +434,6 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   unfaithfullyRenderedCitations,
   cautionLedOverWithholding,
   interactionClaimPairs,
-  interactionPairs,
-  conditionRuleCoverage,
-  doseCeilingCoverage,
   questionId,
   error,
   isLoading,
@@ -866,48 +858,6 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
           )}
         </div>
       )}
-
-      {/* What the drug-safety check behind this answer could not check (backend #566): her age, which
-          only an age-banded dose ceiling reads, and her recorded conditions, which only condition rules
-          read — each said only where its coverage key says the dataset had nothing to check against, and
-          only on an answer carrying a drug-safety reading. Never a claim that anything WAS checked. */}
-      {(() => {
-        if (isLoading || !answer) return null;
-        const carriesASafetyReading = (safetyWarnings?.length ?? 0) > 0 || interactionPairs != null;
-        if (!carriesASafetyReading) return null;
-        const age = hadNothingToCheckAgainst(doseCeilingCoverage);
-        const conditions = hadNothingToCheckAgainst(conditionRuleCoverage);
-        if (!age && !conditions) return null;
-        const text =
-          age && conditions
-            ? t('notCheckedAgeOrConditions', 'Not checked against this patient’s age or recorded conditions.')
-            : age
-              ? t('notCheckedAge', 'Not checked against this patient’s age.')
-              : t('notCheckedConditions', 'Not checked against this patient’s recorded conditions.');
-        // `absent` is a dataset read with no such rule, `unloaded` no dataset read at all, and the two
-        // must not be told as one. A note joining both (the backend reads both keys off one load, so it
-        // should not occur) says only that the checks did not consider them.
-        const shown = [age && doseCeilingCoverage, conditions && conditionRuleCoverage].filter(Boolean);
-        const title = shown.every((coverage) => coverage === 'absent')
-          ? t(
-              'notCheckedTitle',
-              'The drug-safety data on this system has nothing to check these against, so the safety checks behind this answer did not consider them. This is not a finding that the drug is suitable.',
-            )
-          : shown.every((coverage) => coverage === 'unloaded')
-            ? t(
-                'notCheckedUnloadedTitle',
-                'No drug-safety data was loaded on this system, so the safety checks behind this answer did not consider them. This is not a finding that the drug is suitable.',
-              )
-            : t(
-                'notCheckedMixedTitle',
-                'The safety checks behind this answer did not consider them. This is not a finding that the drug is suitable.',
-              );
-        return (
-          <p className={styles.notCheckedNote} title={title}>
-            {text}
-          </p>
-        );
-      })()}
 
       {answer && !isLoading && (
         <div className={styles.actionsRow}>
