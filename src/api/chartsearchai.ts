@@ -147,6 +147,14 @@ export interface AiSafetyWarning {
    */
   aboutACurrentMedication?: boolean;
   /**
+   * Which of the patient's own active orders a contraindication chip about a medication she already
+   * takes is about (openmrs-module-chartsearchai#552), each as her chart displays it — her
+   * *Advil 400mg* on a chip whose {@link drug} is `Ibuprofen`. Name the order from here rather than
+   * resolving {@link drug} against her orders. Empty on every other chip; absent from a backend that
+   * predates the key.
+   */
+  currentMedicationOrders?: Array<{ orderDisplay?: string | null; orderUuid?: string | null }>;
+  /**
    * Whether this chip is about a drug the chart records only as an order no longer in force
    * (openmrs-module-chartsearchai#472): a finding about what giving that drug again would mean, not
    * about a medication the patient is taking now. The backend keeps it and
