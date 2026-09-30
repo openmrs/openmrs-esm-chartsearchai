@@ -797,23 +797,17 @@ describe('AiResponsePanel safety-check coverage', () => {
     // Removed from the panel: every such pair is a DDInter row rated Unknown with no mechanism text,
     // so the line told a clinician only that a pair is listed, beside an answer that already names
     // her orders, and "rates these below the warning threshold" read as a low rating the source never
-    // gave. The live shape: "Is aspirin safe for her?" on a chart with lidocaine and tiotropium orders.
-    const response = {
-      ...ENDED_ORDER_DRUG_PROPOSED,
-      interactionPairs: {
-        found: 1,
-        reported: 1,
-        belowFloor: [
-          { drug: 'Acetylsalicylic acid (aspirin)', partner: 'lidocaine', severity: 'Unknown' },
-          { drug: 'Acetylsalicylic acid (aspirin)', partner: 'tiotropium', severity: 'Unknown' },
-        ],
-      },
-    };
+    // gave. The live shape, verbatim: "Is aspirin safe for her?" on a chart with lidocaine and
+    // tiotropium orders, whose belowFloor names exactly those two partners and whose answer names
+    // neither — so a partner's name anywhere on the panel can only have come from that line.
+    const response = ASPIRIN_CHIP_THE_ANSWER_CITES;
+    expect(response.interactionPairs.belowFloor.map((pair) => pair.partner)).toEqual(['lidocaine', 'tiotropium']);
     render(
       <AiResponsePanel
         {...(response as object)}
         answer={response.answer}
-        references={response.references}
+        references={response.references as unknown as AiReference[]}
+        safetyWarnings={response.safetyWarnings as AiSafetyWarning[]}
         questionId={response.questionId}
         error={null}
         isLoading={false}
@@ -822,9 +816,12 @@ describe('AiResponsePanel safety-check coverage', () => {
     );
     expect(
       screen.getByText((_content, element) => Boolean(element?.className?.includes?.('answerText'))),
-    ).toHaveTextContent('Rifampicin');
+    ).toHaveTextContent('Acetylsalicylic acid (aspirin) can be given');
+    // The chip collapses the box on this answer; open everything, so an absence is not of a folded box.
+    fireEvent.click(screen.getByRole('button', { name: 'Show safety checks' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show details' }));
     expect(screen.queryByText(/Not raised as a warning|below the warning threshold/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/tiotropium/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/lidocaine|tiotropium/i)).not.toBeInTheDocument();
   });
 });
 
@@ -1355,6 +1352,7 @@ describe('AiResponsePanel chip the answer already cites', () => {
     'unfoundedFindingSeverities',
     'unfaithfullyRenderedCitations',
     'cautionLedOverWithholding',
+    'interactionClaimPairs',
   ])('draws the full chip where %s states no measurement', (key) => {
     renderAspirin({ [key]: null });
     expect(chipItems()[0]).toHaveTextContent(DROPPED_SENTENCE);
@@ -1541,6 +1539,26 @@ describe('AiResponsePanel record the module attached', () => {
   });
 
   it.each([
+    ['an index no citation carries', [999]],
+    ['a citation that is not a finding', [3]],
+  ])('tags nothing where attachedFor names %s', (_label, value) => {
+    const references = (SCREEN_WITH_ATTACHED_ALLERGY_RECORDS.references as unknown as AiReference[]).map((ref) =>
+      ref.index === 1 ? { ...ref, attachedFor: value } : ref,
+    );
+    renderScreen({ references });
+    expect(within(chipFor('[1] allergy')).queryByText(/^source of /)).not.toBeInTheDocument();
+    expect(within(chipFor('[3] allergy')).getByText('source of [45]')).toBeInTheDocument();
+  });
+
+  it('names only the cited findings where attachedFor also names an index no citation carries', () => {
+    const references = (SCREEN_WITH_ATTACHED_ALLERGY_RECORDS.references as unknown as AiReference[]).map((ref) =>
+      ref.index === 1 ? { ...ref, attachedFor: [999, 46] } : ref,
+    );
+    renderScreen({ references });
+    expect(within(chipFor('[1] allergy')).getByText('source of [46]')).toBeInTheDocument();
+  });
+
+  it.each([
     ['absent', undefined],
     ['null', null],
     ['empty', []],
@@ -1617,6 +1635,33 @@ describe('AiResponsePanel what the safety check could not check', () => {
   it('says it for unloaded too, which is also nothing to check against', () => {
     renderAspirin({ conditionRuleCoverage: 'unloaded', doseCeilingCoverage: 'unloaded' });
     expect(screen.getByText(BOTH)).toBeInTheDocument();
+  });
+
+  // `absent` is "a dataset was read and has no such rule"; `unloaded` is "nothing was read". The
+  // explanation must not say the one where the key says the other.
+  const ABSENT_TITLE = /has nothing to check these against/;
+  const UNLOADED_TITLE = /No drug-safety data was loaded on this system/;
+
+  it('explains an absent verdict as data with nothing to check against', () => {
+    renderAspirin();
+    const title = screen.getByText(BOTH).getAttribute('title');
+    expect(title).toMatch(ABSENT_TITLE);
+    expect(title).not.toMatch(UNLOADED_TITLE);
+  });
+
+  it('explains an unloaded verdict as no data read, never as data without the rules', () => {
+    renderAspirin({ conditionRuleCoverage: 'unloaded', doseCeilingCoverage: 'unloaded' });
+    const title = screen.getByText(BOTH).getAttribute('title');
+    expect(title).toMatch(UNLOADED_TITLE);
+    expect(title).not.toMatch(ABSENT_TITLE);
+  });
+
+  it('claims neither reason where one note joins an absent verdict and an unloaded one', () => {
+    renderAspirin({ conditionRuleCoverage: 'absent', doseCeilingCoverage: 'unloaded' });
+    const title = screen.getByText(BOTH).getAttribute('title');
+    expect(title).toMatch(/did not consider them/);
+    expect(title).not.toMatch(ABSENT_TITLE);
+    expect(title).not.toMatch(UNLOADED_TITLE);
   });
 
   it('says nothing on an answer that carries no drug-safety reading', () => {

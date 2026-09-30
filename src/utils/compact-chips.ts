@@ -25,8 +25,7 @@ function measuredEmpty(value: unknown): boolean {
 function noFidelityCheckFired(limits: AiAnswerLimits): boolean {
   const pairs = limits.interactionClaimPairs;
   const pairsClear =
-    pairs == null ||
-    (typeof pairs === 'object' && pairs.unfounded === 0 && measuredEmpty(pairs.misattributedCitations));
+    pairs != null && typeof pairs === 'object' && pairs.unfounded === 0 && measuredEmpty(pairs.misattributedCitations);
   return (
     measuredEmpty(limits.misattributedOrderCitations) &&
     measuredEmpty(limits.unstatedFindingSeverities) &&
