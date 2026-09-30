@@ -653,6 +653,7 @@ describe('useChartSearchAi answer-limit measurements', () => {
     unfaithfullyRenderedCitations: [177],
     cautionLedOverWithholding: [{ citation: 350, rating: 'Major' }],
     interactionClaimPairs: { judged: 2, misattributedCitations: [166], unfounded: 1 },
+    unsupportedEndedOrderClaims: ['Nevirapine'],
   };
 
   it('lists every key the merge carries', () => {

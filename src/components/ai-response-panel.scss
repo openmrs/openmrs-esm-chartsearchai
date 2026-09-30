@@ -187,6 +187,17 @@
   color: colors.$gray-70;
 }
 
+// A statement in the answer that no record supports. Amber, not the safety box's red: it flags the
+// answer's wording, not a finding about the patient.
+.unsupportedClaimNote {
+  @include type.type-style('label-01');
+  color: colors.$yellow-80;
+  background-color: colors.$yellow-10;
+  border-left: 3px solid colors.$yellow-40;
+  padding: layout.$spacing-02 layout.$spacing-03;
+  margin-top: layout.$spacing-03;
+}
+
 // The line a safety box's chips about the patient's other medications sit behind.
 .otherMedicationsLine {
   @include type.type-style('label-01');

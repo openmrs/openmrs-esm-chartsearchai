@@ -350,6 +350,14 @@ export interface AiSearchResponse {
    * (an older backend) states nothing, and never licenses that sentence.
    */
   doseCeilingCoverage?: ConditionRuleCoverage | (string & {}) | null;
+  /**
+   * The drugs the answer says have an order that is no longer in force where no chart record the
+   * answer was built from marks an order of that drug as not in force (backend ADR Decision 135) — a
+   * statement in the answer that nothing in the records supports, never a finding that the order is
+   * in force. `[]` is a measurement of none and not a certificate (an answer saying "was stopped" is
+   * not read); `null` or absent is no measurement.
+   */
+  unsupportedEndedOrderClaims?: string[] | null;
   /** @see AiInteractionPairs */
   interactionPairs?: AiInteractionPairs | null;
   /** @see AiActiveOrderClaims */
@@ -404,6 +412,7 @@ export type AiAnswerLimits = Pick<
   | 'unstatedFindingSeverities'
   | 'conditionRuleCoverage'
   | 'doseCeilingCoverage'
+  | 'unsupportedEndedOrderClaims'
   | 'interactionPairs'
   | 'activeOrderClaims'
   | 'orderStopDates'
