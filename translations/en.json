@@ -75,8 +75,5 @@
   "unstatedSeverityTitle": "Rated by the reference dataset. This answer may not state the rating — it is shown here so the findings can be ranked.",
   "utcCalendarDayTitle": "The date is a calendar day in UTC, so it can be a day off the local date.",
   "voiceInput": "Voice input",
-  "wasThisHelpful": "Was this helpful?",
-  "withheldInteractions_one": "Shows a subset of this entry’s interactions ({{count}} not shown)",
-  "withheldInteractions_other": "Shows a subset of this entry’s interactions ({{count}} not shown)",
-  "withheldInteractionsTitle": "The answer can draw only on the interactions this entry shows, so its list is not every interaction of the drug."
+  "wasThisHelpful": "Was this helpful?"
 }

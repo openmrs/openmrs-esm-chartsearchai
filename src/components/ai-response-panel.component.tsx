@@ -761,14 +761,6 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
               );
               const stopDate = stopDates.get(ref.index);
               const sourceOf = attachedForOf(ref, citedFindings);
-              // An integer count and nothing else: a string or a fraction here is a response this
-              // client does not understand, and drawing it would state a subset nobody measured.
-              const withheld =
-                typeof ref.withheldInteractions === 'number' &&
-                Number.isInteger(ref.withheldInteractions) &&
-                ref.withheldInteractions > 0
-                  ? ref.withheldInteractions
-                  : null;
               return (
                 <span key={ref.index} className={styles.referenceItem}>
                   {link}
@@ -784,22 +776,9 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                       {t('orderStopDate', 'Stopped {{stopDate}}', { stopDate })}
                     </span>
                   )}
-                  {/* The entry shows only some of the drug's interactions, so the answer's list is not
-                      the drug's whole list. Said as a subset and never "omitted for length": the backend
-                      withholds mostly the partners that are not relevant to this patient. */}
-                  {withheld !== null && (
-                    <span
-                      className={styles.referenceSourceTag}
-                      title={t(
-                        'withheldInteractionsTitle',
-                        'The answer can draw only on the interactions this entry shows, so its list is not every interaction of the drug.',
-                      )}
-                    >
-                      {t('withheldInteractions', 'Shows a subset of this entry’s interactions ({{count}} not shown)', {
-                        count: withheld,
-                      })}
-                    </span>
-                  )}
+                  {/* withheldInteractions is not drawn: the partners a drug-reference record leaves out
+                      are mostly drugs this patient is not on, and the safety check reads every one of
+                      them regardless, so a count here read as an incomplete check that was not. */}
                   {isMisattributed && (
                     <span className={styles.misattributedTag} title={misattributedTitle(t)}>
                       {t('notTheOrderNamed', 'Not the order named')}

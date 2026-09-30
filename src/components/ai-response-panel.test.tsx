@@ -837,7 +837,7 @@ describe('AiResponsePanel reference citation metadata', () => {
       Boolean(element?.className?.includes?.('referenceItem') && element.textContent?.startsWith(`[${index}] `)),
     );
 
-  it('names the dataset a drug-reference citation came from on hover, and that it shows a subset', () => {
+  it('names the dataset a drug-reference citation came from on hover, and draws no subset count', () => {
     // The captured response: [10] is Rifampicin's DDInter entry, 648 of whose interaction partners
     // the record does not show, [11] the module's own finding, computed rather than quoted, and [5]
     // her chart's drug order.
@@ -846,27 +846,15 @@ describe('AiResponsePanel reference citation metadata', () => {
     expect(within(drugReference).getByText('[10] Drug reference')).toHaveAttribute('title', `Source: ${DDINTER}`);
     // On hover only: the source is no longer a line of its own under the citation.
     expect(drugReference).not.toHaveTextContent(DDINTER);
-    expect(drugReference).toHaveTextContent('Shows a subset of this entry’s interactions (648 not shown)');
-    expect(screen.getByText('Shows a subset of this entry’s interactions (648 not shown)')).toHaveAttribute(
-      'title',
-      'The answer can draw only on the interactions this entry shows, so its list is not every interaction of the drug.',
-    );
+    // 648 of its partners are withheld, and the count is not drawn: they are mostly drugs she is not on,
+    // and the safety check reads every one of them regardless.
+    expect(ENDED_ORDER_DRUG_PROPOSED.references.find((ref) => ref.index === 10)?.withheldInteractions).toBe(648);
+    expect(drugReference).not.toHaveTextContent(/subset|not shown|648/);
 
     for (const index of [11, 5]) {
       expect(referenceItem(index)).not.toHaveTextContent(DDINTER);
       expect(referenceItem(index)).not.toHaveTextContent(/subset|not shown/);
       expect(within(referenceItem(index)).getByText(new RegExp(`^\\[${index}\\] `))).not.toHaveAttribute('title');
-    }
-  });
-
-  it('states no subset where the record shows every partner, or the count is not a sane one', () => {
-    for (const withheldInteractions of [0, null, undefined, -3, 2.5, '648']) {
-      const references = ENDED_ORDER_DRUG_PROPOSED.references.map((ref) =>
-        ref.index === 10 ? { ...ref, withheldInteractions } : ref,
-      ) as typeof ENDED_ORDER_DRUG_PROPOSED.references;
-      const { unmount } = renderLiveResponse(ENDED_ORDER_DRUG_PROPOSED, { references });
-      expect(referenceItem(10)).not.toHaveTextContent(/subset|not shown/);
-      unmount();
     }
   });
 
@@ -878,7 +866,6 @@ describe('AiResponsePanel reference citation metadata', () => {
     renderLiveResponse(ENDED_ORDER_DRUG_PROPOSED, { references });
     expect(referenceItem(10)).not.toHaveTextContent(DDINTER);
     expect(within(referenceItem(10)).getByText('[10] Drug reference')).not.toHaveAttribute('title');
-    expect(referenceItem(10)).toHaveTextContent('(648 not shown)');
   });
 });
 
