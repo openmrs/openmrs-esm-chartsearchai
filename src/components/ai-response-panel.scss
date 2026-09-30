@@ -187,6 +187,14 @@
   color: colors.$gray-70;
 }
 
+// What the safety check behind the answer could not check. Neutral, not a warning colour: it states a
+// limit of the check, not a finding about the patient.
+.notCheckedNote {
+  @include type.type-style('label-01');
+  color: colors.$gray-70;
+  margin-top: layout.$spacing-03;
+}
+
 // What a collapsed safety box holds, beside its label: every chip in it qualified for the one-line form.
 .safetyWarningsSummary {
   font-weight: normal;

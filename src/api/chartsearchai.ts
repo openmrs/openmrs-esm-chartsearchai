@@ -324,6 +324,13 @@ export interface AiSearchResponse {
   // literals — keeping them is what makes the renderer's switch checkable while still accepting
   // a verdict word this client predates.
   conditionRuleCoverage?: ConditionRuleCoverage | (string & {}) | null;
+  /**
+   * The same three-valued verdict for the loaded dataset's DOSE-CEILING arm: whether it publishes an
+   * age-banded dose ceiling. Dose ceilings are the only thing the backend reads the patient's AGE
+   * against, so `absent` or `unloaded` is what licenses saying her age was not checked. `null` or absent
+   * (an older backend) states nothing, and never licenses that sentence.
+   */
+  doseCeilingCoverage?: ConditionRuleCoverage | (string & {}) | null;
   /** @see AiInteractionPairs */
   interactionPairs?: AiInteractionPairs | null;
   /** @see AiActiveOrderClaims */
@@ -377,6 +384,7 @@ export type AiAnswerLimits = Pick<
   | 'misattributedOrderCitations'
   | 'unstatedFindingSeverities'
   | 'conditionRuleCoverage'
+  | 'doseCeilingCoverage'
   | 'interactionPairs'
   | 'activeOrderClaims'
   | 'orderStopDates'
