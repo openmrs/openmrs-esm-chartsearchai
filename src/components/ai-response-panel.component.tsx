@@ -290,18 +290,21 @@ interface CitationContext {
   misattributed: Set<number>;
   /** Citation index → the rating the answer never stated, for the ones that could be resolved. */
   severities: Map<number, string>;
+  /** The citation indexes whose finding's unknown-significance caveat the answer left out. */
+  qualified: Set<number>;
   patientUuid: string;
   t: Translate;
 }
 
 function renderAnswerWithCitations(answer: string, ctx: CitationContext): React.ReactNode[] {
-  const { references, misattributed, severities, patientUuid, t } = ctx;
+  const { references, misattributed, severities, qualified, patientUuid, t } = ctx;
   const refByIndex = new Map(references.map((r) => [r.index, r]));
   const parts: React.ReactNode[] = [];
   const pattern = citationGroupPattern();
   // A rating belongs to a finding, not to a marker, and the model routinely repeats a finding's
   // marker within one statement — so badge each index at most once per answer.
   const badged = new Set<number>();
+  const noted = new Set<number>();
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
@@ -404,6 +407,26 @@ function renderAnswerWithCitations(answer: string, ctx: CitationContext): React.
       );
     });
 
+    // And the finding's own caveat the answer dropped (backend ADR Decision 136), after its rating: one per
+    // finding per answer, for the reason a rating is.
+    citIndices.forEach((citIndex) => {
+      if (!qualified.has(citIndex) || noted.has(citIndex)) return;
+      noted.add(citIndex);
+      parts.push(' ');
+      parts.push(
+        <span
+          key={`sig-${matchIndex}-${citIndex}`}
+          className={styles.significanceTag}
+          title={t(
+            'significanceUnknownTitle',
+            'The finding this cites says the clinical significance of the interaction is unknown. The answer leaves that out.',
+          )}
+        >
+          {t('significanceUnknown', 'Clinical significance unknown')}
+        </span>,
+      );
+    });
+
     lastIndex = pattern.lastIndex;
   }
   if (lastIndex < answer.length) {
@@ -435,6 +458,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   cautionLedOverWithholding,
   interactionClaimPairs,
   unsupportedEndedOrderClaims,
+  unstatedSignificanceQualifiers,
   questionId,
   error,
   isLoading,
@@ -481,8 +505,13 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   const renderedAnswer = useMemo(() => {
     if (!answer) return null;
     if (isLoading) return answer;
-    return renderAnswerWithCitations(answer, { references, misattributed, severities, patientUuid, t });
-  }, [answer, references, misattributed, severities, patientUuid, isLoading, t]);
+    const qualified = new Set<number>(
+      (Array.isArray(unstatedSignificanceQualifiers) ? unstatedSignificanceQualifiers : []).filter((index) =>
+        Number.isInteger(index),
+      ),
+    );
+    return renderAnswerWithCitations(answer, { references, misattributed, severities, qualified, patientUuid, t });
+  }, [answer, references, misattributed, severities, unstatedSignificanceQualifiers, patientUuid, isLoading, t]);
 
   const handleCopy = useCallback(() => {
     navigator.clipboard?.writeText(stripCitations(answer));

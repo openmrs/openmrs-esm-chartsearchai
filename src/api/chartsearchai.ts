@@ -358,6 +358,13 @@ export interface AiSearchResponse {
    * not read); `null` or absent is no measurement.
    */
   unsupportedEndedOrderClaims?: string[] | null;
+  /**
+   * The citation indexes of the safety findings the answer cites whose record says the interaction's
+   * clinical significance is unknown, where the answer says nothing of the kind (backend ADR Decision
+   * 136). The finding's own caveat the answer left out, never a correction of its rating. `[]` is not a
+   * certificate; `null` or absent is no measurement, which the early `done` always is.
+   */
+  unstatedSignificanceQualifiers?: number[] | null;
   /** @see AiInteractionPairs */
   interactionPairs?: AiInteractionPairs | null;
   /** @see AiActiveOrderClaims */
@@ -413,6 +420,7 @@ export type AiAnswerLimits = Pick<
   | 'conditionRuleCoverage'
   | 'doseCeilingCoverage'
   | 'unsupportedEndedOrderClaims'
+  | 'unstatedSignificanceQualifiers'
   | 'interactionPairs'
   | 'activeOrderClaims'
   | 'orderStopDates'
