@@ -48,14 +48,17 @@ function noFidelityCheckFired(limits: AiAnswerLimits): boolean {
  *
  * It does not claim the answer states the chip's WORDS: the answer may paraphrase or drop a
  * sentence, which is why the collapsed chip still opens to its full detail.
+ *
+ * @returns each qualifying position, mapped to the citation indexes in the answer that cite its
+ *   finding, ascending — where a clinician reads what the chip no longer repeats.
  */
 export function compactChips(
   answer: string,
   references: AiReference[],
   warnings: AiSafetyWarning[],
   limits: AiAnswerLimits,
-): Set<number> {
-  const compact = new Set<number>();
+): Map<number, number[]> {
+  const compact = new Map<number, number[]>();
   if (!answer || !Array.isArray(references) || !Array.isArray(warnings) || !noFidelityCheckFired(limits)) {
     return compact;
   }
@@ -63,11 +66,11 @@ export function compactChips(
   for (const match of answer.matchAll(citationGroupPattern())) {
     for (const index of parseCitationIndices(match[1])) cited.add(index);
   }
-  const citedFindingKeys = new Set(
-    references
-      .filter((ref) => ref?.resourceType === 'safety_finding' && cited.has(ref.index))
-      .map((ref) => ref.resourceUuid),
-  );
+  const citedFindingIndexes = new Map<string, number[]>();
+  for (const ref of references) {
+    if (ref?.resourceType !== 'safety_finding' || !cited.has(ref.index)) continue;
+    citedFindingIndexes.set(ref.resourceUuid, [...(citedFindingIndexes.get(ref.resourceUuid) ?? []), ref.index]);
+  }
   const keyCounts = new Map<string, number>();
   for (const warning of warnings) {
     if (!warning) continue;
@@ -76,7 +79,12 @@ export function compactChips(
   warnings.forEach((warning, position) => {
     if (!warning || typeof warning.type !== 'string' || typeof warning.drug !== 'string') return;
     const key = findingKey(warning);
-    if (keyCounts.get(key) === 1 && citedFindingKeys.has(key)) compact.add(position);
+    const indexes = citedFindingIndexes.get(key);
+    if (keyCounts.get(key) === 1 && indexes)
+      compact.set(
+        position,
+        [...indexes].sort((a, b) => a - b),
+      );
   });
   return compact;
 }

@@ -501,7 +501,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   // what qualifies. Computed over EVERY chip, drawn or not, so a chip the safety box leaves out still
   // counts against a shared key. Never while streaming: the checks have not run yet.
   const compactWarnings = useMemo(() => {
-    if (isLoading) return new Set<AiSafetyWarning>();
+    if (isLoading) return new Map<AiSafetyWarning, number[]>();
     const all = safetyWarnings ?? [];
     const positions = compactChips(answer, references, all, {
       misattributedOrderCitations,
@@ -511,7 +511,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
       cautionLedOverWithholding,
       interactionClaimPairs,
     });
-    return new Set([...positions].map((position) => all[position]));
+    return new Map([...positions].map(([position, indexes]) => [all[position], indexes]));
   }, [
     isLoading,
     answer,
@@ -606,11 +606,13 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
               <span
                 className={styles.statedInAnswerTag}
                 title={t(
-                  'citedInTheAnswerTitle',
-                  'The answer cites this finding and the module’s checks of how it was rendered found nothing, so its detail is collapsed rather than repeated. The answer may still word it differently or leave part of it out; open the detail to read the finding in full.',
+                  'seeMarkerInTheAnswerTitle',
+                  'The answer cites this finding at that marker, and the module’s checks of how it was rendered found nothing, so its detail is collapsed rather than repeated. The answer may still word it differently or leave part of it out; open the detail to read the finding in full.',
                 )}
               >
-                {t('citedInTheAnswer', 'Cited in the answer')}
+                {t('seeMarkerInTheAnswer', 'See {{markers}} in the answer', {
+                  markers: (compactWarnings.get(warning) ?? []).map((index) => `[${index}]`).join(', '),
+                })}
               </span>{' '}
               <button
                 type="button"
