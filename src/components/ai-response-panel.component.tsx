@@ -630,23 +630,40 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
               </button>
             </>
           )}
-          {/* The chip's words are the same whether the patient takes this drug or a
-            question proposed it, so this key is the only thing saying which. Only
-            `true` is drawn: `false` does not say the patient is off the drug. */}
-          {warning.aboutACurrentMedication === true && (
-            <>
-              {' '}
-              <span
-                className={styles.currentMedicationTag}
-                title={t(
-                  'aboutACurrentMedicationTitle',
-                  'The module raised this finding from one of the patient’s own active orders, so it is about a medication the patient is already taking. The drug shown is the substance the module matched that order to, which the order itself may name differently — a brand name, for example.',
-                )}
-              >
-                {t('aboutACurrentMedication', 'About a current medication')}
-              </span>
-            </>
-          )}
+          {/* A contraindication's words are the same whether the patient takes this drug or a
+            question proposed it ("The patient has a recorded allergy to Lidocaine."), so this key is
+            the only thing saying she is already on a drug her records contraindicate — named by her
+            own order, never by `drug`. Not on an interaction chip, whose words already say "active
+            order", and not behind the other-medications line, which already says it. Only `true` is
+            drawn: `false` does not say the patient is off the drug. */}
+          {(() => {
+            if (
+              warning.aboutACurrentMedication !== true ||
+              warning.type !== 'contraindication' ||
+              warning.aboutAnotherOfHerMedications === true
+            ) {
+              return null;
+            }
+            const orders = (Array.isArray(warning.currentMedicationOrders) ? warning.currentMedicationOrders : [])
+              .map((order) => (typeof order?.orderDisplay === 'string' ? order.orderDisplay.trim() : ''))
+              .filter(Boolean);
+            return (
+              <>
+                {' '}
+                <span
+                  className={styles.currentMedicationTag}
+                  title={t(
+                    'alreadyPrescribedTitle',
+                    'The patient has an active order for this drug, so this finding is about a medication already prescribed, not one being proposed. The drug shown is the substance the module matched that order to, which the order itself may name differently — a brand name, for example.',
+                  )}
+                >
+                  {orders.length > 0
+                    ? t('alreadyPrescribedOrders', 'Already prescribed: {{orders}}', { orders: orders.join(', ') })
+                    : t('alreadyPrescribed', 'Already prescribed')}
+                </span>
+              </>
+            );
+          })()}
           {/* The chip's words are also the same whether the chart holds this drug only as
             an ended order or a question proposed it. A mark of its own, not the tag
             above: the backend keeps the two referents apart. Only `true` is drawn —

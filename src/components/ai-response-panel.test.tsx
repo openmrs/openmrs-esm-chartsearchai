@@ -8,6 +8,7 @@ import { ASPIRIN_CHIP_THE_ANSWER_CITES } from '../__fixtures__/aspirin-response'
 import { SCREEN_WITH_ATTACHED_ALLERGY_RECORDS } from '../__fixtures__/attached-records-response';
 import { ASPIRIN_WITH_NOTHING_TO_CHECK_AGE_AGAINST } from '../__fixtures__/screening-coverage-response';
 import { IBUPROFEN_BESIDE_HER_OWN_ALLERGIES } from '../__fixtures__/other-medication-response';
+import { LIDOCAINE_QUESTION_ABOUT_HER_OWN_ORDER } from '../__fixtures__/own-medication-question-response';
 import {
   ALLERGY_TO_A_CURRENT_MEDICATION,
   ALLERGY_TO_A_PROPOSED_DRUG,
@@ -454,11 +455,12 @@ describe('AiResponsePanel safety warnings', () => {
 });
 
 describe('AiResponsePanel current-medication chips', () => {
-  const MARK = 'About a current medication';
+  // A backend that predates currentMedicationOrders names no order, so the mark says only this.
+  const MARK = 'Already prescribed';
   const MARK_TITLE =
-    'The module raised this finding from one of the patient’s own active orders, so it is about a ' +
-    'medication the patient is already taking. The drug shown is the substance the module matched that ' +
-    'order to, which the order itself may name differently — a brand name, for example.';
+    'The patient has an active order for this drug, so this finding is about a medication already ' +
+    'prescribed, not one being proposed. The drug shown is the substance the module matched that order ' +
+    'to, which the order itself may name differently — a brand name, for example.';
 
   function renderResponse(response: { answer: string; references: AiReference[]; safetyWarnings: AiSafetyWarning[] }) {
     return render(
@@ -595,7 +597,7 @@ describe('AiResponsePanel ended-order chips', () => {
   const MARK_TITLE =
     'The chart records this drug only as an order no longer in force, so the finding is about what giving it ' +
     'again would mean — not about a medication the patient is taking now.';
-  const CURRENT_MARK = 'About a current medication';
+  const CURRENT_MARK = /^Already prescribed/;
 
   const chipRows = () =>
     screen.queryAllByText((_content, element) => Boolean(element?.className?.includes?.('safetyWarningItem')));
@@ -1746,5 +1748,67 @@ describe('AiResponsePanel chips about her other medications', () => {
     expect(screen.getByText('Ibuprofen: The patient has a recorded allergy to Ibuprofen.')).toBeInTheDocument();
     expect(screen.getByText(LINE)).toBeInTheDocument();
     expect(screen.queryByText(LIDOCAINE)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The mark on a contraindication about a drug the patient already takes names her own order, from
+ * `currentMedicationOrders`, and is drawn only where the chip's words cannot say it: not on an
+ * interaction chip ("interacts with active order …"), and not behind the other-medications line.
+ */
+describe('AiResponsePanel already-prescribed mark', () => {
+  const response = LIDOCAINE_QUESTION_ABOUT_HER_OWN_ORDER;
+  const chipRows = () =>
+    screen.queryAllByText((_content, element) => Boolean(element?.className?.includes?.('safetyWarningItem')));
+
+  function renderLidocaine(safetyWarnings: AiSafetyWarning[] = response.safetyWarnings as AiSafetyWarning[]) {
+    return render(
+      <AiResponsePanel
+        {...(response as object)}
+        answer={response.answer}
+        references={response.references as unknown as AiReference[]}
+        safetyWarnings={safetyWarnings}
+        questionId={response.questionId}
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+  }
+
+  it('names her order on the contraindication, and marks no interaction chip', () => {
+    renderLidocaine();
+    const marks = screen.getAllByText(/^Already prescribed/);
+    expect(marks.map((mark) => mark.textContent)).toEqual(['Already prescribed: Lidocaine']);
+    const interactionRows = chipRows().filter((row) => row.textContent?.includes('interacts with active order'));
+    expect(interactionRows).toHaveLength(2);
+    for (const row of interactionRows) expect(within(row).queryByText(/^Already prescribed/)).not.toBeInTheDocument();
+  });
+
+  it('draws no mark on a chip behind the other-medications line', () => {
+    renderLidocaine();
+    fireEvent.click(
+      within(screen.getByText(/finding about another of this patient/)).getByRole('button', { name: 'Show details' }),
+    );
+    const tiotropium = chipRows().find((row) => row.textContent?.includes('allergy to Tiotropium'));
+    expect(tiotropium).toBeDefined();
+    expect(within(tiotropium as HTMLElement).queryByText(/^Already prescribed/)).not.toBeInTheDocument();
+  });
+
+  it('names the order as her chart displays it, not the substance the chip is about', () => {
+    // Her Advil 400mg order raises a chip about the substance Ibuprofen (backend #552's own case).
+    const [contraindication, ...rest] = response.safetyWarnings;
+    renderLidocaine([
+      {
+        ...contraindication,
+        drug: 'Ibuprofen',
+        currentMedicationOrders: [
+          { orderDisplay: 'Advil 400mg', orderUuid: 'uuid-advil' },
+          { orderDisplay: 'Nurofen 200mg', orderUuid: 'uuid-nurofen' },
+        ],
+      },
+      ...rest,
+    ]);
+    expect(screen.getByText('Already prescribed: Advil 400mg, Nurofen 200mg')).toBeInTheDocument();
   });
 });
