@@ -308,18 +308,3 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
-
-// Her medications the interaction screen related only below the severity floor. Amber text, not a chip:
-// no warning was raised, but the clinician needs to see these are her own orders.
-.belowFloorSection {
-  display: flex;
-  flex-direction: column;
-  gap: layout.$spacing-02;
-  margin-top: layout.$spacing-03;
-}
-
-.belowFloorLine {
-  @include type.type-style('body-compact-01');
-  color: colors.$orange-70;
-  cursor: help;
-}
