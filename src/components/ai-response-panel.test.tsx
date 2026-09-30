@@ -6,6 +6,7 @@ import { highlightReference } from '../utils/highlight-reference';
 import { SESSION_EXPIRED_ERROR_CODE, type AiReference, type AiSafetyWarning } from '../api/chartsearchai';
 import { ASPIRIN_CHIP_THE_ANSWER_CITES } from '../__fixtures__/aspirin-response';
 import { SCREEN_WITH_ATTACHED_ALLERGY_RECORDS } from '../__fixtures__/attached-records-response';
+import { ASPIRIN_WITH_NOTHING_TO_CHECK_AGE_AGAINST } from '../__fixtures__/screening-coverage-response';
 import {
   ALLERGY_TO_A_CURRENT_MEDICATION,
   ALLERGY_TO_A_PROPOSED_DRUG,
@@ -781,12 +782,15 @@ describe('AiResponsePanel safety-check coverage', () => {
     expect(screen.queryByText(/What the safety checks covered/)).not.toBeInTheDocument();
     expect(
       screen.queryByText(
-        /Interaction pairs shown|related no drug pairs|severe pairs can be among them|recorded conditions|active orders cites|citing no chart record|cannot be checked against the chart/,
+        /Interaction pairs shown|related no drug pairs|severe pairs can be among them|Conditions were not screened|Medications were not checked against|active orders cites|citing no chart record|cannot be checked against the chart/,
       ),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByText((_content, element) => Boolean(element?.className?.includes?.('limit'))),
     ).not.toBeInTheDocument();
+    // What replaced the block's conditions line (openmrs-module-chartsearchai#566): one note, said only
+    // where its coverage key licenses it, in words of its own — never the block's sentences above.
+    expect(screen.getByText('Not checked against this patient’s recorded conditions.')).toBeInTheDocument();
   });
 
   it('draws nothing for the pairs the screen related only below the warning threshold', () => {
@@ -1549,5 +1553,84 @@ describe('AiResponsePanel record the module attached', () => {
     renderScreen({ references });
     expect(within(chipFor('[1] allergy')).queryByText(/^source of /)).not.toBeInTheDocument();
     expect(within(chipFor('[3] allergy')).getByText('source of [45]')).toBeInTheDocument();
+  });
+});
+
+/**
+ * What the drug-safety check behind an answer could NOT check, said beside it — backend #566: an answer
+ * opening "can be given" for a 12-year-old on aspirin, while nothing behind it read her age or her
+ * recorded conditions. Said only off the two coverage keys, and never where a key does not license it.
+ */
+describe('AiResponsePanel what the safety check could not check', () => {
+  const BOTH = 'Not checked against this patient’s age or recorded conditions.';
+  const AGE = 'Not checked against this patient’s age.';
+  const CONDITIONS = 'Not checked against this patient’s recorded conditions.';
+
+  function renderAspirin(overrides: Record<string, unknown> = {}, isLoading = false) {
+    const response = { ...ASPIRIN_WITH_NOTHING_TO_CHECK_AGE_AGAINST, ...overrides };
+    return render(
+      <AiResponsePanel
+        {...(response as object)}
+        answer={response.answer as string}
+        references={response.references as unknown as AiReference[]}
+        safetyWarnings={response.safetyWarnings as AiSafetyWarning[]}
+        questionId={response.questionId as string}
+        error={null}
+        isLoading={isLoading}
+        patientUuid={patientUuid}
+      />,
+    );
+  }
+
+  it('says neither her age nor her conditions were checked, on the live aspirin answer', () => {
+    renderAspirin();
+    expect(screen.getByText(BOTH)).toBeInTheDocument();
+  });
+
+  it('names only her conditions where the dataset publishes dose ceilings', () => {
+    renderAspirin({ doseCeilingCoverage: 'published' });
+    expect(screen.getByText(CONDITIONS)).toBeInTheDocument();
+    expect(screen.queryByText(BOTH)).not.toBeInTheDocument();
+  });
+
+  it('names only her age where the dataset publishes condition rules', () => {
+    renderAspirin({ conditionRuleCoverage: 'published' });
+    expect(screen.getByText(AGE)).toBeInTheDocument();
+  });
+
+  it('says nothing where both are published', () => {
+    renderAspirin({ conditionRuleCoverage: 'published', doseCeilingCoverage: 'published' });
+    expect(screen.queryByText(/^Not checked against/)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['absent from the response (an older backend)', undefined],
+    ['null', null],
+    ['a token this client does not know', 'partial'],
+  ])('never claims her age was unchecked where doseCeilingCoverage is %s', (_label, value) => {
+    renderAspirin({ doseCeilingCoverage: value });
+    expect(screen.getByText(CONDITIONS)).toBeInTheDocument();
+    expect(screen.queryByText(BOTH)).not.toBeInTheDocument();
+    expect(screen.queryByText(AGE)).not.toBeInTheDocument();
+  });
+
+  it('says it for unloaded too, which is also nothing to check against', () => {
+    renderAspirin({ conditionRuleCoverage: 'unloaded', doseCeilingCoverage: 'unloaded' });
+    expect(screen.getByText(BOTH)).toBeInTheDocument();
+  });
+
+  it('says nothing on an answer that carries no drug-safety reading', () => {
+    renderAspirin({ safetyWarnings: [], interactionPairs: null });
+    expect(screen.queryByText(/^Not checked against/)).not.toBeInTheDocument();
+  });
+
+  it('says it on a drug-safety answer that raised no warning', () => {
+    renderAspirin({ safetyWarnings: [], interactionPairs: { found: 0, reported: 0 } });
+    expect(screen.getByText(BOTH)).toBeInTheDocument();
+  });
+
+  it('says nothing while the answer is still streaming', () => {
+    renderAspirin({}, true);
+    expect(screen.queryByText(/^Not checked against/)).not.toBeInTheDocument();
   });
 });
