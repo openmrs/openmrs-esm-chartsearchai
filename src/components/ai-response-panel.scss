@@ -187,6 +187,12 @@
   color: colors.$gray-70;
 }
 
+// What a collapsed safety box holds, beside its label: every chip in it qualified for the one-line form.
+.safetyWarningsSummary {
+  font-weight: normal;
+  color: colors.$gray-70;
+}
+
 // Opens or closes a one-line chip's full detail. A text button, not a Carbon Button, so it sits inline
 // in the chip's sentence like the tags beside it.
 .detailsToggle {
