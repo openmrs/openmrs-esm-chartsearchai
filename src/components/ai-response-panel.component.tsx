@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IconButton, InlineLoading, Tag } from '@carbon/react';
 import { Copy } from '@carbon/react/icons';
@@ -9,6 +9,7 @@ import {
   type AiSafetyWarning,
   SESSION_EXPIRED_ERROR_CODE,
 } from '../api/chartsearchai';
+import { compactChips } from '../utils/compact-chips';
 import { highlightReference } from '../utils/highlight-reference';
 import {
   citationGroupPattern,
@@ -418,6 +419,10 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   misattributedOrderCitations,
   unstatedFindingSeverities,
   orderStopDates,
+  unfoundedFindingSeverities,
+  unfaithfullyRenderedCitations,
+  cautionLedOverWithholding,
+  interactionClaimPairs,
   questionId,
   error,
   isLoading,
@@ -467,6 +472,44 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     () => (safetyWarnings ?? []).filter((warning) => warning.statedInTheAnswer !== true),
     [safetyWarnings],
   );
+
+  // The chips the answer cites and every fidelity check clears, drawn on one line with their detail
+  // behind a toggle rather than repeating the answer's paragraph beside it — see compactChips for
+  // what qualifies. Computed over EVERY chip, drawn or not, so a chip the safety box leaves out still
+  // counts against a shared key. Never while streaming: the checks have not run yet.
+  const compactWarnings = useMemo(() => {
+    if (isLoading) return new Set<AiSafetyWarning>();
+    const all = safetyWarnings ?? [];
+    const positions = compactChips(answer, references, all, {
+      misattributedOrderCitations,
+      unstatedFindingSeverities,
+      unfoundedFindingSeverities,
+      unfaithfullyRenderedCitations,
+      cautionLedOverWithholding,
+      interactionClaimPairs,
+    });
+    return new Set([...positions].map((position) => all[position]));
+  }, [
+    isLoading,
+    answer,
+    references,
+    safetyWarnings,
+    misattributedOrderCitations,
+    unstatedFindingSeverities,
+    unfoundedFindingSeverities,
+    unfaithfullyRenderedCitations,
+    cautionLedOverWithholding,
+    interactionClaimPairs,
+  ]);
+  const [expandedWarnings, setExpandedWarnings] = useState<Set<AiSafetyWarning>>(() => new Set());
+  const toggleWarning = useCallback((warning: AiSafetyWarning) => {
+    setExpandedWarnings((previous) => {
+      const next = new Set(previous);
+      if (next.has(warning)) next.delete(warning);
+      else next.add(warning);
+      return next;
+    });
+  }, []);
 
   // What a chip about an ended order is about. The backend asks for exactly this reading: such a
   // chip is about giving the drug again, not about two medications the patient takes now.
@@ -636,13 +679,52 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
             {shownSafetyWarnings.map((warning, i) => {
               const { tagType, label } = safetyWarningTag(warning.type, t);
               const endedOn = calendarDay(warning.endedOrderStopDate);
+              const compact = compactWarnings.has(warning);
+              const collapsed = compact && !expandedWarnings.has(warning);
+              const partners = Array.isArray(warning.namedPartners)
+                ? warning.namedPartners.filter((partner) => typeof partner === 'string' && partner.trim())
+                : [];
+              const severity =
+                typeof warning.severity === 'string' && warning.severity.trim() ? warning.severity : null;
               return (
                 <span key={`${warning.type}-${warning.drug}-${i}`} className={styles.safetyWarningItem}>
                   <Tag type={tagType} size="sm" className={styles.safetyWarningBadge}>
                     {label}
                   </Tag>
                   <span className={styles.safetyWarningText}>
-                    {warning.drug}: {warning.detail}
+                    {collapsed ? (
+                      <>
+                        {warning.drug}
+                        {partners.length > 0 && ` — ${partners.join(', ')}`}
+                        {severity && ` (${severity})`}
+                      </>
+                    ) : (
+                      <>
+                        {warning.drug}: {warning.detail}
+                      </>
+                    )}
+                    {compact && (
+                      <>
+                        {' '}
+                        <span
+                          className={styles.statedInAnswerTag}
+                          title={t(
+                            'citedInTheAnswerTitle',
+                            'The answer cites this finding and the module’s checks of how it was rendered found nothing, so its detail is collapsed rather than repeated. The answer may still word it differently or leave part of it out; open the detail to read the finding in full.',
+                          )}
+                        >
+                          {t('citedInTheAnswer', 'Stated in the answer')}
+                        </span>{' '}
+                        <button
+                          type="button"
+                          className={styles.detailsToggle}
+                          aria-expanded={!collapsed}
+                          onClick={() => toggleWarning(warning)}
+                        >
+                          {collapsed ? t('showDetails', 'Show details') : t('hideDetails', 'Hide details')}
+                        </button>
+                      </>
+                    )}
                     {/* The chip's words are the same whether the patient takes this drug or a
                         question proposed it, so this key is the only thing saying which. Only
                         `true` is drawn: `false` does not say the patient is off the drug. */}

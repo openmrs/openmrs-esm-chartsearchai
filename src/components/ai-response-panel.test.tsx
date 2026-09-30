@@ -4,6 +4,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import AiResponsePanel from './ai-response-panel.component';
 import { highlightReference } from '../utils/highlight-reference';
 import { SESSION_EXPIRED_ERROR_CODE, type AiReference, type AiSafetyWarning } from '../api/chartsearchai';
+import { ASPIRIN_CHIP_THE_ANSWER_CITES } from '../__fixtures__/aspirin-response';
 import {
   ALLERGY_TO_A_CURRENT_MEDICATION,
   ALLERGY_TO_A_PROPOSED_DRUG,
@@ -1266,5 +1267,115 @@ describe('AiResponsePanel answer-limit disclosure', () => {
       expect(screen.queryByText('Not the order named')).not.toBeInTheDocument();
       unmount();
     }
+  });
+});
+
+/**
+ * A chip the answer cites and every fidelity check clears is drawn on one line, its detail behind a
+ * toggle: on the live aspirin answer the full chip repeated the answer's paragraph beside it. Any
+ * doubt draws the full chip, because the full chip is the backstop for an answer that dropped or
+ * softened a finding.
+ */
+describe('AiResponsePanel chip the answer already cites', () => {
+  const DROPPED_SENTENCE = 'The clinical significance of this interaction is unknown.';
+
+  function renderAspirin(overrides: Record<string, unknown> = {}) {
+    const response = { ...ASPIRIN_CHIP_THE_ANSWER_CITES, ...overrides };
+    return render(
+      <AiResponsePanel
+        {...(response as object)}
+        answer={response.answer as string}
+        references={response.references as unknown as AiReference[]}
+        safetyWarnings={response.safetyWarnings as AiSafetyWarning[]}
+        questionId={response.questionId as string}
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+  }
+
+  const chipItems = () =>
+    screen.queryAllByText((_content, element) => Boolean(element?.className?.includes?.('safetyWarningItem')));
+
+  it('draws the chip on one line naming the drug, its partner and the rating, with the detail collapsed', () => {
+    renderAspirin();
+    expect(chipItems()).toHaveLength(1);
+    const chip = chipItems()[0];
+    expect(chip).toHaveTextContent('Acetylsalicylic acid (aspirin) — Metoclopramide (Minor)');
+    expect(chip).toHaveTextContent('Stated in the answer');
+    expect(chip).not.toHaveTextContent(DROPPED_SENTENCE);
+    expect(within(chip).getByRole('button', { name: 'Show details' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('shows the full detail, including what the answer left out, when expanded', () => {
+    renderAspirin();
+    fireEvent.click(within(chipItems()[0]).getByRole('button', { name: 'Show details' }));
+    const chip = chipItems()[0];
+    expect(chip).toHaveTextContent(DROPPED_SENTENCE);
+    expect(within(chip).getByRole('button', { name: 'Hide details' })).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('draws the full chip where the answer does not cite the finding', () => {
+    renderAspirin({ answer: (ASPIRIN_CHIP_THE_ANSWER_CITES.answer as string).replace(' [46]', '') });
+    expect(chipItems()[0]).toHaveTextContent(DROPPED_SENTENCE);
+    expect(screen.queryByRole('button', { name: 'Show details' })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['misattributedOrderCitations', [46]],
+    ['unstatedFindingSeverities', [46]],
+    ['unfoundedFindingSeverities', [{ citation: 46, rating: 'Major' }]],
+    ['unfaithfullyRenderedCitations', [46]],
+    ['cautionLedOverWithholding', [{ citation: 46, rating: 'Major' }]],
+    ['interactionClaimPairs', { judged: 1, misattributedCitations: [], unfounded: 1 }],
+    ['interactionClaimPairs', { judged: 1, misattributedCitations: [46], unfounded: 0 }],
+  ])('draws the full chip where %s reports something', (key, value) => {
+    renderAspirin({ [key]: value });
+    expect(chipItems()[0]).toHaveTextContent(DROPPED_SENTENCE);
+    expect(screen.queryByRole('button', { name: 'Show details' })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    'misattributedOrderCitations',
+    'unstatedFindingSeverities',
+    'unfoundedFindingSeverities',
+    'unfaithfullyRenderedCitations',
+    'cautionLedOverWithholding',
+  ])('draws the full chip where %s states no measurement', (key) => {
+    renderAspirin({ [key]: null });
+    expect(chipItems()[0]).toHaveTextContent(DROPPED_SENTENCE);
+    expect(screen.queryByRole('button', { name: 'Show details' })).not.toBeInTheDocument();
+  });
+
+  it('draws every chip in full where two chips share the key one citation names', () => {
+    // Several findings of one type about one drug share one resourceUuid, so a citation cannot say
+    // which of them the answer stated.
+    const [chip] = ASPIRIN_CHIP_THE_ANSWER_CITES.safetyWarnings;
+    renderAspirin({
+      safetyWarnings: [
+        chip,
+        { ...chip, detail: 'Acetylsalicylic acid (aspirin) interacts with active order Lidocaine.' },
+      ],
+    });
+    expect(chipItems()).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: 'Show details' })).not.toBeInTheDocument();
+  });
+
+  it('draws the full chip while the answer is still streaming', () => {
+    const response = ASPIRIN_CHIP_THE_ANSWER_CITES;
+    render(
+      <AiResponsePanel
+        {...(response as object)}
+        answer={response.answer as string}
+        references={response.references as unknown as AiReference[]}
+        safetyWarnings={response.safetyWarnings as AiSafetyWarning[]}
+        questionId={response.questionId as string}
+        error={null}
+        isLoading={true}
+        patientUuid={patientUuid}
+      />,
+    );
+    expect(chipItems()[0]).toHaveTextContent(DROPPED_SENTENCE);
   });
 });

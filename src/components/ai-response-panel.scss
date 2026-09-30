@@ -179,6 +179,26 @@
   color: colors.$teal-70;
 }
 
+// Marks a chip drawn on one line because the answer cites it and the module's checks found nothing.
+// Neutral grey: it says where the finding already is, not anything about the finding.
+.statedInAnswerTag {
+  @extend %disclosureTagBase;
+  background-color: colors.$gray-10;
+  color: colors.$gray-70;
+}
+
+// Opens or closes a one-line chip's full detail. A text button, not a Carbon Button, so it sits inline
+// in the chip's sentence like the tags beside it.
+.detailsToggle {
+  @include type.type-style('label-01');
+  background: none;
+  border: none;
+  padding: 0;
+  color: colors.$blue-60;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 // Marks a safety chip about a drug the chart holds only as an ended order, and the day a cited
 // prescription stopped. Cool grey, apart from the teal current-medication tag: the backend keeps
 // the two referents exclusive, and they must not look alike.

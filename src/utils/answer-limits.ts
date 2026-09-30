@@ -17,6 +17,10 @@ export const NO_ANSWER_LIMITS: MessageAnswerLimits = {
   interactionPairs: null,
   activeOrderClaims: null,
   orderStopDates: null,
+  unfoundedFindingSeverities: null,
+  unfaithfullyRenderedCitations: null,
+  cautionLedOverWithholding: null,
+  interactionClaimPairs: null,
 };
 
 /**
@@ -47,6 +51,10 @@ export function mergeDisclosure(previous: MessageAnswerLimits, source: Partial<A
     interactionPairs: source.interactionPairs ?? previous.interactionPairs,
     activeOrderClaims: source.activeOrderClaims ?? previous.activeOrderClaims,
     orderStopDates: source.orderStopDates ?? previous.orderStopDates,
+    unfoundedFindingSeverities: source.unfoundedFindingSeverities ?? previous.unfoundedFindingSeverities,
+    unfaithfullyRenderedCitations: source.unfaithfullyRenderedCitations ?? previous.unfaithfullyRenderedCitations,
+    cautionLedOverWithholding: source.cautionLedOverWithholding ?? previous.cautionLedOverWithholding,
+    interactionClaimPairs: source.interactionClaimPairs ?? previous.interactionClaimPairs,
   };
 }
 
