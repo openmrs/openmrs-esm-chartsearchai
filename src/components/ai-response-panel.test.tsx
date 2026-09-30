@@ -837,14 +837,15 @@ describe('AiResponsePanel reference citation metadata', () => {
       Boolean(element?.className?.includes?.('referenceItem') && element.textContent?.startsWith(`[${index}] `)),
     );
 
-  it('names the dataset a drug-reference citation came from, and that it shows a subset', () => {
+  it('names the dataset a drug-reference citation came from on hover, and that it shows a subset', () => {
     // The captured response: [10] is Rifampicin's DDInter entry, 648 of whose interaction partners
     // the record does not show, [11] the module's own finding, computed rather than quoted, and [5]
     // her chart's drug order.
     renderLiveResponse(ENDED_ORDER_DRUG_PROPOSED);
     const drugReference = referenceItem(10);
-    expect(screen.getByText(DDINTER)).toHaveAttribute('title', 'The dataset this reference entry quotes.');
-    expect(drugReference).toHaveTextContent(`[10] Drug reference${DDINTER}`);
+    expect(within(drugReference).getByText('[10] Drug reference')).toHaveAttribute('title', `Source: ${DDINTER}`);
+    // On hover only: the source is no longer a line of its own under the citation.
+    expect(drugReference).not.toHaveTextContent(DDINTER);
     expect(drugReference).toHaveTextContent('Shows a subset of this entry’s interactions (648 not shown)');
     expect(screen.getByText('Shows a subset of this entry’s interactions (648 not shown)')).toHaveAttribute(
       'title',
@@ -854,6 +855,7 @@ describe('AiResponsePanel reference citation metadata', () => {
     for (const index of [11, 5]) {
       expect(referenceItem(index)).not.toHaveTextContent(DDINTER);
       expect(referenceItem(index)).not.toHaveTextContent(/subset|not shown/);
+      expect(within(referenceItem(index)).getByText(new RegExp(`^\\[${index}\\] `))).not.toHaveAttribute('title');
     }
   });
 
@@ -875,6 +877,7 @@ describe('AiResponsePanel reference citation metadata', () => {
     ) as typeof ENDED_ORDER_DRUG_PROPOSED.references;
     renderLiveResponse(ENDED_ORDER_DRUG_PROPOSED, { references });
     expect(referenceItem(10)).not.toHaveTextContent(DDINTER);
+    expect(within(referenceItem(10)).getByText('[10] Drug reference')).not.toHaveAttribute('title');
     expect(referenceItem(10)).toHaveTextContent('(648 not shown)');
   });
 });

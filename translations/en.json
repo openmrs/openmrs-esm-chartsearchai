@@ -50,7 +50,7 @@
   "referenceMaterialCitation": "Module-supplied reference material — not this patient’s record.",
   "referenceMaterialLabel": "Reference material",
   "references": "References",
-  "referenceSourceTitle": "The dataset this reference entry quotes.",
+  "referenceSourceHover": "Source: {{source}}",
   "safetyChecks": "Safety checks",
   "safetyChecksCitedInTheAnswer_one": "{{count}} finding, cited in the answer",
   "safetyChecksCitedInTheAnswer_other": "{{count}} findings, each cited in the answer",
