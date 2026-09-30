@@ -1642,6 +1642,16 @@ describe('AiResponsePanel chips about her other medications', () => {
     }
   });
 
+  const safetySection = () =>
+    screen.getByText((_content, element) =>
+      Boolean(element?.className?.includes?.('safetyWarningsSection') && element?.tagName === 'DIV'),
+    );
+
+  it('draws the box neutral where it holds nothing but findings about her other medications', () => {
+    renderIbuprofen();
+    expect(safetySection().className).toContain('safetyWarningsSectionNeutral');
+  });
+
   it('leaves a finding about the drug in question open beside them', () => {
     const aboutTheDrug = {
       ...IBUPROFEN_BESIDE_HER_OWN_ALLERGIES.safetyWarnings[0],
@@ -1653,6 +1663,7 @@ describe('AiResponsePanel chips about her other medications', () => {
     };
     renderIbuprofen({ safetyWarnings: [aboutTheDrug, ...IBUPROFEN_BESIDE_HER_OWN_ALLERGIES.safetyWarnings] });
     expect(screen.getByText('Ibuprofen: The patient has a recorded allergy to Ibuprofen.')).toBeInTheDocument();
+    expect(safetySection().className).not.toContain('safetyWarningsSectionNeutral');
     expect(screen.getByText(LINE)).toBeInTheDocument();
     expect(screen.queryByText(LIDOCAINE)).not.toBeInTheDocument();
   });

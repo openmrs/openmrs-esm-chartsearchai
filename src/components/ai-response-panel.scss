@@ -318,6 +318,17 @@
   color: colors.$red-70;
 }
 
+// A box holding only findings about the patient's other medications: neutral, as the other non-warning
+// marks are, since none of it is about the drug in question.
+.safetyWarningsSectionNeutral {
+  background-color: colors.$cool-gray-10;
+  border-left-color: colors.$cool-gray-50;
+
+  .safetyWarningsLabel {
+    color: colors.$cool-gray-70;
+  }
+}
+
 .safetyWarningsList {
   display: flex;
   flex-direction: column;

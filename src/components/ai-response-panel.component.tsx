@@ -870,7 +870,16 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
         // No live-region role: the panel already sits inside the chat history's
         // role="log" aria-live="polite", which announces this content in order. An
         // assertive role="alert" here would preempt the answer it annotates.
-        <div className={styles.safetyWarningsSection}>
+        // Red only where the box holds a finding about the drug in question. A box holding nothing
+        // but chips about her OTHER medications (backend aboutAnotherOfHerMedications) is drawn
+        // neutral: those findings are real, and one click away, but not a warning about what was asked.
+        <div
+          className={
+            mainWarnings.length === 0
+              ? `${styles.safetyWarningsSection} ${styles.safetyWarningsSectionNeutral}`
+              : styles.safetyWarningsSection
+          }
+        >
           <span className={styles.safetyWarningsLabel}>
             {t('safetyChecks', 'Safety checks')}:
             {safetyBoxCollapsible && (
