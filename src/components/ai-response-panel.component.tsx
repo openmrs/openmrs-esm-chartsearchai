@@ -677,6 +677,31 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
               </span>
             </>
           )}
+          {/* The finding holds only if the question's medication list is right: it names a drug the
+            question says the patient is on and the chart holds no active order for (backend ADR
+            Decision 133). Only a non-empty list is drawn; `[]` says nothing about the chart. */}
+          {(() => {
+            const listed = (
+              Array.isArray(warning.listedDrugsNotOnHerChart) ? warning.listedDrugsNotOnHerChart : []
+            ).filter((name): name is string => typeof name === 'string' && name.trim().length > 0);
+            if (listed.length === 0) return null;
+            return (
+              <>
+                {' '}
+                <span
+                  className={styles.listedDrugTag}
+                  title={t(
+                    'listedDrugNotOnChartTitle',
+                    'The question lists this drug as one the patient is on, but the chart holds no active order for it, so this finding holds only if the question’s list is right.',
+                  )}
+                >
+                  {t('listedDrugNotOnChart', 'Only if the patient is on {{drugs}} — not on the chart', {
+                    drugs: listed.join(', '),
+                  })}
+                </span>
+              </>
+            );
+          })()}
         </span>
       </span>
     );

@@ -8,6 +8,7 @@ import { ASPIRIN_CHIP_THE_ANSWER_CITES } from '../__fixtures__/aspirin-response'
 import { SCREEN_WITH_ATTACHED_ALLERGY_RECORDS } from '../__fixtures__/attached-records-response';
 import { IBUPROFEN_BESIDE_HER_OWN_ALLERGIES } from '../__fixtures__/other-medication-response';
 import { LIDOCAINE_QUESTION_ABOUT_HER_OWN_ORDER } from '../__fixtures__/own-medication-question-response';
+import { AMLODIPINE_BESIDE_A_LISTED_NEVIRAPINE } from '../__fixtures__/listed-drug-response';
 import {
   ALLERGY_TO_A_CURRENT_MEDICATION,
   ALLERGY_TO_A_PROPOSED_DRUG,
@@ -1715,5 +1716,65 @@ describe('AiResponsePanel already-prescribed mark', () => {
       ...rest,
     ]);
     expect(screen.getByText('Already prescribed: Advil 400mg, Nurofen 200mg')).toBeInTheDocument();
+  });
+});
+
+/**
+ * A finding that rests on a drug the question lists as the patient's and the chart holds no active order
+ * for is marked as conditional on that list: the live amlodipine answer, whose two nevirapine chips both
+ * carry `listedDrugsNotOnHerChart: ["Nevirapine"]`.
+ */
+describe('AiResponsePanel findings resting on the question list', () => {
+  const response = AMLODIPINE_BESIDE_A_LISTED_NEVIRAPINE;
+  const MARK = 'Only if the patient is on Nevirapine — not on the chart';
+  const chipRows = () =>
+    screen.queryAllByText((_content, element) => Boolean(element?.className?.includes?.('safetyWarningItem')));
+
+  function renderAmlodipine(safetyWarnings: AiSafetyWarning[] = response.safetyWarnings as AiSafetyWarning[]) {
+    return render(
+      <AiResponsePanel
+        {...(response as object)}
+        answer={response.answer}
+        references={response.references as unknown as AiReference[]}
+        safetyWarnings={safetyWarnings}
+        questionId={response.questionId}
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+  }
+
+  it('marks each chip resting on the listed drug, and says why on hover', () => {
+    renderAmlodipine();
+    const rows = chipRows();
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      const mark = within(row).getByText(MARK);
+      expect(mark).toHaveAttribute(
+        'title',
+        'The question lists this drug as one the patient is on, but the chart holds no active order for it, so this finding holds only if the question’s list is right.',
+      );
+    }
+  });
+
+  it('names every listed drug a chip rests on', () => {
+    const [first, ...rest] = response.safetyWarnings as AiSafetyWarning[];
+    renderAmlodipine([{ ...first, listedDrugsNotOnHerChart: ['Nevirapine', 'Stavudine'] }, ...rest]);
+    expect(
+      within(chipRows()[0]).getByText('Only if the patient is on Nevirapine, Stavudine — not on the chart'),
+    ).toBeInTheDocument();
+  });
+
+  it('draws no mark where the list is empty, absent, or not a list of names', () => {
+    for (const value of [[], undefined, null, 'Nevirapine', [''], [3]]) {
+      const safetyWarnings = (response.safetyWarnings as AiSafetyWarning[]).map((warning) => ({
+        ...warning,
+        listedDrugsNotOnHerChart: value as unknown as string[],
+      }));
+      const { unmount } = renderAmlodipine(safetyWarnings);
+      expect(screen.queryByText(/^Only if the patient is on/)).not.toBeInTheDocument();
+      unmount();
+    }
   });
 });

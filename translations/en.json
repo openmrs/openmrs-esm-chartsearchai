@@ -24,6 +24,8 @@
   "helpful": "Helpful",
   "hideDetails": "Hide details",
   "hideSafetyChecks": "Hide safety checks",
+  "listedDrugNotOnChart": "Only if the patient is on {{drugs}} — not on the chart",
+  "listedDrugNotOnChartTitle": "The question lists this drug as one the patient is on, but the chart holds no active order for it, so this finding holds only if the question’s list is right.",
   "microphonePermissionDenied": "Microphone access was denied. Please allow microphone permissions.",
   "misattributedCitationTitle": "The module reports that this citation may not be the medication order this sentence names, so it is not offered as a link. This is a report about the citation, not a verdict on the safety finding.",
   "modelReasoning": "Model reasoning",

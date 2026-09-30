@@ -229,6 +229,15 @@
   white-space: normal;
 }
 
+// A finding that rests on a drug only the question says the patient takes. Warm, not the cool grey of a
+// chart fact: it is a condition on the finding, not something the chart records.
+.listedDrugTag {
+  @extend %disclosureTagBase;
+  background-color: colors.$warm-gray-10;
+  color: colors.$warm-gray-80;
+  white-space: normal;
+}
+
 // The rating the answer states nowhere, rendered beside the sentence that dropped it.
 // `display: inline` (a span, not a Carbon Tag, which is a <div>) so it flows inside the answer
 // paragraph rather than breaking it — that override is the reason it cannot just be a Tag.

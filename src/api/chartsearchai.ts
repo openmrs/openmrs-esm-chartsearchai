@@ -178,6 +178,13 @@ export interface AiSafetyWarning {
    */
   aboutAnotherOfHerMedications?: boolean;
   /**
+   * The drugs this finding names that the question lists as ones the patient is on and the chart holds no
+   * active order for (backend ADR Decision 133), so the finding holds only if the question's list is right.
+   * The same drugs the answer's "The chart holds no active order for …" sentence names. `[]` is NOT a
+   * claim the chart holds them, and a backend that predates the key sends nothing.
+   */
+  listedDrugsNotOnHerChart?: string[];
+  /**
    * The day the ended order behind {@link aboutAnEndedOrder} stopped being in force, `yyyy-MM-dd`,
    * or `null` — on every chip answering `false`, and on one whose ended records carry no stop date.
    * Of several ended orders of the drug, the latest. A UTC calendar date, so it can be a day off
