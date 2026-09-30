@@ -219,21 +219,6 @@ export interface AiChartOrderBridge {
 export interface AiInteractionPairs {
   found: number;
   reported: number;
-  /**
-   * The pairs the drug-in-play check related between a drug the question put in play and one of this
-   * patient's own active or scheduled orders whose rules sit BELOW the severity floor — so no warning
-   * and no count in `found` (backend ADR Decision 127). `drug` is the chip name, `partner` the name the
-   * injected record prints, `severity` the source's rating verbatim (DDInter's `Unknown` carries no
-   * mechanism text). `null` is no measurement — a pairwise check stated the extent — and `[]` a
-   * measurement of none, never a certificate.
-   */
-  belowFloor?: AiBelowFloorPair[] | null;
-}
-
-export interface AiBelowFloorPair {
-  drug: string;
-  partner: string;
-  severity?: string | null;
 }
 
 /**

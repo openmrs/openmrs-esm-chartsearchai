@@ -32,6 +32,15 @@ interface Occurrence {
   text: string;
 }
 
+/**
+ * The catalogue keys a call reads. A call passing `count` never reads its bare key: i18next resolves
+ * `key_one` / `key_other` (English's two plural categories), and `yarn extract-translations` writes
+ * exactly those, so requiring the bare key here would contradict CI's "Verify translations" step.
+ */
+function catalogueKeys(key: string, plural: boolean): string[] {
+  return plural ? [`${key}_one`, `${key}_other`] : [key];
+}
+
 function sourceFiles(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(dir, entry.name);
@@ -44,10 +53,16 @@ function sourceFiles(dir: string): string[] {
 }
 
 const occurrences = new Map<string, Occurrence[]>();
+const pluralKeys = new Set<string>();
 for (const file of sourceFiles(__dirname)) {
   const source = fs.readFileSync(file, 'utf8');
-  for (const entry of new JsxLexer().extract(source, file) as Array<{ key: string; defaultValue?: string }>) {
+  for (const entry of new JsxLexer().extract(source, file) as Array<{
+    key: string;
+    defaultValue?: string;
+    count?: unknown;
+  }>) {
     if (entry.defaultValue === undefined) continue;
+    if (entry.count !== undefined) pluralKeys.add(entry.key);
     const found = occurrences.get(entry.key) ?? [];
     found.push({ file: path.basename(file), text: entry.defaultValue });
     occurrences.set(entry.key, found);
@@ -74,13 +89,27 @@ describe('translations/en.json', () => {
   });
 
   it('ships the same wording the code states as its default', () => {
-    const drift = [...occurrences]
-      .filter(([key, found]) => key in catalogue && found.some((entry) => catalogue[key] !== entry.text))
-      .map(([key, found]) => `${key} (${found[0].file})\n  en.json: ${catalogue[key]}\n  code:    ${found[0].text}`);
+    const drift = [...occurrences].flatMap(([key, found]) =>
+      catalogueKeys(key, pluralKeys.has(key))
+        .filter((entryKey) => entryKey in catalogue && found.some((entry) => catalogue[entryKey] !== entry.text))
+        .map(
+          (entryKey) =>
+            `${entryKey} (${found[0].file})\n  en.json: ${catalogue[entryKey]}\n  code:    ${found[0].text}`,
+        ),
+    );
     expect(drift).toEqual([]);
   });
 
   it('has a catalogue entry for every key the UI asks for', () => {
-    expect([...occurrences.keys()].filter((key) => !(key in catalogue))).toEqual([]);
+    const missing = [...occurrences.keys()].flatMap((key) =>
+      catalogueKeys(key, pluralKeys.has(key)).filter((entryKey) => !(entryKey in catalogue)),
+    );
+    expect(missing).toEqual([]);
+  });
+
+  it('recognises a counted call as plural, so the keys above are the ones it reads', () => {
+    // Without this, a lexer that stopped reporting `count` would make every plural call look
+    // singular and send the two checks above back to asking for a key i18next never reads.
+    expect(pluralKeys.has('withheldInteractions')).toBe(true);
   });
 });
