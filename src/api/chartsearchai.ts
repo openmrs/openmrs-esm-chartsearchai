@@ -167,6 +167,28 @@ export interface AiSafetyWarning {
    * which reads the same as `false`.
    */
   statedInTheAnswer?: boolean;
+  /**
+   * The active orders this finding names as its partners, in the backend's own spelling
+   * (`["Metoclopramide"]`); empty or absent for a finding with no partner, such as an allergy.
+   * Read by the compact chip, which names the partner on one line where the detail is collapsed.
+   */
+  namedPartners?: string[] | null;
+}
+
+/** One rating the backend found attached to, or missing from, a cited safety finding. */
+export interface AiCitedRating {
+  citation: number;
+  rating: string;
+}
+
+/**
+ * Whether each "X interacts with active order Y" claim in the answer names a pair the module's
+ * findings relate (backend #514). `null` on the response is no measurement.
+ */
+export interface AiInteractionClaimPairs {
+  judged: number;
+  misattributedCitations: number[];
+  unfounded: number;
 }
 
 /**
@@ -310,6 +332,24 @@ export interface AiSearchResponse {
    * measurement. Final on the early `done` under async grounding; the `grounded` event re-sends it.
    */
   orderStopDates?: AiOrderStopDate[] | null;
+  /**
+   * Ratings the answer attaches, in the sentence citing it, to a cited safety finding that carries
+   * none (backend #560). `[]` found none; `null` is no measurement.
+   */
+  unfoundedFindingSeverities?: AiCitedRating[] | null;
+  /**
+   * Citations whose rendering in the answer the backend found unfaithful to the reference record
+   * they point at (backend #337). `[]` named none — which is not a certificate of faithfulness —
+   * and `null` is no measurement.
+   */
+  unfaithfullyRenderedCitations?: number[] | null;
+  /**
+   * Findings about the drug the answer's caution lead says can be given, where the finding's record
+   * ends in a reason to withhold it. `[]` found none; `null` is no measurement.
+   */
+  cautionLedOverWithholding?: AiCitedRating[] | null;
+  /** @see AiInteractionClaimPairs */
+  interactionClaimPairs?: AiInteractionClaimPairs | null;
   questionId?: string;
 }
 
@@ -334,6 +374,10 @@ export type AiAnswerLimits = Pick<
   | 'interactionPairs'
   | 'activeOrderClaims'
   | 'orderStopDates'
+  | 'unfoundedFindingSeverities'
+  | 'unfaithfullyRenderedCitations'
+  | 'cautionLedOverWithholding'
+  | 'interactionClaimPairs'
 >;
 
 /**

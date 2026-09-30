@@ -8,10 +8,19 @@ function interpolate(text, options) {
   return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (match, name) => (name in options ? String(options[name]) : match));
 }
 
+// English plural selection, the one other piece of i18next the panel relies on: a call passing
+// `count` reads its `_other` form — `defaultValue_other` where the call gives one — for any count but 1.
+function pluralDefault(defaultValue, options) {
+  if (options && typeof options.count === 'number' && options.count !== 1 && options.defaultValue_other) {
+    return options.defaultValue_other;
+  }
+  return defaultValue;
+}
+
 module.exports = {
   ...reactI18next,
   useTranslation: () => ({
-    t: (key, defaultValue, options) => interpolate(defaultValue ?? key, options),
+    t: (key, defaultValue, options) => interpolate(pluralDefault(defaultValue, options) ?? key, options),
     i18n: { language: 'en' },
   }),
 };

@@ -33,12 +33,23 @@ interface Occurrence {
 }
 
 /**
- * The catalogue keys a call reads. A call passing `count` never reads its bare key: i18next resolves
- * `key_one` / `key_other` (English's two plural categories), and `yarn extract-translations` writes
- * exactly those, so requiring the bare key here would contradict CI's "Verify translations" step.
+ * The catalogue keys a call reads, each with the text it should hold. A call passing `count` never
+ * reads its bare key: i18next resolves `key_one` / `key_other` (English's two plural categories),
+ * and `yarn extract-translations` writes exactly those — `_one` from `defaultValue`, `_other` from
+ * `defaultValue_other` where the call gives one and from `defaultValue` where it does not. So
+ * requiring the bare key here would contradict CI's "Verify translations" step.
  */
-function catalogueKeys(key: string, plural: boolean): string[] {
-  return plural ? [`${key}_one`, `${key}_other`] : [key];
+function catalogueEntries(entry: {
+  key: string;
+  defaultValue: string;
+  count?: unknown;
+  defaultValue_other?: string;
+}): Array<[string, string]> {
+  if (entry.count === undefined) return [[entry.key, entry.defaultValue]];
+  return [
+    [`${entry.key}_one`, entry.defaultValue],
+    [`${entry.key}_other`, entry.defaultValue_other ?? entry.defaultValue],
+  ];
 }
 
 function sourceFiles(dir: string): string[] {
@@ -60,12 +71,15 @@ for (const file of sourceFiles(__dirname)) {
     key: string;
     defaultValue?: string;
     count?: unknown;
+    defaultValue_other?: string;
   }>) {
     if (entry.defaultValue === undefined) continue;
     if (entry.count !== undefined) pluralKeys.add(entry.key);
-    const found = occurrences.get(entry.key) ?? [];
-    found.push({ file: path.basename(file), text: entry.defaultValue });
-    occurrences.set(entry.key, found);
+    for (const [catalogueKey, text] of catalogueEntries({ ...entry, defaultValue: entry.defaultValue })) {
+      const found = occurrences.get(catalogueKey) ?? [];
+      found.push({ file: path.basename(file), text });
+      occurrences.set(catalogueKey, found);
+    }
   }
 }
 
@@ -89,27 +103,27 @@ describe('translations/en.json', () => {
   });
 
   it('ships the same wording the code states as its default', () => {
-    const drift = [...occurrences].flatMap(([key, found]) =>
-      catalogueKeys(key, pluralKeys.has(key))
-        .filter((entryKey) => entryKey in catalogue && found.some((entry) => catalogue[entryKey] !== entry.text))
-        .map(
-          (entryKey) =>
-            `${entryKey} (${found[0].file})\n  en.json: ${catalogue[entryKey]}\n  code:    ${found[0].text}`,
-        ),
-    );
+    const drift = [...occurrences]
+      .filter(([key, found]) => key in catalogue && found.some((entry) => catalogue[key] !== entry.text))
+      .map(([key, found]) => `${key} (${found[0].file})\n  en.json: ${catalogue[key]}\n  code:    ${found[0].text}`);
     expect(drift).toEqual([]);
   });
 
   it('has a catalogue entry for every key the UI asks for', () => {
-    const missing = [...occurrences.keys()].flatMap((key) =>
-      catalogueKeys(key, pluralKeys.has(key)).filter((entryKey) => !(entryKey in catalogue)),
-    );
-    expect(missing).toEqual([]);
+    expect([...occurrences.keys()].filter((key) => !(key in catalogue))).toEqual([]);
   });
 
   it('recognises a counted call as plural, so the keys above are the ones it reads', () => {
     // Without this, a lexer that stopped reporting `count` would make every plural call look
     // singular and send the two checks above back to asking for a key i18next never reads.
     expect(pluralKeys.has('withheldInteractions')).toBe(true);
+  });
+
+  it("reads a counted call's own plural default into its _other key", () => {
+    // Without this, a lexer that stopped reporting `defaultValue_other` would compare the plural
+    // wording against the singular and pass only while the two happen to be equal.
+    expect(occurrences.get('safetyChecksStatedInTheAnswer_other')?.[0]?.text).toBe(
+      '{{count}} findings, each stated in the answer',
+    );
   });
 });

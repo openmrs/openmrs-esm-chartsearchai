@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IconButton, InlineLoading, Tag } from '@carbon/react';
 import { Copy } from '@carbon/react/icons';
@@ -9,6 +9,7 @@ import {
   type AiSafetyWarning,
   SESSION_EXPIRED_ERROR_CODE,
 } from '../api/chartsearchai';
+import { compactChips } from '../utils/compact-chips';
 import { highlightReference } from '../utils/highlight-reference';
 import {
   citationGroupPattern,
@@ -418,6 +419,10 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   misattributedOrderCitations,
   unstatedFindingSeverities,
   orderStopDates,
+  unfoundedFindingSeverities,
+  unfaithfullyRenderedCitations,
+  cautionLedOverWithholding,
+  interactionClaimPairs,
   questionId,
   error,
   isLoading,
@@ -467,6 +472,51 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     () => (safetyWarnings ?? []).filter((warning) => warning.statedInTheAnswer !== true),
     [safetyWarnings],
   );
+
+  // The chips the answer cites and every fidelity check clears, drawn on one line with their detail
+  // behind a toggle rather than repeating the answer's paragraph beside it — see compactChips for
+  // what qualifies. Computed over EVERY chip, drawn or not, so a chip the safety box leaves out still
+  // counts against a shared key. Never while streaming: the checks have not run yet.
+  const compactWarnings = useMemo(() => {
+    if (isLoading) return new Set<AiSafetyWarning>();
+    const all = safetyWarnings ?? [];
+    const positions = compactChips(answer, references, all, {
+      misattributedOrderCitations,
+      unstatedFindingSeverities,
+      unfoundedFindingSeverities,
+      unfaithfullyRenderedCitations,
+      cautionLedOverWithholding,
+      interactionClaimPairs,
+    });
+    return new Set([...positions].map((position) => all[position]));
+  }, [
+    isLoading,
+    answer,
+    references,
+    safetyWarnings,
+    misattributedOrderCitations,
+    unstatedFindingSeverities,
+    unfoundedFindingSeverities,
+    unfaithfullyRenderedCitations,
+    cautionLedOverWithholding,
+    interactionClaimPairs,
+  ]);
+  const [expandedWarnings, setExpandedWarnings] = useState<Set<AiSafetyWarning>>(() => new Set());
+
+  // The whole safety box collapses to a summary line only where EVERY chip it draws qualifies for the
+  // one-line form. One chip that does not keeps the box open: that is the finding a clinician must not
+  // have to go looking for, and the box is where an answer that dropped or softened one still shows it.
+  const safetyBoxCollapsible =
+    shownSafetyWarnings.length > 0 && shownSafetyWarnings.every((warning) => compactWarnings.has(warning));
+  const [safetyBoxOpen, setSafetyBoxOpen] = useState(false);
+  const toggleWarning = useCallback((warning: AiSafetyWarning) => {
+    setExpandedWarnings((previous) => {
+      const next = new Set(previous);
+      if (next.has(warning)) next.delete(warning);
+      else next.add(warning);
+      return next;
+    });
+  }, []);
 
   // What a chip about an ended order is about. The backend asks for exactly this reading: such a
   // chip is about giving the drug again, not about two medications the patient takes now.
@@ -631,59 +681,123 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
         // role="log" aria-live="polite", which announces this content in order. An
         // assertive role="alert" here would preempt the answer it annotates.
         <div className={styles.safetyWarningsSection}>
-          <span className={styles.safetyWarningsLabel}>{t('safetyChecks', 'Safety checks')}:</span>
-          <div className={styles.safetyWarningsList}>
-            {shownSafetyWarnings.map((warning, i) => {
-              const { tagType, label } = safetyWarningTag(warning.type, t);
-              const endedOn = calendarDay(warning.endedOrderStopDate);
-              return (
-                <span key={`${warning.type}-${warning.drug}-${i}`} className={styles.safetyWarningItem}>
-                  <Tag type={tagType} size="sm" className={styles.safetyWarningBadge}>
-                    {label}
-                  </Tag>
-                  <span className={styles.safetyWarningText}>
-                    {warning.drug}: {warning.detail}
-                    {/* The chip's words are the same whether the patient takes this drug or a
+          <span className={styles.safetyWarningsLabel}>
+            {t('safetyChecks', 'Safety checks')}:
+            {safetyBoxCollapsible && (
+              <>
+                {' '}
+                <span className={styles.safetyWarningsSummary}>
+                  {t('safetyChecksStatedInTheAnswer', '{{count}} finding, stated in the answer', {
+                    count: shownSafetyWarnings.length,
+                    defaultValue_other: '{{count}} findings, each stated in the answer',
+                  })}
+                </span>{' '}
+                <button
+                  type="button"
+                  className={styles.detailsToggle}
+                  aria-expanded={safetyBoxOpen}
+                  onClick={() => setSafetyBoxOpen((open) => !open)}
+                >
+                  {safetyBoxOpen
+                    ? t('hideSafetyChecks', 'Hide safety checks')
+                    : t('showSafetyChecks', 'Show safety checks')}
+                </button>
+              </>
+            )}
+          </span>
+          {(!safetyBoxCollapsible || safetyBoxOpen) && (
+            <div className={styles.safetyWarningsList}>
+              {shownSafetyWarnings.map((warning, i) => {
+                const { tagType, label } = safetyWarningTag(warning.type, t);
+                const endedOn = calendarDay(warning.endedOrderStopDate);
+                const compact = compactWarnings.has(warning);
+                const collapsed = compact && !expandedWarnings.has(warning);
+                const partners = Array.isArray(warning.namedPartners)
+                  ? warning.namedPartners.filter((partner) => typeof partner === 'string' && partner.trim())
+                  : [];
+                const severity =
+                  typeof warning.severity === 'string' && warning.severity.trim() ? warning.severity : null;
+                return (
+                  <span key={`${warning.type}-${warning.drug}-${i}`} className={styles.safetyWarningItem}>
+                    <Tag type={tagType} size="sm" className={styles.safetyWarningBadge}>
+                      {label}
+                    </Tag>
+                    <span className={styles.safetyWarningText}>
+                      {collapsed ? (
+                        <>
+                          {warning.drug}
+                          {partners.length > 0 && ` — ${partners.join(', ')}`}
+                          {severity && ` (${severity})`}
+                        </>
+                      ) : (
+                        <>
+                          {warning.drug}: {warning.detail}
+                        </>
+                      )}
+                      {compact && (
+                        <>
+                          {' '}
+                          <span
+                            className={styles.statedInAnswerTag}
+                            title={t(
+                              'citedInTheAnswerTitle',
+                              'The answer cites this finding and the module’s checks of how it was rendered found nothing, so its detail is collapsed rather than repeated. The answer may still word it differently or leave part of it out; open the detail to read the finding in full.',
+                            )}
+                          >
+                            {t('citedInTheAnswer', 'Stated in the answer')}
+                          </span>{' '}
+                          <button
+                            type="button"
+                            className={styles.detailsToggle}
+                            aria-expanded={!collapsed}
+                            onClick={() => toggleWarning(warning)}
+                          >
+                            {collapsed ? t('showDetails', 'Show details') : t('hideDetails', 'Hide details')}
+                          </button>
+                        </>
+                      )}
+                      {/* The chip's words are the same whether the patient takes this drug or a
                         question proposed it, so this key is the only thing saying which. Only
                         `true` is drawn: `false` does not say the patient is off the drug. */}
-                    {warning.aboutACurrentMedication === true && (
-                      <>
-                        {' '}
-                        <span
-                          className={styles.currentMedicationTag}
-                          title={t(
-                            'aboutACurrentMedicationTitle',
-                            'The module raised this finding from one of the patient’s own active orders, so it is about a medication the patient is already taking. The drug shown is the substance the module matched that order to, which the order itself may name differently — a brand name, for example.',
-                          )}
-                        >
-                          {t('aboutACurrentMedication', 'About a current medication')}
-                        </span>
-                      </>
-                    )}
-                    {/* The chip's words are also the same whether the chart holds this drug only as
+                      {warning.aboutACurrentMedication === true && (
+                        <>
+                          {' '}
+                          <span
+                            className={styles.currentMedicationTag}
+                            title={t(
+                              'aboutACurrentMedicationTitle',
+                              'The module raised this finding from one of the patient’s own active orders, so it is about a medication the patient is already taking. The drug shown is the substance the module matched that order to, which the order itself may name differently — a brand name, for example.',
+                            )}
+                          >
+                            {t('aboutACurrentMedication', 'About a current medication')}
+                          </span>
+                        </>
+                      )}
+                      {/* The chip's words are also the same whether the chart holds this drug only as
                         an ended order or a question proposed it. A mark of its own, not the tag
                         above: the backend keeps the two referents apart. Only `true` is drawn —
                         `false` does not say the drug is current. */}
-                    {warning.aboutAnEndedOrder === true && (
-                      <>
-                        {' '}
-                        <span
-                          className={styles.endedOrderTag}
-                          title={endedOn ? `${endedOrderTitle} ${utcDayTitle}` : endedOrderTitle}
-                        >
-                          {endedOn
-                            ? t('aboutAnEndedOrderOn', 'About an order no longer in force, ended {{stopDate}}', {
-                                stopDate: endedOn,
-                              })
-                            : t('aboutAnEndedOrder', 'About an order no longer in force')}
-                        </span>
-                      </>
-                    )}
+                      {warning.aboutAnEndedOrder === true && (
+                        <>
+                          {' '}
+                          <span
+                            className={styles.endedOrderTag}
+                            title={endedOn ? `${endedOrderTitle} ${utcDayTitle}` : endedOrderTitle}
+                          >
+                            {endedOn
+                              ? t('aboutAnEndedOrderOn', 'About an order no longer in force, ended {{stopDate}}', {
+                                  stopDate: endedOn,
+                                })
+                              : t('aboutAnEndedOrder', 'About an order no longer in force')}
+                          </span>
+                        </>
+                      )}
+                    </span>
                   </span>
-                </span>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
