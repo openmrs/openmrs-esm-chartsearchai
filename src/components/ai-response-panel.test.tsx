@@ -9,6 +9,7 @@ import { SCREEN_WITH_ATTACHED_ALLERGY_RECORDS } from '../__fixtures__/attached-r
 import { IBUPROFEN_BESIDE_HER_OWN_ALLERGIES } from '../__fixtures__/other-medication-response';
 import { LIDOCAINE_QUESTION_ABOUT_HER_OWN_ORDER } from '../__fixtures__/own-medication-question-response';
 import { RIFAMPICIN_ANSWER_CLAIMING_AN_ENDED_ORDER } from '../__fixtures__/ended-order-claim-response';
+import { ASPIRIN_ANSWER_DROPPING_THE_SIGNIFICANCE_CAVEAT } from '../__fixtures__/significance-qualifier-response';
 import {
   ALLERGY_TO_A_CURRENT_MEDICATION,
   ALLERGY_TO_A_PROPOSED_DRUG,
@@ -1780,5 +1781,56 @@ describe('AiResponsePanel an ended order no record states', () => {
   it('says nothing while the answer is still streaming', () => {
     renderRifampicin({}, true);
     expect(screen.queryByText(/^No record says the/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * A cited finding whose own caveat the answer left out — "The clinical significance of this
+ * interaction is unknown." — is tagged beside its citation (backend ADR Decision 136): the live
+ * aspirin answer, which cites the aspirin/metoclopramide finding [46] and does not say so.
+ */
+describe('AiResponsePanel a cited finding the answer leaves unqualified', () => {
+  const response = ASPIRIN_ANSWER_DROPPING_THE_SIGNIFICANCE_CAVEAT;
+  const TAG = 'Clinical significance unknown';
+  const answerText = () =>
+    screen.getByText((_content, element) => Boolean(element?.className?.includes?.('answerText')));
+
+  function renderAspirin(overrides: Record<string, unknown> = {}) {
+    const merged = { ...response, ...overrides };
+    return render(
+      <AiResponsePanel
+        {...(merged as object)}
+        answer={merged.answer as string}
+        references={merged.references as unknown as AiReference[]}
+        safetyWarnings={merged.safetyWarnings as AiSafetyWarning[]}
+        questionId={merged.questionId as string}
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+  }
+
+  it('tags the citation, in the answer, right after it, with the reason on hover', () => {
+    renderAspirin();
+    expect(response.answer).toContain('[46]');
+    expect(answerText()).toHaveTextContent('[46] ' + TAG);
+    expect(within(answerText()).getByText(TAG)).toHaveAttribute(
+      'title',
+      'The finding this cites says the clinical significance of the interaction is unknown. The answer leaves that out.',
+    );
+  });
+
+  it('tags a finding once however often the answer cites it', () => {
+    renderAspirin({ answer: `${response.answer} Monitor for it [46].` });
+    expect(within(answerText()).getAllByText(TAG)).toHaveLength(1);
+  });
+
+  it('tags nothing where the list is empty, absent, malformed, or names a citation the answer does not carry', () => {
+    for (const value of [[], null, undefined, '46', [46.5], [99]]) {
+      const { unmount } = renderAspirin({ unstatedSignificanceQualifiers: value });
+      expect(screen.queryByText(TAG)).not.toBeInTheDocument();
+      unmount();
+    }
   });
 });

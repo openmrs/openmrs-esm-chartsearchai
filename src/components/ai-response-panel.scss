@@ -187,6 +187,14 @@
   color: colors.$gray-70;
 }
 
+// A cited finding's own caveat the answer left out: neutral, beside the citation, since it qualifies the
+// finding rather than warning about the patient.
+.significanceTag {
+  @extend %disclosureTagBase;
+  background-color: colors.$cool-gray-10;
+  color: colors.$cool-gray-70;
+}
+
 // A statement in the answer that no record supports. Amber, not the safety box's red: it flags the
 // answer's wording, not a finding about the patient.
 .unsupportedClaimNote {

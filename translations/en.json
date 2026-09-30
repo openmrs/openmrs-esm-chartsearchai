@@ -58,6 +58,8 @@
   "sessionExpired": "Your session has expired. Please log in again.",
   "showDetails": "Show details",
   "showSafetyChecks": "Show safety checks",
+  "significanceUnknown": "Clinical significance unknown",
+  "significanceUnknownTitle": "The finding this cites says the clinical significance of the interaction is unknown. The answer leaves that out.",
   "sourceOfFindings": "source of {{citations}}",
   "sourceOfFindingsTitle": "The chart record the cited safety finding is based on. The answer has no marker for it, since it cites the finding; opening it goes to the record.",
   "speechRecognitionError": "Speech recognition failed. Please try again.",
