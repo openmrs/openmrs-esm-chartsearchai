@@ -121,4 +121,20 @@ describe('AiTableBlockView', () => {
     // Column B's cell exists but is empty — assert by counting role=cell instead of looking for text
     expect(screen.getAllByRole('cell')).toHaveLength(2);
   });
+  it('retains citation attribution, severity and significance disclosures in table cells', () => {
+    const props = {
+      block,
+      references,
+      patientUuid,
+      decorations: { misattributed: new Set([1]), severities: new Map([[1, 'Major']]), qualified: new Set([1]) },
+    };
+    const { rerender } = render(<AiTableBlockView {...props} />);
+    expect(screen.queryByRole('link', { name: '1' })).not.toBeInTheDocument();
+    expect(screen.getByTitle(/module reports that this citation/)).toHaveTextContent('1');
+    expect(screen.getByText('Major')).toBeInTheDocument();
+    expect(screen.getByText('Clinical significance unknown')).toBeInTheDocument();
+    rerender(<AiTableBlockView {...props} />);
+    expect(screen.getByText('Major')).toBeInTheDocument();
+    expect(screen.getByText('Clinical significance unknown')).toBeInTheDocument();
+  });
 });
