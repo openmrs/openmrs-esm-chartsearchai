@@ -74,6 +74,20 @@ The following options can be set via the OpenMRS 3.x config system:
 | `useStreaming`        | `boolean` | `true`                           | Use the SSE streaming endpoint for token-by-token responses          |
 | `showReasoning`       | `boolean` | `true`                           | Show the model's reasoning — see [Model reasoning](#model-reasoning) |
 
+### Provider and profile selection components
+
+The extracted provider selector reads `/providers`, uses the backend's advertised
+default, and keeps an unavailable explicit selection until the user chooses a
+replacement. The Hub profile selector reads `/models`, shows product profiles and
+their availability, and selects the Hub-advertised default. It does not query Hub
+profiles for bundled inference. `showModelPicker` defaults to `true`; hiding the
+control still permits discovery of the required default profile.
+
+These components and discovery calls are prepared for the conversation workflow.
+The current search view does not mount them. Their integration with history,
+new-conversation requests and answer submission belongs to the dependent lifecycle
+change.
+
 ## API endpoints used
 
 All endpoints are served by the backend module under `/ws/rest/v1/chartsearchai/`:
