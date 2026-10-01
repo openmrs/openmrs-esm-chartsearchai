@@ -623,6 +623,11 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
       ? warning.namedPartners.filter((partner) => typeof partner === 'string' && partner.trim())
       : [];
     const severity = typeof warning.severity === 'string' && warning.severity.trim() ? warning.severity : null;
+    // The one-line form names the partner from namedPartners. A chip carrying none — a finding relating two
+    // drugs the question names — says who it is with only in its detail's lead, "<drug> interacts with
+    // <partner>, also named in the question — <note>", so the line takes that lead rather than dropping it.
+    const dash = typeof warning.detail === 'string' ? warning.detail.indexOf(' — ') : -1;
+    const oneLineSubject = partners.length === 0 && dash > 0 ? warning.detail.slice(0, dash) : warning.drug;
     return (
       <span key={`${warning.type}-${warning.drug}-${i}`} className={styles.safetyWarningItem}>
         <Tag type={tagType} size="sm" className={styles.safetyWarningBadge}>
@@ -631,7 +636,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
         <span className={styles.safetyWarningText}>
           {collapsed ? (
             <>
-              {warning.drug}
+              {oneLineSubject}
               {partners.length > 0 && ` — ${partners.join(', ')}`}
               {severity && ` (${severity})`}
             </>

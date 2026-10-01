@@ -43,14 +43,19 @@ function noFidelityCheckFired(limits: AiAnswerLimits): boolean {
  * A chip qualifies only where all three hold, and anything short of proof leaves it in full:
  * - the answer's own inline markers cite the finding's record (a `safety_finding` reference whose
  *   `resourceUuid` is the chip's key) — the one link from prose to chip the wire carries;
- * - no other chip carries that key, since a citation of a shared key cannot say which one it states;
+ * - every chip carrying that key is covered: the answer cites at least as many DISTINCT findings of the key
+ *   as there are chips carrying it. Each finding record the prompt carried becomes a chip, and the chips
+ *   pass can only add chips, so per key cited records <= records <= chips; where the cited ones are as many
+ *   as the chips, all three are equal and no chip of the key is uncited. Short of that, a citation of a
+ *   shared key cannot say which chip it states, and none of them qualifies;
  * - {@link noFidelityCheckFired}.
  *
  * It does not claim the answer states the chip's WORDS: the answer may paraphrase or drop a
  * sentence, which is why the collapsed chip still opens to its full detail.
  *
  * @returns each qualifying position, mapped to the citation indexes in the answer that cite its
- *   finding, ascending — where a clinician reads what the chip no longer repeats.
+ *   finding, ascending — where a clinician reads what the chip no longer repeats. For a shared key that
+ *   is every cited index of the key, since which of them is this chip's cannot be told.
  */
 export function compactChips(
   answer: string,
@@ -80,7 +85,7 @@ export function compactChips(
     if (!warning || typeof warning.type !== 'string' || typeof warning.drug !== 'string') return;
     const key = findingKey(warning);
     const indexes = citedFindingIndexes.get(key);
-    if (keyCounts.get(key) === 1 && indexes)
+    if (indexes && new Set(indexes).size >= (keyCounts.get(key) ?? Infinity))
       compact.set(
         position,
         [...indexes].sort((a, b) => a - b),
