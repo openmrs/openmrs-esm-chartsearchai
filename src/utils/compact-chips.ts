@@ -49,7 +49,10 @@ function noFidelityCheckFired(limits: AiAnswerLimits): boolean {
  *   pass can only add chips, so per key cited records <= records <= chips; where the cited ones are as many
  *   as the chips, all three are equal and no chip of the key is uncited. Short of that, a citation of a
  *   shared key cannot say which chip it states, and none of them qualifies;
- * - {@link noFidelityCheckFired}.
+ * - {@link noFidelityCheckFired} — except on an answer the module wrote (`answeredByTheModule:
+ *   true`), which states each finding from the chip itself, so those checks of a model's prose
+ *   have nothing to judge and state `null` (backend ADR Decision 140). The two citation
+ *   conditions above still hold there.
  *
  * It does not claim the answer states the chip's WORDS: the answer may paraphrase or drop a
  * sentence, which is why the collapsed chip still opens to its full detail.
@@ -65,7 +68,12 @@ export function compactChips(
   limits: AiAnswerLimits,
 ): Map<number, number[]> {
   const compact = new Map<number, number[]>();
-  if (!answer || !Array.isArray(references) || !Array.isArray(warnings) || !noFidelityCheckFired(limits)) {
+  if (
+    !answer ||
+    !Array.isArray(references) ||
+    !Array.isArray(warnings) ||
+    !(limits.answeredByTheModule === true || noFidelityCheckFired(limits))
+  ) {
     return compact;
   }
   const cited = new Set<number>();

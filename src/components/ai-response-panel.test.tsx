@@ -15,6 +15,7 @@ import {
   FLUCONAZOLE_CHIPS_NAMING_THEIR_RECORDS,
   RIFAMPICIN_CHIPS_NAMING_THEIR_RECORDS,
 } from '../__fixtures__/finding-citation-responses';
+import { MODULE_CAUTION_ANSWER } from '../__fixtures__/module-caution-answer-response';
 import {
   ALLERGY_TO_A_CURRENT_MEDICATION,
   ALLERGY_TO_A_PROPOSED_DRUG,
@@ -1997,6 +1998,27 @@ describe('AiResponsePanel chips naming their own record', () => {
     expect(major).toHaveTextContent('See [51] in the answer');
     expect(minor).toHaveTextContent('interacts with active order Lidocaine — Minor. Coadministration');
     expect(minor).not.toHaveTextContent(/See \[/);
+  });
+
+  // An answer the module wrote states each finding briefly from the chip itself, so the checks of
+  // a model's prose have nothing to judge and state null; the citation is still the join (backend
+  // ADR Decision 140).
+  it('folds the cited finding of an answer the module wrote, though no check of prose ran', () => {
+    renderResponse(MODULE_CAUTION_ANSWER);
+    fireEvent.click(screen.getByRole('button', { name: 'Show safety checks' }));
+    const interaction = chipRows().find((row) => row.textContent?.includes('Fluconazole —'));
+    expect(interaction).toHaveTextContent('Fluconazole — Lidocaine (Moderate) See [46] in the answer');
+    expect(interaction).not.toHaveTextContent('Coadministration');
+    expect(screen.getByText('See [46] in the answer')).toHaveAttribute(
+      'title',
+      'The answer states this finding briefly at that marker; open the detail to read it in full.',
+    );
+  });
+
+  it('still draws in full a chip beside a model answer whose prose checks stated nothing', () => {
+    renderResponse({ ...MODULE_CAUTION_ANSWER, answeredByTheModule: false });
+    expect(screen.queryByRole('button', { name: 'Show safety checks' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/See \[46\]/)).not.toBeInTheDocument();
   });
 
   it('draws a chip in full whose record the answer does not cite', () => {
