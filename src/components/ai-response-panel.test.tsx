@@ -786,7 +786,7 @@ describe('AiResponsePanel safety-check coverage', () => {
     );
     // The answer itself still renders, so the absences below are not of an empty panel.
     expect(
-      screen.getByText((_content, element) => Boolean(element?.className?.includes?.('answerText'))),
+      screen.getByText((_content, element) => Boolean(element?.className?.includes?.('markdownAnswer'))),
     ).toHaveTextContent('Rifampicin');
     expect(screen.queryByText(/What the safety checks covered/)).not.toBeInTheDocument();
     expect(
@@ -824,7 +824,7 @@ describe('AiResponsePanel safety-check coverage', () => {
       />,
     );
     expect(
-      screen.getByText((_content, element) => Boolean(element?.className?.includes?.('answerText'))),
+      screen.getByText((_content, element) => Boolean(element?.className?.includes?.('markdownAnswer'))),
     ).toHaveTextContent('Acetylsalicylic acid (aspirin) can be given');
     // The chip collapses the box on this answer; open everything, so an absence is not of a folded box.
     fireEvent.click(screen.getByRole('button', { name: 'Show safety checks' }));
@@ -991,7 +991,8 @@ describe('AiResponsePanel answer-limit disclosure', () => {
    */
   const answerText = () =>
     (
-      screen.getByText((_content, element) => Boolean(element?.className?.includes?.('answerText'))).textContent ?? ''
+      screen.getByText((_content, element) => Boolean(element?.className?.includes?.('markdownAnswer'))).textContent ??
+      ''
     ).replace(/\s+/g, ' ');
 
   it('renders each unstated rating immediately after the marker of the finding it rates', () => {
@@ -1809,7 +1810,7 @@ describe('AiResponsePanel a cited finding the answer leaves unqualified', () => 
   const response = ASPIRIN_ANSWER_DROPPING_THE_SIGNIFICANCE_CAVEAT;
   const TAG = 'Clinical significance unknown';
   const answerText = () =>
-    screen.getByText((_content, element) => Boolean(element?.className?.includes?.('answerText')));
+    screen.getByText((_content, element) => Boolean(element?.className?.includes?.('markdownAnswer')));
 
   function renderAspirin(overrides: Record<string, unknown> = {}) {
     const merged = { ...response, ...overrides };
