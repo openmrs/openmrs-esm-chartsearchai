@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { type AiReference } from '../api/chartsearchai';
 import { type CitationContext, renderTextWithCitations } from './citation-chip.component';
+import { citationGroupPattern } from '../utils/safety-disclosure';
 import styles from './ai-response-panel.scss';
 
 interface MarkdownAnswerProps {
@@ -47,9 +48,27 @@ const MarkdownAnswer: React.FC<MarkdownAnswerProps> = ({ answer, references, pat
     return rendered;
   };
 
+  const linkText = (children: React.ReactNode): string =>
+    React.Children.toArray(children)
+      .map((child) => {
+        if (typeof child === 'string' || typeof child === 'number') return String(child);
+        return React.isValidElement<{ children?: React.ReactNode }>(child) ? linkText(child.props.children) : '';
+      })
+      .join('');
+
   // Map every text-bearing element through the citation renderer; headings collapse to a
   // single subtle heading level (the answer's bold **Answer** / **In Depth** become <strong>).
   const components: Components = {
+    // Model output must not load images, including URLs that disclose patient context.
+    img: () => null,
+    a: ({ children, href, node }) => {
+      const label = linkText(children);
+      const citation = `[${label}]`;
+      if (citationGroupPattern().exec(citation)?.[0] === citation) {
+        return <>{cite(citation, node)}</>;
+      }
+      return <a href={href}>{children}</a>;
+    },
     p: ({ children, node }) => <p className={styles.answerParagraph}>{cite(children, node)}</p>,
     strong: ({ children, node }) => <strong>{cite(children, node)}</strong>,
     em: ({ children, node }) => <em>{cite(children, node)}</em>,

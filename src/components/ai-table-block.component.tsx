@@ -10,6 +10,7 @@ interface AiTableBlockProps {
   block: AiTableBlock;
   references: AiReference[];
   patientUuid: string;
+  decorations?: Pick<CitationContext, 'misattributed' | 'severities' | 'qualified'>;
 }
 
 function renderCellContent(cell: AiCell | undefined, context: CitationContext): React.ReactNode {
@@ -39,15 +40,15 @@ function renderCellContent(cell: AiCell | undefined, context: CitationContext): 
   );
 }
 
-const AiTableBlockView: React.FC<AiTableBlockProps> = ({ block, references, patientUuid }) => {
+const AiTableBlockView: React.FC<AiTableBlockProps> = ({ block, references, patientUuid, decorations }) => {
   const { t } = useTranslation();
   const context: CitationContext = {
     references,
     patientUuid,
     t,
-    misattributed: new Set<number>(),
-    severities: new Map<number, string>(),
-    qualified: new Set<number>(),
+    misattributed: decorations?.misattributed ?? new Set<number>(),
+    severities: decorations?.severities ?? new Map<number, string>(),
+    qualified: decorations?.qualified ?? new Set<number>(),
     badged: new Set<number>(),
     noted: new Set<number>(),
   };
