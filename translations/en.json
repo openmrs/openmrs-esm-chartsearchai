@@ -5,6 +5,7 @@
   "aiChartSearch": "AI Chart Search",
   "aiDisclaimerText": "This response is AI-generated and may not be accurate. It is not a substitute for clinical judgment. Always verify against the patient's medical records.",
   "aiSearch": "AI Search",
+  "aiTable": "AI result table",
   "alreadyPrescribed": "Already prescribed",
   "alreadyPrescribedOrders": "Already prescribed: {{orders}}",
   "alreadyPrescribedTitle": "The patient has an active order for this drug, so this finding is about a medication already prescribed, not one being proposed. The drug shown is the substance the module matched that order to, which the order itself may name differently — a brand name, for example.",
