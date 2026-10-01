@@ -1,13 +1,41 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { fetchProviders, type ClinicalProviderDescriptor } from '../api/chartsearchai';
+import {
+  chatPatientChartStream,
+  fetchChatHistory,
+  fetchProviders,
+  startNewChat,
+  type ClinicalProviderDescriptor,
+} from '../api/chartsearchai';
+import { useConfig } from '@openmrs/esm-framework';
+import { useChartSearchAi } from '../hooks/useChartSearchAi';
 import { chatSessionStore } from '../store/chat-session.store';
 import ProviderPicker from './provider-picker.component';
 
-vi.mock('../api/chartsearchai', () => ({ fetchProviders: vi.fn() }));
+vi.mock('../api/chartsearchai', () => ({
+  fetchProviders: vi.fn(),
+  fetchChatHistory: vi.fn(),
+  chatPatientChartStream: vi.fn(),
+  startNewChat: vi.fn(),
+}));
 
 const mockFetch = fetchProviders as Mock;
+
+// Exercise the real picker, shared state, history hydration and request selection together.
+// Only the network boundary is mocked; this is not a backend persistence test.
+const ChatWithPicker = () => {
+  const { messages, submitQuestion, startNewChatSession } = useChartSearchAi('patient-uuid');
+  return (
+    <>
+      <ProviderPicker onSwitched={() => startNewChatSession('patient-uuid')} />
+      {messages.map((message) => (
+        <p key={message.id}>{message.answer}</p>
+      ))}
+      <button onClick={() => submitQuestion('patient-uuid', 'Next question')}>Ask next</button>
+    </>
+  );
+};
 
 const provider = (overrides: Partial<ClinicalProviderDescriptor>): ClinicalProviderDescriptor => ({
   id: 'bundled',
@@ -49,6 +77,9 @@ beforeEach(() => {
     selectedProviderId: null,
   });
   mockFetch.mockReturnValue(new Promise(() => {}));
+  (useConfig as Mock).mockReturnValue({ useStreaming: true, showReasoning: true });
+  (fetchChatHistory as Mock).mockResolvedValue({ session: null, messages: [] });
+  (startNewChat as Mock).mockResolvedValue({ session: 'new-session' });
 });
 
 describe('ProviderPicker', () => {
@@ -189,5 +220,42 @@ describe('ProviderPicker', () => {
     await screen.findByRole('button', { name: /Bundled/ });
     await act(async () => resolveOld(SINGLE));
     expect(screen.getByRole('button', { name: /Bundled/ })).toBeInTheDocument();
+  });
+});
+
+describe('restored conversation provider with the real hook', () => {
+  it('keeps a restored conversation bound to its unavailable provider on the next request', async () => {
+    chatSessionStore.setState({ selectedProfileId: 'single-e4b-checked', profileDiscoveryStatus: 'ready' });
+    mockFetch.mockResolvedValueOnce({
+      ...DUAL,
+      providers: [provider({}), provider({ id: 'hub', label: 'Med-Agent Hub', ready: false, default: false })],
+    });
+    (fetchChatHistory as Mock).mockResolvedValueOnce({
+      session: 'restored-hub-session',
+      provider: 'hub',
+      messages: [
+        { messageId: 'u-1', role: 'user', content: 'Earlier question', createdAt: 1 },
+        { messageId: 'a-1', role: 'assistant', content: 'Existing answer', createdAt: 2 },
+      ],
+    });
+    render(<ChatWithPicker />);
+
+    await screen.findByText('Existing answer');
+    await screen.findByRole('button', { name: /Med-Agent Hub.*unavailable/i });
+    fireEvent.click(screen.getByRole('button', { name: 'Ask next' }));
+    expect(chatPatientChartStream).toHaveBeenCalledOnce();
+    const request = (chatPatientChartStream as Mock).mock.calls[0];
+    expect(request[1]).toBe('restored-hub-session');
+    expect(request[6]).toBe('hub');
+    expect(startNewChat).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /Med-Agent Hub.*unavailable/i }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Bundled \(local\)/i }));
+    await waitFor(() => expect(startNewChat).toHaveBeenCalledExactlyOnceWith('patient-uuid', 'bundled'));
+    await waitFor(() => expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('new-session'));
+    fireEvent.click(screen.getByRole('button', { name: 'Ask next' }));
+    const nextRequest = (chatPatientChartStream as Mock).mock.calls[1];
+    expect(nextRequest[1]).toBe('new-session');
+    expect(nextRequest[6]).toBe('bundled');
   });
 });
