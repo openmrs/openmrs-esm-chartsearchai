@@ -1,5 +1,5 @@
 import React from 'react';
-import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useConfig, usePatient } from '@openmrs/esm-framework';
@@ -265,6 +265,63 @@ describe('AiChatContent', () => {
       rerender(<AiChatContent mode="workspace" patientUuid="p1" />);
 
       expect(log.scrollTop).toBe(1000);
+    });
+
+    describe('when a finished answer is taller than the history area', () => {
+      function finish(messageHeight: number) {
+        const streaming = {
+          id: 'm1',
+          question: 'Is it safe to give rifampicin?',
+          answer: 'partial',
+          references: [],
+          questionId: '',
+          isLoading: true,
+          error: null,
+        };
+        mockUseChartSearchAi.mockReturnValue({
+          messages: [streaming],
+          isAnyLoading: true,
+          submitQuestion: mockSubmitQuestion,
+          stopCurrent: mockStopCurrent,
+          clearMessages: vi.fn(),
+        });
+        const { rerender, container } = render(<AiChatContent mode="workspace" patientUuid="p1" />);
+        const log = screen.getByRole('log');
+        Object.defineProperty(log, 'scrollHeight', { configurable: true, value: 1000 });
+        Object.defineProperty(log, 'clientHeight', { configurable: true, value: 300 });
+        log.getBoundingClientRect = () => ({ top: 100 }) as DOMRect;
+        log.scrollTop = 0;
+        mockUseChartSearchAi.mockReturnValue({
+          messages: [{ ...streaming, answer: 'No — Rifampicin should not be given.', isLoading: false }],
+          isAnyLoading: false,
+          submitQuestion: mockSubmitQuestion,
+          stopCurrent: mockStopCurrent,
+          clearMessages: vi.fn(),
+        });
+        // Scrolled to the bottom, the message's top sits 300px above the log's,
+        // so aligning it is 1000 - 300 = 700.
+        HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+          if (this.hasAttribute('data-message-pair')) return { top: -200, height: messageHeight } as DOMRect;
+          return this === log ? ({ top: 100 } as DOMRect) : ({ top: 0, height: 0 } as DOMRect);
+        };
+        rerender(<AiChatContent mode="workspace" patientUuid="p1" />);
+        return { log, container };
+      }
+
+      const original = HTMLElement.prototype.getBoundingClientRect;
+      afterEach(() => {
+        HTMLElement.prototype.getBoundingClientRect = original;
+      });
+
+      it('aligns the message to its top, so the answer is in view rather than the end of its safety box', () => {
+        const { log } = finish(600);
+        expect(log.scrollTop).toBe(700);
+      });
+
+      it('leaves a message that fits at the bottom, as before', () => {
+        const { log } = finish(200);
+        expect(log.scrollTop).toBe(1000);
+      });
     });
 
     // Regression: the live "Thinking..." reasoning streams before any answer text exists,

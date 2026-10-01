@@ -155,6 +155,27 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
     }
   }, [lastAnswer, lastReasoning, lastPreliminary, isAnyLoading]);
 
+  // When an answer finishes and the reader is still following it, a message taller than the history area
+  // is aligned to its TOP, not its bottom: following the stream to the bottom suits text as it arrives,
+  // but a finished answer with a safety box under it would otherwise open on the end of that box, with
+  // the answer itself scrolled out of view above. A message that fits stays where the line above put it.
+  // After that effect, so it overrides it in the same commit.
+  const prevIsAnyLoadingForScrollRef = useRef(false);
+  useEffect(() => {
+    const el = historyAreaRef.current;
+    if (el && prevIsAnyLoadingForScrollRef.current && !isAnyLoading && pinnedToBottomRef.current) {
+      const pairs = el.querySelectorAll('[data-message-pair]');
+      const last = pairs.length > 0 ? pairs[pairs.length - 1] : null;
+      if (last) {
+        const message = last.getBoundingClientRect();
+        if (message.height > el.clientHeight) {
+          el.scrollTop += message.top - el.getBoundingClientRect().top;
+        }
+      }
+    }
+    prevIsAnyLoadingForScrollRef.current = isAnyLoading;
+  }, [isAnyLoading]);
+
   const hasCompletedAnswer = messages.some((m) => !m.isLoading && m.answer);
 
   const prevIsAnyLoadingRef = useRef(false);
@@ -213,7 +234,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
         )}
 
         {messages.map((msg) => (
-          <div key={msg.id} className={styles.messagePair}>
+          <div key={msg.id} className={styles.messagePair} data-message-pair>
             <div className={styles.questionBubble}>{msg.question}</div>
             <div className={styles.answerBubble}>
               {msg.isLoading && !msg.answer && (
