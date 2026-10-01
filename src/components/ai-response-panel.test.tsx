@@ -10,6 +10,7 @@ import { IBUPROFEN_BESIDE_HER_OWN_ALLERGIES } from '../__fixtures__/other-medica
 import { LIDOCAINE_QUESTION_ABOUT_HER_OWN_ORDER } from '../__fixtures__/own-medication-question-response';
 import { RIFAMPICIN_ANSWER_CLAIMING_AN_ENDED_ORDER } from '../__fixtures__/ended-order-claim-response';
 import { ASPIRIN_ANSWER_DROPPING_THE_SIGNIFICANCE_CAVEAT } from '../__fixtures__/significance-qualifier-response';
+import { FLUCONAZOLE_BESIDE_A_LISTED_NEVIRAPINE_FINDING } from '../__fixtures__/not-about-proposed-response';
 import {
   ALLERGY_TO_A_CURRENT_MEDICATION,
   ALLERGY_TO_A_PROPOSED_DRUG,
@@ -1843,5 +1844,64 @@ describe('AiResponsePanel a cited finding the answer leaves unqualified', () => 
       expect(screen.queryByText(TAG)).not.toBeInTheDocument();
       unmount();
     }
+  });
+});
+
+/**
+ * A chip about a drug other than the one the question proposes is drawn apart, as one about her other
+ * medications is (backend ADR Decision 137): the live fluconazole answer, whose third chip is the listed
+ * nevirapine against her lidocaine order.
+ */
+describe('AiResponsePanel chips about a drug other than the one proposed', () => {
+  const response = FLUCONAZOLE_BESIDE_A_LISTED_NEVIRAPINE_FINDING;
+  const LINE = /^1 finding not about the drug asked about/;
+  const NEVIRAPINE = /^Nevirapine: Nevirapine interacts with active order Lidocaine/;
+  const chipRows = () =>
+    screen.queryAllByText((_content, element) => Boolean(element?.className?.includes?.('safetyWarningItem')));
+
+  function renderFluconazole(safetyWarnings: AiSafetyWarning[] = response.safetyWarnings as AiSafetyWarning[]) {
+    return render(
+      <AiResponsePanel
+        {...(response as object)}
+        answer={response.answer}
+        references={response.references as unknown as AiReference[]}
+        safetyWarnings={safetyWarnings}
+        questionId={response.questionId}
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+  }
+
+  it('keeps the nevirapine finding behind a line naming it as not about the drug asked about', () => {
+    renderFluconazole();
+    expect(screen.getByText(LINE)).toBeInTheDocument();
+    expect(screen.queryByText(NEVIRAPINE)).not.toBeInTheDocument();
+    expect(chipRows().map((row) => row.textContent)).toEqual([
+      expect.stringContaining('Fluconazole interacts with active order Lidocaine'),
+      expect.stringContaining('Fluconazole interacts with Nevirapine'),
+    ]);
+    fireEvent.click(within(screen.getByText(LINE)).getByRole('button', { name: 'Show details' }));
+    expect(screen.getByText(NEVIRAPINE)).toBeInTheDocument();
+  });
+
+  it('draws every chip together where the key is false, absent, or not the boolean true', () => {
+    for (const value of [false, undefined, 'true']) {
+      const safetyWarnings = (response.safetyWarnings as AiSafetyWarning[]).map((warning) => ({
+        ...warning,
+        aboutADrugOtherThanTheOneProposed: value as unknown as boolean,
+      }));
+      const { unmount } = renderFluconazole(safetyWarnings);
+      expect(chipRows()).toHaveLength(3);
+      expect(screen.queryByText(/not about the drug asked about/)).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('says the patient takes them only where every chip behind the line is her own prescription', () => {
+    const [nevirapine, ...rest] = response.safetyWarnings as AiSafetyWarning[];
+    renderFluconazole([{ ...nevirapine, aboutAnotherOfHerMedications: true }, ...rest]);
+    expect(screen.getByText(/^1 finding about another of this patient’s medications/)).toBeInTheDocument();
   });
 });

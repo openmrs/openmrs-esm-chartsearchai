@@ -435,6 +435,11 @@ function renderAnswerWithCitations(answer: string, ctx: CitationContext): React.
   return parts;
 }
 
+/** Whether a chip is drawn apart from the findings about the drug asked about — the box's split. */
+function isApartFromTheDrugAsked(warning: AiSafetyWarning): boolean {
+  return warning.aboutAnotherOfHerMedications === true || warning.aboutADrugOtherThanTheOneProposed === true;
+}
+
 /**
  * The cited findings a record the module attached is the source of, from `attachedFor` — only
  * where the module says it attached the record, and only indexes naming a `safety_finding` among
@@ -561,16 +566,21 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   // have to go looking for, and the box is where an answer that dropped or softened one still shows it.
   //
   // A chip about another of her medications than the drug the answer is about (backend
-  // aboutAnotherOfHerMedications) is drawn apart from those, behind a line of its own: still in the box
-  // and one click away, but it neither keeps the box open nor sits among the findings about that drug.
+  // aboutAnotherOfHerMedications), or about any drug other than the one the question proposes (backend
+  // aboutADrugOtherThanTheOneProposed), is drawn apart from those, behind a line of its own: still in the
+  // box and one click away, but it neither keeps the box open nor sits among the findings about that drug.
   // Only `true` moves a chip; `false` is no claim it is about the drug in question.
   const mainWarnings = useMemo(
-    () => shownSafetyWarnings.filter((warning) => warning.aboutAnotherOfHerMedications !== true),
+    () => shownSafetyWarnings.filter((warning) => !isApartFromTheDrugAsked(warning)),
     [shownSafetyWarnings],
   );
   const otherWarnings = useMemo(
-    () => shownSafetyWarnings.filter((warning) => warning.aboutAnotherOfHerMedications === true),
+    () => shownSafetyWarnings.filter((warning) => isApartFromTheDrugAsked(warning)),
     [shownSafetyWarnings],
+  );
+  // The line says the patient takes them only where every chip behind it is one of her own prescriptions.
+  const otherWarningsAreHerMedications = otherWarnings.every(
+    (warning) => warning.aboutAnotherOfHerMedications === true,
   );
   const safetyBoxCollapsible = mainWarnings.length > 0 && mainWarnings.every((warning) => compactWarnings.has(warning));
   const [safetyBoxOpen, setSafetyBoxOpen] = useState(false);
@@ -910,10 +920,15 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
           {otherWarnings.length > 0 && (
             <>
               <span className={styles.otherMedicationsLine}>
-                {t('otherMedicationFindings', '{{count}} finding about another of this patient’s medications', {
-                  count: otherWarnings.length,
-                  defaultValue_other: '{{count}} findings about other medications this patient takes',
-                })}{' '}
+                {otherWarningsAreHerMedications
+                  ? t('otherMedicationFindings', '{{count}} finding about another of this patient’s medications', {
+                      count: otherWarnings.length,
+                      defaultValue_other: '{{count}} findings about other medications this patient takes',
+                    })
+                  : t('notAboutTheDrugAsked', '{{count}} finding not about the drug asked about', {
+                      count: otherWarnings.length,
+                      defaultValue_other: '{{count}} findings not about the drug asked about',
+                    })}{' '}
                 <button
                   type="button"
                   className={styles.detailsToggle}
