@@ -304,3 +304,16 @@ yarn build
 ## License
 
 [MPL-2.0](https://opensource.org/licenses/MPL-2.0)
+
+## Staged chat transport
+
+`chatPatientChartStream` in `src/api/chartsearchai.ts` provides the client transport
+for the staged `/chat/stream` contract. It delivers the initial answer, subsequent
+validation and evidence updates, optional In-Depth events, and the final turn result.
+Requests carry the patient, new question, optional conversation identifier and
+provider selection; Hub requests require a product profile.
+
+This transport is available for the conversation integration. The current chat
+panel continues to use `/search/stream`; this contribution does not change its
+rendering or session behavior. The existing stream tests and shared conformance
+fixture cover the extracted client contract.
