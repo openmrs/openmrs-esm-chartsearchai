@@ -1,0 +1,248 @@
+/**
+ * Two live answers whose chips name their own finding's record number, `findingCitation`
+ * (openmrs-module-chartsearchai ADR Decision 138), where two findings share one key.
+ *
+ * Patient `763e6e5f-c489-4bab-8a55-c379f085dd1c`. Measured 2026-10-01 on an OpenMRS 3.7.1
+ * standalone through `POST /chartsearchai/search`, verbatim as the wire carried them.
+ */
+
+/** *"…is it safe to give Fluconazole?"* (question id 13331): the answer cites [50] and [51],
+ *  the two fluconazole findings under `interaction:Fluconazole`. */
+export const FLUCONAZOLE_CHIPS_NAMING_THEIR_RECORDS = {
+  unstatedFindingSeverities: [],
+  questionId: '13331',
+  references: [
+    {
+      index: 50,
+      resourceType: 'safety_finding',
+      resourceUuid: 'interaction:Fluconazole',
+      date: null,
+      grounded: null,
+      group: 'reference',
+      source: null,
+      withheldInteractions: 0,
+      attachedByTheModule: false,
+      attachedFor: [],
+    },
+    {
+      index: 51,
+      resourceType: 'safety_finding',
+      resourceUuid: 'interaction:Fluconazole',
+      date: null,
+      grounded: null,
+      group: 'reference',
+      source: null,
+      withheldInteractions: 0,
+      attachedByTheModule: false,
+      attachedFor: [],
+    },
+  ],
+  activeOrderClaims: {
+    stated: 1,
+    uncited: 1,
+  },
+  doseCeilingCoverage: 'absent',
+  unresolvedDrugClass: null,
+  findingPartners: {
+    named: 1,
+    stated: 1,
+  },
+  unfoundedFindingSeverities: [],
+  misattributedOrderCitations: [],
+  interactionClaimPairs: {
+    judged: 0,
+    misattributedCitations: [],
+    unfounded: 0,
+  },
+  answeredByTheModule: false,
+  unfaithfullyRenderedCitations: [],
+  unsupportedEndedOrderClaims: [],
+  cautionLedOverWithholding: [],
+  chartReadForSafety: true,
+  answer:
+    'Fluconazole can be given, with two cautions: Fluconazole interacts with Nevirapine, a Moderate problem [51]. Coadministration with fluconazole may increase the plasma concentrations of drugs that are substrates of CYP450 3A4. The mechanism is decreased clearance due to inhibition of CYP450 3A4-mediated metabolism by fluconazole, a moderate inhibitor of the isoenzyme [51]. Additionally, Fluconazole interacts with active order Lidocaine, a Moderate problem [50]. Coadministration with fluconazole may increase the plasma concentrations of drugs that are substrates of CYP450 3A4. The mechanism is decreased clearance due to inhibition of CYP450 3A4-mediated metabolism by fluconazole, a moderate inhibitor of the isoenzyme [50]. The chart holds no active order for Lamivudine, Nevirapine or Stavudine.',
+  unstatedSignificanceQualifiers: [],
+  findingCitations: {
+    carried: 3,
+    cited: 2,
+  },
+  interactionPairs: {
+    found: 1,
+    reported: 1,
+    belowFloor: null,
+  },
+  conditionRuleCoverage: 'absent',
+  orderStopDates: [],
+  safetyWarnings: [
+    {
+      type: 'interaction',
+      drug: 'Nevirapine',
+      detail:
+        'Nevirapine interacts with active order Lidocaine — Minor. Coadministration with inducers of CYP450 1A2 and/or 3A4 may decrease the plasma concentrations of lidocaine, which is primarily metabolized by these isoenzymes.',
+      severity: 'Minor',
+      chartOrderBridges: [],
+      namedPartners: ['Lidocaine'],
+      restsOnAnUncorroboratedChartMatch: false,
+      aboutAnEndedOrder: false,
+      endedOrderStopDate: null,
+      aboutACurrentMedication: false,
+      currentMedicationOrders: [],
+      statedInTheAnswer: false,
+      aboutAnotherOfHerMedications: false,
+      aboutADrugOtherThanTheOneProposed: true,
+      findingCitation: 49,
+    },
+    {
+      type: 'interaction',
+      drug: 'Fluconazole',
+      detail:
+        'Fluconazole interacts with active order Lidocaine — Moderate. Coadministration with fluconazole may increase the plasma concentrations of drugs that are substrates of CYP450 3A4. The mechanism is decreased clearance due to inhibition of CYP450 3A4-mediated metabolism by fluconazole, a moderate inhibitor of the isoenzyme.',
+      severity: 'Moderate',
+      chartOrderBridges: [],
+      namedPartners: ['Lidocaine'],
+      restsOnAnUncorroboratedChartMatch: false,
+      aboutAnEndedOrder: false,
+      endedOrderStopDate: null,
+      aboutACurrentMedication: false,
+      currentMedicationOrders: [],
+      statedInTheAnswer: false,
+      aboutAnotherOfHerMedications: false,
+      aboutADrugOtherThanTheOneProposed: false,
+      findingCitation: 50,
+    },
+    {
+      type: 'interaction',
+      drug: 'Fluconazole',
+      detail:
+        'Fluconazole interacts with Nevirapine, also named in the question — Moderate. Coadministration with fluconazole may increase the plasma concentrations of drugs that are substrates of CYP450 3A4. The mechanism is decreased clearance due to inhibition of CYP450 3A4-mediated metabolism by fluconazole, a moderate inhibitor of the isoenzyme.',
+      severity: 'Moderate',
+      chartOrderBridges: [],
+      namedPartners: [],
+      restsOnAnUncorroboratedChartMatch: false,
+      aboutAnEndedOrder: false,
+      endedOrderStopDate: null,
+      aboutACurrentMedication: false,
+      currentMedicationOrders: [],
+      statedInTheAnswer: false,
+      aboutAnotherOfHerMedications: false,
+      aboutADrugOtherThanTheOneProposed: false,
+      findingCitation: 51,
+    },
+  ],
+  unstatedDosingCeilings: [],
+  disclaimer:
+    "This response is AI-generated and may not be accurate. It is not a substitute for clinical judgment. Always verify against the patient's medical records.",
+};
+
+/** *"…is it safe to give Rifampicin?"* (question id 13332): the answer cites only the
+ *  Major [51]; the Minor rifampicin/lidocaine finding [50] shares its key, uncited. */
+export const RIFAMPICIN_CHIPS_NAMING_THEIR_RECORDS = {
+  unstatedFindingSeverities: [],
+  questionId: '13332',
+  references: [
+    {
+      index: 51,
+      resourceType: 'safety_finding',
+      resourceUuid: 'interaction:Rifampicin (rifampin)',
+      date: null,
+      grounded: null,
+      group: 'reference',
+      source: null,
+      withheldInteractions: 0,
+      attachedByTheModule: false,
+      attachedFor: [],
+    },
+  ],
+  activeOrderClaims: {
+    stated: 0,
+    uncited: 0,
+  },
+  doseCeilingCoverage: 'absent',
+  unresolvedDrugClass: null,
+  findingPartners: null,
+  unfoundedFindingSeverities: [],
+  misattributedOrderCitations: [],
+  interactionClaimPairs: {
+    judged: 0,
+    misattributedCitations: [],
+    unfounded: 0,
+  },
+  answeredByTheModule: false,
+  unfaithfullyRenderedCitations: [],
+  unsupportedEndedOrderClaims: [],
+  cautionLedOverWithholding: [],
+  chartReadForSafety: true,
+  answer:
+    'No — Rifampicin should not be given: Rifampicin interacts with Nevirapine, a Major problem [51]. Coadministration with rifampin may substantially decrease the plasma concentrations of nevirapine, although a few studies have suggested that the combination may be used effectively without dosage adjustments. The mechanism is rifampin induction of nevirapine metabolism via CYP450 3A4 [51]. The chart holds no active order for Lamivudine, Nevirapine or Stavudine.',
+  unstatedSignificanceQualifiers: [],
+  findingCitations: {
+    carried: 3,
+    cited: 1,
+  },
+  interactionPairs: {
+    found: 1,
+    reported: 1,
+    belowFloor: null,
+  },
+  conditionRuleCoverage: 'absent',
+  orderStopDates: [],
+  safetyWarnings: [
+    {
+      type: 'interaction',
+      drug: 'Nevirapine',
+      detail:
+        'Nevirapine interacts with active order Lidocaine — Minor. Coadministration with inducers of CYP450 1A2 and/or 3A4 may decrease the plasma concentrations of lidocaine, which is primarily metabolized by these isoenzymes.',
+      severity: 'Minor',
+      chartOrderBridges: [],
+      namedPartners: ['Lidocaine'],
+      restsOnAnUncorroboratedChartMatch: false,
+      aboutAnEndedOrder: false,
+      endedOrderStopDate: null,
+      aboutACurrentMedication: false,
+      currentMedicationOrders: [],
+      statedInTheAnswer: false,
+      aboutAnotherOfHerMedications: false,
+      aboutADrugOtherThanTheOneProposed: true,
+      findingCitation: 49,
+    },
+    {
+      type: 'interaction',
+      drug: 'Rifampicin (rifampin)',
+      detail:
+        'Rifampicin (rifampin) interacts with active order Lidocaine — Minor. Coadministration with inducers of CYP450 1A2 and/or 3A4 may decrease the plasma concentrations of lidocaine, which is primarily metabolized by these isoenzymes.',
+      severity: 'Minor',
+      chartOrderBridges: [],
+      namedPartners: ['Lidocaine'],
+      restsOnAnUncorroboratedChartMatch: false,
+      aboutAnEndedOrder: false,
+      endedOrderStopDate: null,
+      aboutACurrentMedication: false,
+      currentMedicationOrders: [],
+      statedInTheAnswer: false,
+      aboutAnotherOfHerMedications: false,
+      aboutADrugOtherThanTheOneProposed: false,
+      findingCitation: 50,
+    },
+    {
+      type: 'interaction',
+      drug: 'Rifampicin (rifampin)',
+      detail:
+        'Rifampicin (rifampin) interacts with Nevirapine, also named in the question — Major. Coadministration with rifampin may substantially decrease the plasma concentrations of nevirapine, although a few studies have suggested that the combination may be used effectively without dosage adjustments. The mechanism is rifampin induction of nevirapine metabolism via CYP450 3A4.',
+      severity: 'Major',
+      chartOrderBridges: [],
+      namedPartners: [],
+      restsOnAnUncorroboratedChartMatch: false,
+      aboutAnEndedOrder: false,
+      endedOrderStopDate: null,
+      aboutACurrentMedication: false,
+      currentMedicationOrders: [],
+      statedInTheAnswer: false,
+      aboutAnotherOfHerMedications: false,
+      aboutADrugOtherThanTheOneProposed: false,
+      findingCitation: 51,
+    },
+  ],
+  unstatedDosingCeilings: [],
+  disclaimer:
+    "This response is AI-generated and may not be accurate. It is not a substitute for clinical judgment. Always verify against the patient's medical records.",
+};
