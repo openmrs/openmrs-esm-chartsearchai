@@ -233,9 +233,13 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
   const inFlightMessageIdRef = useRef<string | null>(null);
   const sessionStartRef = useRef<Promise<void> | null>(null);
   const isMountedRef = useRef(true);
+  const showReasoningRef = useRef(config.showReasoning);
+  showReasoningRef.current = config.showReasoning;
+  const completedReasoningRef = useRef('');
   const [isStartingSession, setIsStartingSession] = useState(false);
 
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
     };
@@ -243,6 +247,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
 
   useEffect(() => {
     if (config.showReasoning) return;
+    completedReasoningRef.current = '';
     const state = chatSessionStore.getState();
     const messagesByPatient = Object.fromEntries(
       Object.entries(state.messagesByPatient).map(([uuid, messages]) => [
@@ -460,9 +465,11 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       const messageId = newMessage.id;
       inFlightMessageIdRef.current = messageId;
 
-      let completedReasoning = '';
+      completedReasoningRef.current = '';
+      const isCurrentRequest = () => abortControllerRef.current === abortController && !abortController.signal.aborted;
 
       const done = (response: AiSearchResponse) => {
+        const ownsSession = isCurrentRequest();
         // This writes to the shared store, so it does not depend on component-mounted state.
         // The terminal-phase guard below still prevents a decoded late event from replacing a
         // turn that the user stopped or that panel cleanup already settled.
@@ -480,7 +487,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           if (isTerminal(prev[idx].phase)) return prev;
           const updated = [...prev];
           const final = applyTurnEnvelope(updated[idx], response, 'complete');
-          if (!config.useStreaming && config.showReasoning) final.reasoning = completedReasoning;
+          if (!config.useStreaming && showReasoningRef.current) final.reasoning = completedReasoningRef.current;
           updated[idx] = {
             ...final,
             answerValidation: interruptAnswerValidation(final.answerValidation),
@@ -491,7 +498,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         // Belt-and-braces: the X-ChartSearchAi-Session header captures the
         // session uuid first, but the `done` event also carries it for
         // sync clients that can't read response headers.
-        if (response.session) {
+        if (ownsSession && response.session) {
           setSessionUuid(patientUuid, response.session);
         }
       };
@@ -535,10 +542,10 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           // bundled) never sends one and never follows up — fabricating {status: 'pending'} for
           // it would show a "Preparing in-depth..." spinner that can never resolve.
           updated[idx] = applyTurnEnvelope(updated[idx], response, phase);
-          if (!config.useStreaming && config.showReasoning) updated[idx].reasoning = completedReasoning;
+          if (!config.useStreaming && showReasoningRef.current) updated[idx].reasoning = completedReasoningRef.current;
           return updated;
         });
-        if (response.session) {
+        if (isCurrentRequest() && response.session) {
           setSessionUuid(patientUuid, response.session);
         }
       };
@@ -654,7 +661,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
               });
             },
             onPreliminary: (chunk) => {
-              if (!config.useStreaming || !config.showReasoning) return;
+              if (!config.useStreaming || !showReasoningRef.current || !isCurrentRequest()) return;
               updateMessages(patientUuid, (prev) => {
                 const idx = prev.findIndex((m) => m.id === messageId);
                 if (idx === -1 || prev[idx].phase !== 'answering') return prev;
@@ -667,9 +674,9 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
               });
             },
             onReasoning: (chunk) => {
-              if (!config.showReasoning || abortController.signal.aborted) return;
+              if (!showReasoningRef.current || !isCurrentRequest()) return;
               if (!config.useStreaming) {
-                completedReasoning += chunk;
+                completedReasoningRef.current += chunk;
                 return;
               }
               updateMessages(patientUuid, (prev) => {
@@ -686,6 +693,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
               });
             },
             onSession: (uuid) => {
+              if (!isCurrentRequest()) return;
               // Defense in depth alongside the hydration-time provider sync: if the backend
               // returns a DIFFERENT session than the one this turn was sent with, it silently
               // started a new conversation (e.g. a provider mismatch the backend correctly
@@ -715,7 +723,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         fail(err instanceof Error ? err.message : 'An unknown error occurred');
       }
     },
-    [sessionUuidByPatient, config.useStreaming, config.showReasoning],
+    [sessionUuidByPatient, config.useStreaming],
   );
 
   useEffect(() => {

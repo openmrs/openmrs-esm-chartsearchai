@@ -1101,7 +1101,13 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
       {(isTerminal(phase) || Boolean(inDepth)) &&
         blocks?.map((block, idx) =>
           block.kind === 'table' ? (
-            <AiTableBlockView key={`block-${idx}`} block={block} references={references} patientUuid={patientUuid} />
+            <AiTableBlockView
+              key={`block-${idx}`}
+              block={block}
+              references={references}
+              patientUuid={patientUuid}
+              decorations={{ misattributed, severities, qualified }}
+            />
           ) : null,
         )}
 
@@ -1263,7 +1269,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
           className={
             mainWarnings.length === 0
               ? `${styles.safetyWarningsSection} ${styles.safetyWarningsSectionNeutral}`
-              : styles.safetyWarningsSection
+              : `${styles.safetyWarningsSection} ${styles.safetyWarnings_flagged}`
           }
         >
           <span className={styles.safetyWarningsLabel}>

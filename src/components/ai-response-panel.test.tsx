@@ -2982,3 +2982,83 @@ describe('upstream clinical disclosures in staged presentation', () => {
     ).toBeInTheDocument();
   });
 });
+
+describe('reviewed evidence and safety presentation', () => {
+  it.each(['checked', 'limited', 'unavailable'] as const)(
+    'keeps a clinical warning red with safety status %s',
+    (safetyStatus) => {
+      render(
+        <AiResponsePanel
+          answer="Clinical answer"
+          references={[]}
+          safetyWarnings={[SAFETY_WARNINGS[0]]}
+          safetyStatus={safetyStatus}
+          error={null}
+          phase="complete"
+          patientUuid={patientUuid}
+        />,
+      );
+      expect(screen.getByTestId('ai-response-safety')).toHaveClass('safetyWarnings_flagged');
+    },
+  );
+
+  it('offers no navigation for unresolved citations in the answer, details or evidence card', () => {
+    const { container } = render(
+      <AiResponsePanel
+        answer="Claim [1]."
+        references={[
+          {
+            index: 1,
+            resourceType: 'obs',
+            resourceUuid: 'missing-record',
+            date: '',
+            title: 'Missing source record',
+            resolutionStatus: 'unresolved',
+          },
+        ]}
+        error={null}
+        phase="complete"
+        patientUuid={patientUuid}
+      />,
+    );
+    expect(screen.getByText('Source missing')).toBeInTheDocument();
+    expect(screen.getByText('Missing source record')).toBeInTheDocument();
+    expect(container.querySelectorAll('a')).toHaveLength(0);
+  });
+
+  it('carries citation warnings into a structured table through the real answer panel', () => {
+    render(
+      <AiResponsePanel
+        answer={ANSWER_BY_SUBSTANCE}
+        references={FIXTURE_REFERENCES}
+        safetyWarnings={SAFETY_WARNINGS}
+        misattributedOrderCitations={MISATTRIBUTED}
+        unstatedFindingSeverities={UNSTATED}
+        blocks={[
+          {
+            kind: 'table',
+            title: 'Clinical findings',
+            columns: [{ key: 'finding', label: 'Finding' }],
+            rows: [
+              {
+                cells: {
+                  finding: { text: 'Clarithromycin interacts with active order Methylprednisolone [177] [350].' },
+                },
+              },
+            ],
+          },
+        ]}
+        error={null}
+        phase="complete"
+        patientUuid={patientUuid}
+      />,
+    );
+    const table = screen.getByRole('table', { name: 'Clinical findings' });
+    expect(within(table).queryByRole('link', { name: '177' })).not.toBeInTheDocument();
+    expect(within(table).getByText('177')).toHaveAttribute(
+      'title',
+      expect.stringContaining('may not be the medication order'),
+    );
+    expect(within(table).getByText('Major')).toBeInTheDocument();
+  });
+});

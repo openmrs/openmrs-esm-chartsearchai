@@ -328,18 +328,6 @@ const AiChatContent: React.FC<AiChatContentProps> = ({
                   )}
                 </div>
               )}
-              {/* Above the answer, which is where the reasoning happened in time, and OUTSIDE
-                  AiResponsePanel on purpose: that panel returns early on an error with no answer,
-                  and an errored run is the case where "what was it doing?" is worth most.
-                  The config test is not the hook's: the hook decides whether reasoning is
-                  ingested at all, this decides whether a transcript already on a message —
-                  one that predates an operator flipping the flag off — is still offered. */}
-              {config.showReasoning && msg.reasoning && (
-                <AiReasoningDisclosure
-                  reasoning={msg.reasoning}
-                  isStreaming={isPhaseAwaiting(msg.phase) && !msg.answer}
-                />
-              )}
               <AiResponsePanel
                 answer={msg.answer}
                 references={msg.references}
@@ -358,6 +346,18 @@ const AiChatContent: React.FC<AiChatContentProps> = ({
                 patientUuid={patientUuid ?? ''}
                 onFeedbackComplete={handleFeedbackComplete}
               />
+              {/* After the answer so retained working notes do not precede clinical output. Outside
+                  AiResponsePanel on purpose: that panel returns early on an error with no answer,
+                  and an errored run is the case where "what was it doing?" is worth most.
+                  The config test is not the hook's: the hook decides whether reasoning is
+                  ingested at all, this decides whether a transcript already on a message —
+                  one that predates an operator flipping the flag off — is still offered. */}
+              {config.showReasoning && msg.reasoning && (
+                <AiReasoningDisclosure
+                  reasoning={msg.reasoning}
+                  isStreaming={isPhaseAwaiting(msg.phase) && !msg.answer}
+                />
+              )}
             </div>
           </div>
         ))}
