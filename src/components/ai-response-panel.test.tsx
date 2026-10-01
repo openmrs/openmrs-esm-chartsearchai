@@ -12,6 +12,10 @@ import { RIFAMPICIN_ANSWER_CLAIMING_AN_ENDED_ORDER } from '../__fixtures__/ended
 import { ASPIRIN_ANSWER_DROPPING_THE_SIGNIFICANCE_CAVEAT } from '../__fixtures__/significance-qualifier-response';
 import { FLUCONAZOLE_BESIDE_A_LISTED_NEVIRAPINE_FINDING } from '../__fixtures__/not-about-proposed-response';
 import {
+  FLUCONAZOLE_CHIPS_NAMING_THEIR_RECORDS,
+  RIFAMPICIN_CHIPS_NAMING_THEIR_RECORDS,
+} from '../__fixtures__/finding-citation-responses';
+import {
   ALLERGY_TO_A_CURRENT_MEDICATION,
   ALLERGY_TO_A_PROPOSED_DRUG,
 } from '../__fixtures__/current-medication-responses';
@@ -1949,5 +1953,58 @@ describe('AiResponsePanel chips sharing a finding key', () => {
     expect(screen.queryByRole('button', { name: 'Show safety checks' })).not.toBeInTheDocument();
     expect(screen.queryByText(/See \[\d+\]/)).not.toBeInTheDocument();
     expect(chipRows()).toHaveLength(2);
+  });
+});
+
+/**
+ * Where a chip names its own finding's record (`findingCitation`, backend ADR Decision 138), that
+ * is the join: it folds exactly where the answer cites that record, tagged with that one marker.
+ */
+describe('AiResponsePanel chips naming their own record', () => {
+  const chipRows = () =>
+    screen.queryAllByText((_content, element) => Boolean(element?.className?.includes?.('safetyWarningItem')));
+
+  function renderResponse(response: Record<string, unknown>, safetyWarnings?: AiSafetyWarning[]) {
+    return render(
+      <AiResponsePanel
+        {...(response as object)}
+        answer={response.answer as string}
+        references={response.references as unknown as AiReference[]}
+        safetyWarnings={(safetyWarnings ?? response.safetyWarnings) as AiSafetyWarning[]}
+        questionId={response.questionId as string}
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+  }
+
+  it('tags each fluconazole chip with its own marker, not both', () => {
+    renderResponse(FLUCONAZOLE_CHIPS_NAMING_THEIR_RECORDS);
+    fireEvent.click(screen.getByRole('button', { name: 'Show safety checks' }));
+    const [lidocaine, nevirapine] = chipRows();
+    expect(lidocaine).toHaveTextContent('Fluconazole — Lidocaine (Moderate) See [50] in the answer');
+    expect(nevirapine).toHaveTextContent('See [51] in the answer');
+    expect(screen.queryByText(/See \[50\], \[51\]/)).not.toBeInTheDocument();
+  });
+
+  it('folds the cited rifampicin Major and leaves the uncited Minor sharing its key in full', () => {
+    renderResponse(RIFAMPICIN_CHIPS_NAMING_THEIR_RECORDS);
+    expect(screen.queryByRole('button', { name: 'Show safety checks' })).not.toBeInTheDocument();
+    const rows = chipRows();
+    const major = rows.find((row) => row.textContent?.includes('Major'));
+    const minor = rows.find((row) => row.textContent?.includes('Lidocaine'));
+    expect(major).toHaveTextContent('See [51] in the answer');
+    expect(minor).toHaveTextContent('interacts with active order Lidocaine — Minor. Coadministration');
+    expect(minor).not.toHaveTextContent(/See \[/);
+  });
+
+  it('draws a chip in full whose record the answer does not cite', () => {
+    const safetyWarnings = (FLUCONAZOLE_CHIPS_NAMING_THEIR_RECORDS.safetyWarnings as AiSafetyWarning[]).map(
+      (warning) => ({ ...warning, findingCitation: 99 }),
+    );
+    renderResponse(FLUCONAZOLE_CHIPS_NAMING_THEIR_RECORDS, safetyWarnings);
+    expect(screen.queryByRole('button', { name: 'Show safety checks' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/See \[\d+\]/)).not.toBeInTheDocument();
   });
 });

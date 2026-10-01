@@ -187,6 +187,12 @@ export interface AiSafetyWarning {
    */
   aboutADrugOtherThanTheOneProposed?: boolean;
   /**
+   * The record number this chip's own finding has in the prompt — the `index` of the `safety_finding`
+   * reference an answer's marker cites — or `null` where no single record is it (backend ADR
+   * Decision 138). The join from a chip to its citation where several findings share one key.
+   */
+  findingCitation?: number | null;
+  /**
    * The day the ended order behind {@link aboutAnEndedOrder} stopped being in force, `yyyy-MM-dd`,
    * or `null` — on every chip answering `false`, and on one whose ended records carry no stop date.
    * Of several ended orders of the drug, the latest. A UTC calendar date, so it can be a day off

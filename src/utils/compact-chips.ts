@@ -43,7 +43,8 @@ function noFidelityCheckFired(limits: AiAnswerLimits): boolean {
  * A chip qualifies only where all three hold, and anything short of proof leaves it in full:
  * - the answer's own inline markers cite the finding's record (a `safety_finding` reference whose
  *   `resourceUuid` is the chip's key) — the one link from prose to chip the wire carries;
- * - every chip carrying that key is covered: the answer cites at least as many DISTINCT findings of the key
+ * - where the chip names its own record (`findingCitation`), the answer cites that record; otherwise
+ *   every chip carrying that key is covered: the answer cites at least as many DISTINCT findings of the key
  *   as there are chips carrying it. Each finding record the prompt carried becomes a chip, and the chips
  *   pass can only add chips, so per key cited records <= records <= chips; where the cited ones are as many
  *   as the chips, all three are equal and no chip of the key is uncited. Short of that, a citation of a
@@ -81,8 +82,16 @@ export function compactChips(
     if (!warning) continue;
     keyCounts.set(findingKey(warning), (keyCounts.get(findingKey(warning)) ?? 0) + 1);
   }
+  const citedFindings = new Set<number>([...citedFindingIndexes.values()].flat());
   warnings.forEach((warning, position) => {
     if (!warning || typeof warning.type !== 'string' || typeof warning.drug !== 'string') return;
+    // Where the backend names the chip's own record (findingCitation, ADR Decision 138), that is the join:
+    // the chip qualifies exactly where the answer cites that record, and its tag names that one marker.
+    const own = warning.findingCitation;
+    if (typeof own === 'number' && Number.isInteger(own)) {
+      if (citedFindings.has(own)) compact.set(position, [own]);
+      return;
+    }
     const key = findingKey(warning);
     const indexes = citedFindingIndexes.get(key);
     if (indexes && new Set(indexes).size >= (keyCounts.get(key) ?? Infinity))
