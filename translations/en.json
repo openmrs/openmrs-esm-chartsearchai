@@ -56,6 +56,7 @@
   "safetyWarning": "Safety",
   "seeMarkerInTheAnswer": "See {{markers}} in the answer",
   "seeMarkerInTheAnswerTitle": "The answer cites this finding at that marker, and the module’s checks of how it was rendered found nothing, so its detail is collapsed rather than repeated. The answer may still word it differently or leave part of it out; open the detail to read the finding in full.",
+  "seeMarkerInTheModulesAnswerTitle": "The answer states this finding briefly at that marker; open the detail to read it in full.",
   "send": "Send",
   "sessionExpired": "Your session has expired. Please log in again.",
   "showDetails": "Show details",

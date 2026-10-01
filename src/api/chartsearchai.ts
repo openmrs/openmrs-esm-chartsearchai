@@ -412,6 +412,13 @@ export interface AiSearchResponse {
   cautionLedOverWithholding?: AiCitedRating[] | null;
   /** @see AiInteractionClaimPairs */
   interactionClaimPairs?: AiInteractionClaimPairs | null;
+  /**
+   * `true` where no model wrote the answer: the module composed it from its own safety findings
+   * (backend `answeredByTheModule`). The keys that judge a model's prose then state `null`
+   * because there was no prose to judge, not because a check failed. `false` says a model was
+   * asked; it is no claim about the answer's quality.
+   */
+  answeredByTheModule?: boolean | null;
   questionId?: string;
 }
 
@@ -443,6 +450,7 @@ export type AiAnswerLimits = Pick<
   | 'unfaithfullyRenderedCitations'
   | 'cautionLedOverWithholding'
   | 'interactionClaimPairs'
+  | 'answeredByTheModule'
 >;
 
 /**
