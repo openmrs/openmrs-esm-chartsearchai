@@ -1212,3 +1212,69 @@ export async function startNewChat(
   });
   return response.data as ChatHistoryResponse;
 }
+
+export interface HubProfileMetadata {
+  id: string;
+  label: string;
+  staged: boolean;
+  validation: boolean;
+  temporal_enforcement: 'off' | 'warn' | 'enforce' | string;
+  available: boolean;
+  default: boolean;
+  selection_priority: number;
+  topology: 'single' | 'team' | string;
+  visibility: 'product' | 'internal' | 'experimental' | string;
+  stages: string[];
+  required_models: string[];
+  context_window: number | null;
+  exact_tokenizer: boolean;
+  unavailable_reasons: string[];
+}
+
+export interface HubProfileListResponse {
+  object: 'list' | string;
+  data: HubProfileMetadata[];
+}
+
+/**
+ * Relay med-agent-hub's authoritative profile metadata through ChartSearchAI.
+ */
+export async function fetchProfiles(abortController?: AbortController): Promise<HubProfileListResponse> {
+  const response = await openmrsFetch(`${BASE_PATH}/models`, {
+    signal: abortController?.signal,
+  });
+  return response.data as HubProfileListResponse;
+}
+
+/**
+ * A clinical-answer provider (bundled local inference or the med-agent-hub
+ * relay) as advertised by ChartSearchAI's provider registry.
+ */
+export interface ClinicalProviderDescriptor {
+  id: string;
+  label: string;
+  enabled: boolean;
+  ready: boolean;
+  default: boolean;
+  modes: string[];
+  capabilities: string[];
+  unavailableReason: string | null;
+}
+
+export interface ProviderListResponse {
+  defaultProvider: string;
+  /** True only when more than one provider is configured — drives picker visibility. */
+  pickerVisible: boolean;
+  providers: ClinicalProviderDescriptor[];
+}
+
+/**
+ * List the clinical-answer providers ChartSearchAI has configured. Bundled is
+ * the fresh-install default; the hub appears only when it is configured.
+ */
+export async function fetchProviders(abortController?: AbortController): Promise<ProviderListResponse> {
+  const response = await openmrsFetch(`${BASE_PATH}/providers`, {
+    signal: abortController?.signal,
+  });
+  return response.data as ProviderListResponse;
+}
