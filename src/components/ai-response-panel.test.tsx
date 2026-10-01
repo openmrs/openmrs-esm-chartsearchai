@@ -1876,11 +1876,13 @@ describe('AiResponsePanel chips about a drug other than the one proposed', () =>
 
   it('keeps the nevirapine finding behind a line naming it as not about the drug asked about', () => {
     renderFluconazole();
+    // The answer cites both fluconazole findings, so the box starts folded; open it to read them.
+    fireEvent.click(screen.getByRole('button', { name: 'Show safety checks' }));
     expect(screen.getByText(LINE)).toBeInTheDocument();
     expect(screen.queryByText(NEVIRAPINE)).not.toBeInTheDocument();
     expect(chipRows().map((row) => row.textContent)).toEqual([
-      expect.stringContaining('Fluconazole interacts with active order Lidocaine'),
-      expect.stringContaining('Fluconazole interacts with Nevirapine'),
+      expect.stringContaining('Fluconazole — Lidocaine (Moderate)'),
+      expect.stringContaining('Fluconazole interacts with Nevirapine, also named in the question (Moderate)'),
     ]);
     fireEvent.click(within(screen.getByText(LINE)).getByRole('button', { name: 'Show details' }));
     expect(screen.getByText(NEVIRAPINE)).toBeInTheDocument();
@@ -1903,5 +1905,49 @@ describe('AiResponsePanel chips about a drug other than the one proposed', () =>
     const [nevirapine, ...rest] = response.safetyWarnings as AiSafetyWarning[];
     renderFluconazole([{ ...nevirapine, aboutAnotherOfHerMedications: true }, ...rest]);
     expect(screen.getByText(/^1 finding about another of this patient’s medications/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * Chips sharing one finding key fold where the answer cites as many distinct findings of the key
+ * as there are chips carrying it — then none of them is uncited. The live fluconazole answer cites
+ * both fluconazole findings, [50] and [51], which share the key `interaction:Fluconazole`.
+ */
+describe('AiResponsePanel chips sharing a finding key', () => {
+  const response = FLUCONAZOLE_BESIDE_A_LISTED_NEVIRAPINE_FINDING;
+  const chipRows = () =>
+    screen.queryAllByText((_content, element) => Boolean(element?.className?.includes?.('safetyWarningItem')));
+
+  function renderFluconazole(answer: string = response.answer) {
+    return render(
+      <AiResponsePanel
+        {...(response as object)}
+        answer={answer}
+        references={response.references as unknown as AiReference[]}
+        safetyWarnings={response.safetyWarnings as AiSafetyWarning[]}
+        questionId={response.questionId}
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+  }
+
+  it('folds both where the answer cites both, each tagged with every marker of the key', () => {
+    expect(response.answer).toContain('[50]');
+    expect(response.answer).toContain('[51]');
+    renderFluconazole();
+    expect(screen.getByText(/2 findings, each cited in the answer/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show safety checks' }));
+    const rows = chipRows();
+    expect(rows).toHaveLength(2);
+    for (const row of rows) expect(row).toHaveTextContent('See [50], [51] in the answer');
+  });
+
+  it('folds neither where the answer cites only one of them', () => {
+    renderFluconazole(response.answer.split('[51]').join(''));
+    expect(screen.queryByRole('button', { name: 'Show safety checks' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/See \[\d+\]/)).not.toBeInTheDocument();
+    expect(chipRows()).toHaveLength(2);
   });
 });
