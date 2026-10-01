@@ -178,6 +178,15 @@ export interface AiSafetyWarning {
    */
   aboutAnotherOfHerMedications?: boolean;
   /**
+   * Whether this chip is about a drug OTHER than the one the question proposes (backend ADR
+   * Decision 137): the question proposes a drug and this chip's subject is not of it — wider than
+   * {@link aboutAnotherOfHerMedications}, since a drug only the question lists is not her
+   * prescription. Only `true` is rendered, as a chip drawn apart from the findings about the drug
+   * asked about. `false` is NOT a claim it is about that drug, and a backend that predates the key
+   * sends nothing.
+   */
+  aboutADrugOtherThanTheOneProposed?: boolean;
+  /**
    * The day the ended order behind {@link aboutAnEndedOrder} stopped being in force, `yyyy-MM-dd`,
    * or `null` — on every chip answering `false`, and on one whose ended records carry no stop date.
    * Of several ended orders of the drug, the latest. A UTC calendar date, so it can be a day off
