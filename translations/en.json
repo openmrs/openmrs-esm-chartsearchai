@@ -12,6 +12,7 @@
   "askAiAboutPatient": "Ask AI about this patient",
   "basedOnRecords": "Based on the patient’s record:",
   "cancel": "Cancel",
+  "chooseAiProfile": "Choose AI profile",
   "close": "Close",
   "copy": "Copy",
   "crossReactivityFindings_one": "{{count}} possible cross-reactivity finding",

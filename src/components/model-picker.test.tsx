@@ -162,11 +162,11 @@ describe('ModelPicker', () => {
     await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('single-e4b-checked'));
   });
 
-  it('does not invent a fallback when the hub advertises no available default', async () => {
+  it('requires manual selection when the hub advertises no available default', async () => {
     mockFetch.mockResolvedValueOnce({
       object: 'list',
       data: [
-        profile({ available: false, default: false }),
+        profile({ available: false, default: true }),
         profile({ id: 'single-12b-checked', label: 'Checked answer (12B)', default: false }),
       ],
     });
@@ -175,7 +175,11 @@ describe('ModelPicker', () => {
     await waitFor(() => expect(mockFetch).toHaveBeenCalled());
     expect(chatSessionStore.getState().selectedProfileId).toBeNull();
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('unavailable');
-    expect(await screen.findByRole('status')).toHaveTextContent(/AI profiles unavailable/i);
+    fireEvent.click(await screen.findByRole('button', { name: /Choose AI profile/i }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Checked answer \(12B\)/i }));
+    await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('single-12b-checked'));
+    expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
+    expect(chatSessionStore.getState().selectedProviderId).toBe('hub');
   });
 
   it('portals the Carbon menu outside the picker subtree', async () => {
@@ -201,5 +205,12 @@ describe('ModelPicker', () => {
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
     expect(chatSessionStore.getState().selectedProfileId).toBe('single-e4b-checked');
     expect(screen.getByRole('button', { name: /Fast checked answer/ })).toBeInTheDocument();
+  });
+  it('keeps the unavailable state when no product profile can be selected', async () => {
+    mockFetch.mockResolvedValueOnce({ object: 'list', data: [profile({ available: false, default: true })] });
+    render(<ModelPicker />);
+    expect(await screen.findByRole('status')).toHaveTextContent(/AI profiles unavailable/i);
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(chatSessionStore.getState().selectedProfileId).toBeNull();
   });
 });

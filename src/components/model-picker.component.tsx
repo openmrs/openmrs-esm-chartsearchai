@@ -115,7 +115,7 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onSwitched }) => {
     return null;
   }
 
-  if (productProfiles.length === 0 || !effectiveProfile) {
+  if (availableProfiles.length === 0) {
     return (
       <div className={styles.root} role="status">
         {t('profilesUnavailable', 'AI profiles unavailable')}
@@ -124,7 +124,7 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onSwitched }) => {
   }
 
   const unavailableProfiles = productProfiles.filter((profile) => !profile.available);
-  const triggerLabel = effectiveProfile.label;
+  const triggerLabel = effectiveProfile?.label ?? t('chooseAiProfile', 'Choose AI profile');
 
   return (
     <div className={styles.root}>
