@@ -1068,9 +1068,9 @@ export function chatPatientChartStream(
           try {
             // The terminal event carries the final envelope so a late safety,
             // validation, evidence, or In-Depth correction reaches the live UI.
-            const raw = JSON.parse(data) as AiSearchResponse;
+            const raw = JSON.parse(data) as AiSearchResponse & { model?: string };
             if (typeof raw.answer !== 'string') throw new Error('missing final answer');
-            callbacks.onDone(raw);
+            callbacks.onDone({ ...raw, resolvedModel: raw.resolvedModel ?? raw.model });
           } catch {
             failStream('Failed to parse final response');
           }
@@ -1087,43 +1087,57 @@ export function chatPatientChartStream(
         dataLines = [];
       }
 
-      while (true) {
-        const { done, value } = await streamReader.read();
-        if (done) break;
+      try {
+        while (!streamFinalized) {
+          const { done, value } = await streamReader.read();
+          if (done) break;
 
-        buffer += textDecoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
+          buffer += textDecoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
 
-        for (const line of lines) {
-          if (line === '') {
-            dispatchEvent();
-          } else if (line.startsWith('event:')) {
-            eventType = line.slice(6).trim();
-          } else if (line.startsWith('data:')) {
-            const raw = line.slice(5);
-            dataLines.push(raw.startsWith(' ') ? raw.slice(1) : raw);
+          for (const rawLine of lines) {
+            const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+            if (line === '') {
+              dispatchEvent();
+              if (streamFinalized) break;
+            } else if (line.startsWith('event:')) {
+              eventType = line.slice(6).trim();
+            } else if (line.startsWith('data:')) {
+              const raw = line.slice(5);
+              dataLines.push(raw.startsWith(' ') ? raw.slice(1) : raw);
+            }
           }
         }
-      }
 
-      if (buffer) {
-        for (const line of buffer.split('\n')) {
-          if (line === '') {
-            dispatchEvent();
-          } else if (line.startsWith('event:')) {
-            eventType = line.slice(6).trim();
-          } else if (line.startsWith('data:')) {
-            const raw = line.slice(5);
-            dataLines.push(raw.startsWith(' ') ? raw.slice(1) : raw);
+        if (!streamFinalized && buffer) {
+          for (const rawLine of buffer.split('\n')) {
+            const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+            if (line === '') {
+              dispatchEvent();
+              if (streamFinalized) break;
+            } else if (line.startsWith('event:')) {
+              eventType = line.slice(6).trim();
+            } else if (line.startsWith('data:')) {
+              const raw = line.slice(5);
+              dataLines.push(raw.startsWith(' ') ? raw.slice(1) : raw);
+            }
           }
         }
-      }
 
-      dispatchEvent();
+        dispatchEvent();
 
-      if (!streamFinalized) {
-        callbacks.onError('Stream ended unexpectedly without a response');
+        if (!streamFinalized) {
+          callbacks.onError('Stream ended unexpectedly without a response');
+        }
+      } finally {
+        try {
+          if (streamFinalized) await streamReader.cancel();
+        } catch {
+          // Cleanup cannot replace an already delivered terminal result with another error.
+        } finally {
+          streamReader.releaseLock();
+        }
       }
     })
     .catch((err) => {

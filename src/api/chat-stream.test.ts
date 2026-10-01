@@ -1,4 +1,5 @@
 import { TextEncoder, TextDecoder } from 'util';
+import { ReadableStream } from 'node:stream/web';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi, type MockInstance } from 'vitest';
 import conformance from '../conformance/dual-provider-conformance.v1.json';
 import { chatPatientChartStream, SESSION_EXPIRED_ERROR_CODE } from './chartsearchai';
@@ -30,6 +31,8 @@ function mockStreamResponse(chunks: string[], status = 200): Response {
   const body = {
     getReader() {
       return {
+        cancel: vi.fn().mockResolvedValue(undefined),
+        releaseLock: vi.fn(),
         read() {
           if (i < chunks.length) {
             return Promise.resolve({ done: false, value: encoder.encode(chunks[i++]) });
@@ -250,6 +253,76 @@ describe('chatPatientChartStream', () => {
 
     expect(cb.onAnswerDone).toHaveBeenCalledWith(expect.objectContaining({ resolvedModel: 'med-agent-team' }));
     expect(cb.onError).not.toHaveBeenCalled();
+  });
+
+  it.each(['whole', 'split'])('preserves CRLF-framed events across %s chunks', async (chunking) => {
+    const cb = makeCallbacks();
+    const wire =
+      'event:answer_delta\r\ndata: first line\r\ndata: second line\r\n\r\n' +
+      'event:answer_done\r\ndata: {"answer":"Complete answer","references":[]}\r\n\r\n' +
+      'event:turn_done\r\ndata: {"answer":"Complete answer","references":[]}\r\n\r\n';
+    const chunks = chunking === 'whole' ? [wire] : wire.split(/(?<=\r)/);
+    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(mockStreamResponse(chunks));
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined);
+    await flushPromises();
+
+    expect(cb.onToken).toHaveBeenCalledExactlyOnceWith('first line\nsecond line');
+    expect(cb.onAnswerDone).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ answer: 'Complete answer' }));
+    expect(cb.onDone).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ answer: 'Complete answer' }));
+    expect(cb.onError).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ model: 'selected-model' }, 'selected-model'],
+    [{ model: 'fallback-model', resolvedModel: 'resolved-model' }, 'resolved-model'],
+  ])('preserves the final model for %j', async (modelFields, expectedModel) => {
+    const cb = makeCallbacks();
+    const payload = JSON.stringify({ answer: 'A', references: [], ...modelFields });
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(mockStreamResponse([`event:turn_done\ndata: ${payload}\n\n`]));
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined);
+    await flushPromises();
+
+    expect(cb.onDone).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ resolvedModel: expectedModel }));
+    expect(cb.onError).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['answer_validation', '{not-json}', 'Failed to parse answer validation response'],
+    ['turn_error', '{"problemCode":"provider_failure"}', 'provider_failure'],
+    ['turn_done', '{"answer":"A","references":[]}', null],
+  ])('cancels an open response after terminal %s', async (event, data, error) => {
+    const cb = makeCallbacks();
+    const cancel = vi.fn();
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(`event:${event}\ndata: ${data}\n\n`));
+        // Leave the response open: termination must not depend on the server closing it.
+      },
+      cancel,
+    });
+    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      body,
+    } as unknown as Response);
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined);
+    await flushPromises();
+
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(body.locked).toBe(false);
+    if (error) {
+      expect(cb.onError).toHaveBeenCalledExactlyOnceWith(error);
+      expect(cb.onDone).not.toHaveBeenCalled();
+    } else {
+      expect(cb.onDone).toHaveBeenCalledOnce();
+      expect(cb.onError).not.toHaveBeenCalled();
+    }
   });
 
   it('parses staged answer and in-depth events before final done', async () => {
