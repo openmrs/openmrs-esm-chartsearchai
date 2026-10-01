@@ -1,3 +1,4 @@
+import React from 'react';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useConfig } from '@openmrs/esm-framework';
@@ -1852,5 +1853,101 @@ it('drops cached reasoning for all patients when the operator disables reasoning
     answer: 'Other answer',
     reasoning: '',
     preliminaryReasoning: '',
+  });
+});
+
+describe('reviewed conversation lifecycle', () => {
+  it.each([true, false])('honors disabling reasoning during a turn with streaming %s', async (useStreaming) => {
+    (useConfig as Mock).mockReturnValue({ useStreaming, showReasoning: true });
+    const { result, rerender } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() =>
+      expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('srv-session-default'),
+    );
+    act(() => result.current.submitQuestion('patient-uuid', 'Question'));
+    const callbacks = mockChatStream.mock.calls[0][3];
+    act(() => callbacks.onReasoning('Early notes'));
+    (useConfig as Mock).mockReturnValue({ useStreaming, showReasoning: false });
+    rerender();
+    act(() => {
+      callbacks.onPreliminary('Late preview');
+      callbacks.onReasoning('Late notes');
+      callbacks.onAnswerDone({ answer: 'Supported answer', references: [] });
+      callbacks.onDone({ answer: 'Supported answer', references: [] });
+    });
+    expect(result.current.messages[0]).toMatchObject({
+      answer: 'Supported answer',
+      phase: 'complete',
+      reasoning: '',
+      preliminaryReasoning: '',
+    });
+  });
+
+  const strictWrapper = ({ children }: { children: React.ReactNode }) =>
+    React.createElement(React.StrictMode, null, children);
+
+  it('restores history after StrictMode effect replay', async () => {
+    mockFetchHistory.mockResolvedValue({
+      session: 'restored-session',
+      messages: [
+        { messageId: 'user-1', role: 'user', content: 'Earlier question', createdAt: 1 },
+        { messageId: 'answer-1', role: 'assistant', content: 'Earlier answer', createdAt: 2 },
+      ],
+    });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'), { wrapper: strictWrapper });
+    await waitFor(() => expect(result.current.messages).toHaveLength(1));
+    expect(result.current.messages[0].answer).toBe('Earlier answer');
+    expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('restored-session');
+  });
+
+  it('opens a new conversation after StrictMode effect replay', async () => {
+    mockStartNewChat.mockResolvedValueOnce({ session: 'new-session', messages: [] });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'), { wrapper: strictWrapper });
+    await act(async () => result.current.startNewChatSession('patient-uuid'));
+    expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('new-session');
+    expect(result.current.isAwaitingAnswer).toBe(false);
+  });
+
+  it.each(['onSession', 'onAnswerDone', 'onDone'])(
+    'ignores an old %s after a new question preempts it',
+    async (event) => {
+      const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+      await waitFor(() =>
+        expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('srv-session-default'),
+      );
+      act(() => result.current.submitQuestion('patient-uuid', 'First question'));
+      const oldCallbacks = mockChatStream.mock.calls[0][3];
+      act(() => oldCallbacks.onAnswerDone({ answer: 'First answer', references: [] }));
+      act(() => result.current.submitQuestion('patient-uuid', 'Second question'));
+      expect(mockChatStream.mock.calls[0][4].signal.aborted).toBe(true);
+      act(() =>
+        oldCallbacks[event](
+          event === 'onSession'
+            ? 'stale-session'
+            : {
+                answer: 'Stale answer',
+                references: [],
+                session: 'stale-session',
+              },
+        ),
+      );
+      expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('srv-session-default');
+      expect(result.current.messages).toHaveLength(2);
+      expect(result.current.messages[0].answer).toBe('First answer');
+      expect(result.current.messages[1].question).toBe('Second question');
+    },
+  );
+
+  it('ignores an old session callback after New chat clears its turn', async () => {
+    mockStartNewChat.mockResolvedValueOnce({ session: 'new-session', messages: [] });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() =>
+      expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('srv-session-default'),
+    );
+    act(() => result.current.submitQuestion('patient-uuid', 'Old question'));
+    const oldCallbacks = mockChatStream.mock.calls[0][3];
+    await act(async () => result.current.startNewChatSession('patient-uuid'));
+    act(() => oldCallbacks.onSession('stale-session'));
+    expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('new-session');
+    expect(result.current.messages).toHaveLength(0);
   });
 });

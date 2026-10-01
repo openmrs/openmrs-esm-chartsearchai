@@ -39,9 +39,10 @@ const RESOURCE_TYPE_TO_CHART_PAGE: Record<string, string> = {
 /**
  * Where a citation's chip and inline marker navigate to, or null where they must not navigate.
  *
- * Two kinds of citation get no link. Reference data (a drug-reference entry, a safety finding,
- * a drug-class note) has no chart page at all. And a MISATTRIBUTED citation has one that would
- * usually mislead: the record exists but is typically not the medication order the sentence
+ * Unresolved citations have no source to navigate to. Reference data (a drug-reference entry,
+ * a safety finding, a drug-class note) has no chart page at all. A MISATTRIBUTED citation has
+ * one that would usually mislead: the record exists but is typically not the medication order
+ * the sentence
  * names, so offering it invites the clinician to read an unrelated row as the evidence.
  *
  * "Typically", not "always" — the backend documents arrangements where such a citation "is
@@ -51,7 +52,7 @@ const RESOURCE_TYPE_TO_CHART_PAGE: Record<string, string> = {
  * beside it, because this key must not override the other statements about a citation.
  */
 export function buildReferenceUrl(ref: AiReference, patientUuid: string, misattributed: boolean): string | null {
-  if (!patientUuid || misattributed || isReferenceData(ref)) {
+  if (!patientUuid || misattributed || ref.resolutionStatus === 'unresolved' || isReferenceData(ref)) {
     return null;
   }
   // Optional-chained to match `isReferenceData`, which guards the same field one call earlier:

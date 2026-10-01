@@ -419,6 +419,7 @@ describe('upstream reasoning and scroll behavior in conversations', () => {
 
     expect(screen.getByText('Model reasoning')).toBeInTheDocument();
     expect(screen.getByText('Scanning drug orders.')).not.toBeVisible();
+    expect(screen.getByRole('log')).toHaveTextContent(/Aspirin \[1\].*Model reasoning/);
   });
 
   it('draws no reasoning at all when showReasoning is off', () => {
