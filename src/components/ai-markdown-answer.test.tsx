@@ -84,4 +84,65 @@ describe('MarkdownAnswer', () => {
     expect(screen.getByText('Major')).toBeInTheDocument();
     expect(screen.getByText('Clinical significance unknown')).toBeInTheDocument();
   });
+  it('omits model-supplied images, including image links containing patient details', () => {
+    render(
+      <MarkdownAnswer
+        answer="![patient chart](https://example.test/image?patient=test-patient)"
+        references={[]}
+        patientUuid={patientUuid}
+      />,
+    );
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  });
+
+  it('resolves numeric markdown links through the chart citation contract', () => {
+    render(
+      <MarkdownAnswer
+        answer="Order [4](https://example.test/wrong-source)."
+        references={references}
+        patientUuid={patientUuid}
+      />,
+    );
+    expect(screen.getByRole('link', { name: '4' })).toHaveAttribute(
+      'href',
+      `/openmrs/spa/patient/${patientUuid}/chart/Orders`,
+    );
+  });
+
+  it('does not offer an external link for an unresolved numeric markdown citation', () => {
+    render(
+      <MarkdownAnswer
+        answer="Unknown [99](https://example.test/wrong-source)."
+        references={references}
+        patientUuid={patientUuid}
+      />,
+    );
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.getByText(/Unknown.*99/)).toBeInTheDocument();
+  });
+  it('keeps a formatted numeric link inside the citation safeguards', () => {
+    render(
+      <MarkdownAnswer
+        answer="Order [**4**](https://example.test/wrong-source)."
+        references={references}
+        patientUuid={patientUuid}
+        decorations={{ misattributed: new Set([4]), severities: new Map([[4, 'Major']]), qualified: new Set([4]) }}
+      />,
+    );
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.getByTitle(/module reports that this citation/)).toHaveTextContent('4');
+    expect(screen.getByText('Major')).toBeInTheDocument();
+    expect(screen.getByText('Clinical significance unknown')).toBeInTheDocument();
+  });
+
+  it('preserves ordinary non-citation markdown links', () => {
+    render(
+      <MarkdownAnswer
+        answer="[Source website](https://example.test/source)"
+        references={references}
+        patientUuid={patientUuid}
+      />,
+    );
+    expect(screen.getByRole('link', { name: 'Source website' })).toHaveAttribute('href', 'https://example.test/source');
+  });
 });
