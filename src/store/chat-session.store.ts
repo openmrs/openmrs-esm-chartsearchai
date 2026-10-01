@@ -4,6 +4,23 @@ import type { ChatMessage } from '../hooks/useChartSearchAi';
 export interface ChatSessionState {
   messagesByPatient: Record<string, ChatMessage[]>;
   /**
+   * Server-pinned conversation handle per patient. Captured from the
+   * X-ChartSearchAi-Session response header on the first chat POST, then
+   * threaded into every subsequent post for the same patient. Cleared on
+   * logout (see {@link setupChatSessionLogoutCleanup}) and on "New chat".
+   */
+  sessionUuidByPatient: Record<string, string | null>;
+  /** Hub product profile selected for this browser session. */
+  selectedProfileId: string | null;
+  /** Whether product-profile discovery can safely authorize a chat request. */
+  profileDiscoveryStatus: 'loading' | 'ready' | 'unavailable';
+  /**
+   * Clinical-answer provider selected for this browser session. Null means the
+   * backend applies its configured default (bundled on a fresh install); it is
+   * never a silent cross-provider fallback.
+   */
+  selectedProviderId: string | null;
+  /**
    * Whether the reader wants an answer's reasoning disclosure open, remembered for the session so
    * the choice costs one click rather than one per answer.
    *
@@ -20,6 +37,10 @@ export interface ChatSessionState {
 
 export const chatSessionStore = createGlobalStore<ChatSessionState>('chartsearchai-chat-session', {
   messagesByPatient: {},
+  sessionUuidByPatient: {},
+  selectedProfileId: null,
+  profileDiscoveryStatus: 'loading',
+  selectedProviderId: null,
 });
 
 export function setupChatSessionLogoutCleanup(): () => void {
@@ -31,7 +52,14 @@ export function setupChatSessionLogoutCleanup(): () => void {
     if (currentUserUuid !== previousUserUuid) {
       // The preference goes with the history: an O3 workstation is shared, and the next user has
       // expressed no view on whether the model's working notes should be open.
-      chatSessionStore.setState({ messagesByPatient: {}, reasoningExpanded: undefined });
+      chatSessionStore.setState({
+        messagesByPatient: {},
+        sessionUuidByPatient: {},
+        selectedProfileId: null,
+        profileDiscoveryStatus: 'loading',
+        selectedProviderId: null,
+        reasoningExpanded: undefined,
+      });
       previousUserUuid = currentUserUuid;
     }
   });
