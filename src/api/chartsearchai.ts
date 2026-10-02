@@ -12,6 +12,8 @@ export const SESSION_EXPIRED_ERROR_CODE = 'chartsearchai:session-expired';
 
 export interface AiReference {
   index: number;
+  /** Stable evidence-ledger id supplied by med-agent-hub. */
+  sourceId?: string;
   resourceType: string;
   /**
    * OpenMRS UUID of the cited record (the backend serializes this field as `resourceUuid`).
@@ -19,6 +21,15 @@ export interface AiReference {
    */
   resourceUuid: string;
   date: string;
+  /** Resolved source record text, when supplied by the hub staged path. */
+  sourceText?: string;
+  /** Human-readable source title supplied by the evidence ledger. */
+  title?: string;
+  /** Whether the citation index resolved to a record in this turn's evidence ledger. */
+  resolutionStatus?: 'resolved' | 'unresolved';
+  /** Answer, In-Depth, or table locations that used this source. */
+  usage?: Array<{ location: string; text: string; path?: string }>;
+
   /**
    * Citation grounding verdict from the backend: true = the cited record
    * supports the claim, false = it does not, null/absent = unverified.
@@ -47,6 +58,24 @@ export interface AiReference {
    * certifiable. So do not render any null as evidence that the module tried.
    */
   grounded?: boolean | null;
+  /**
+   * Lifecycle/status for citation grounding. `checking` means the backend has resolved
+   * the source record but final support verification is still running.
+   */
+  groundingStatus?: 'checking' | 'verified' | 'unsupported' | 'unchecked' | 'mixed';
+  /** Whether support was evaluated from this record alone or a cited source set. */
+  groundingScope?: 'record' | 'source_set';
+  /** Citation indices evaluated together when groundingScope is source_set. */
+  groundingGroup?: number[];
+  /** Claim/path-level verdicts retained when one record is used more than once. */
+  groundingChecks?: Array<{
+    status: 'verified' | 'unsupported' | 'unchecked';
+    claim: string;
+    location: string;
+    path?: string;
+    source_indices: number[];
+  }>;
+
   /**
    * Which corpus the cited record came from: `chart` = the patient's own record,
    * `reference` = module-supplied reference material (a drug-reference entry, a
