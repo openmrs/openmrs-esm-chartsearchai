@@ -30,7 +30,7 @@ for manual review. Missing optional sections do not prevent plain-answer display
 
 ### Model reasoning
 
-The backend streams the model's reasoning before the answer, on its own `thinking` SSE event. The reasoning phase is long and CPU-bound, so the text shows itself while it arrives — a dead spinner says nothing about whether anything is happening — and then **collapses** to a `Model reasoning` row above the answer rather than disappearing. A reader who looked away, or who wants to know how an answer was reached, opens the row; the choice is remembered for the session, so wanting to watch it costs one click rather than one per answer.
+When the selected provider supplies model reasoning, the conversation displays it as it arrives if streaming is enabled. After the answer arrives, the reasoning remains in a collapsed `Model reasoning` disclosure below the answer. The reader's choice to expand it is remembered for the session. With streaming disabled, supplied reasoning appears only after the complete answer arrives. Providers that supply no reasoning still return their supported answer.
 
 It is the model's scratchpad, not a finding: none of it goes through the grounding pass that verifies the answer's citations, and it can state things the answer does not. That caveat is the `Model reasoning` row's tooltip — a native `title`, so it is the summary's accessible description for a screen reader, but it appears on hover only. A touch user, or a reader who never hovers, sees no caveat on the transcript itself and has only the panel's own "AI-generated … verify against the records" disclaimer. The transcript is never copied by the answer's Copy button, never written to browser storage, and is dropped with the chat history at logout. `showReasoning: false` switches it off entirely — nothing is shown, and nothing is retained.
 
@@ -40,10 +40,7 @@ When the backend's optional [drug-reference feature](https://github.com/openmrs/
 
 ## Backend
 
-This frontend requires the [Chart Search AI backend module](https://github.com/openmrs/openmrs-module-chartsearchai), which uses a RAG (Retrieval Augmented Generation) architecture:
-
-1. **Retrieval** -- patient records are embedded with all-MiniLM-L6-v2 (ONNX, CPU) and narrowed to the top-K most relevant via cosine similarity.
-2. **Generation** -- the filtered records are sent to a local GGUF LLM (default: Llama 3.3 8B via llama.cpp) with a system prompt that produces cited, structured answers.
+This frontend requires the [Chart Search AI backend module](https://github.com/openmrs/openmrs-module-chartsearchai). The backend uses QueryStore to retrieve patient-chart evidence and routes the conversation to the explicitly selected provider. Bundled inference supports its configured local or remote model; Med-Agent Hub exposes configured product profiles. The frontend uses the same conversation interface for both and displays the capabilities and output they actually provide.
 
 See the [backend README](https://github.com/openmrs/openmrs-module-chartsearchai#readme) for full setup instructions, model downloads, and global property configuration.
 
@@ -76,7 +73,7 @@ The following options can be set via the OpenMRS 3.x config system:
 
 ### Provider and profile selection components
 
-The extracted provider selector reads `/providers`, uses the backend's advertised
+The provider selector reads `/providers`, uses the backend's advertised
 default, and keeps an unavailable explicit selection until the user chooses a
 replacement. The Hub profile selector reads `/models`, shows product profiles and
 their availability, and selects the Hub-advertised default. It does not query Hub
