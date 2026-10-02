@@ -350,6 +350,48 @@ describe('useChartSearchAi', () => {
     expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('srv-session-from-turn-1');
   });
 
+  it.each([
+    { timing: 'before the session event', session: undefined },
+    { timing: 'after an unchanged session event', session: 'srv-session-existing' },
+  ])('keeps the live question when history arrives $timing', async ({ session }) => {
+    if (session) {
+      chatSessionStore.setState({ sessionUuidByPatient: { 'patient-uuid': session } });
+    }
+    let resolveHistory!: (response: Awaited<ReturnType<typeof fetchChatHistory>>) => void;
+    mockFetchHistory.mockReturnValueOnce(new Promise((resolve) => (resolveHistory = resolve)));
+    mockChatStream.mockImplementation(() => {});
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => result.current.submitQuestion('patient-uuid', 'Current question'));
+    const callbacks = mockChatStream.mock.calls[0][3];
+    if (session) act(() => callbacks.onSession(session));
+
+    await act(async () => {
+      resolveHistory({
+        session: 'srv-session-existing',
+        provider: 'hub',
+        messages: [
+          { messageId: 'old-user', role: 'user', content: 'Old question', createdAt: 1 },
+          { messageId: 'old-answer', role: 'assistant', content: 'Old answer', createdAt: 2 },
+        ],
+      });
+    });
+
+    expect(result.current.messages).toHaveLength(1);
+    expect(result.current.messages[0].question).toBe('Current question');
+    expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe(session);
+
+    act(() => {
+      callbacks.onSession('srv-session-existing');
+      callbacks.onDone({ answer: 'Current answer', references: [], messageId: 'current-answer' });
+    });
+    expect(result.current.messages[0]).toMatchObject({
+      question: 'Current question',
+      answer: 'Current answer',
+      phase: 'complete',
+    });
+  });
+
   it('sets the answer whole on answer_done (the hub delivers a complete answer, not tokens)', async () => {
     mockChatStream.mockImplementation(() => {});
     const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
