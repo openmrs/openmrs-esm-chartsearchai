@@ -17,6 +17,7 @@ import {
 } from '../__fixtures__/finding-citation-responses';
 import { MODULE_CAUTION_ANSWER } from '../__fixtures__/module-caution-answer-response';
 import { NAMED_CHECKS_RESPONSE } from '../__fixtures__/named-checks-response';
+import { MODULE_STATED_FINDING_RESPONSE } from '../__fixtures__/module-stated-finding-response';
 import {
   ALLERGY_TO_A_CURRENT_MEDICATION,
   ALLERGY_TO_A_PROPOSED_DRUG,
@@ -519,8 +520,8 @@ describe('AiResponsePanel current-medication chips', () => {
   });
 
   it('draws no chip the answer already states, and every chip it does not', () => {
-    // openmrs-module-chartsearchai ADR Decision 124: on a question asking only for her allergies the
-    // answer names her conflicting order and quotes the chip's finding, and marks the chip
+    // openmrs-module-chartsearchai ADR Decision 124: on a question asking only for her allergies
+    // the answer names her conflicting order and quotes the chip's finding, and marks the chip
     // `statedInTheAnswer`. TAKEN and PROPOSED carry one sentence, so the row left is told apart by
     // the mark.
     renderResponse({
@@ -556,7 +557,8 @@ describe('AiResponsePanel current-medication chips', () => {
 
   it('says what the finding is about without naming the drug, and why on hover', () => {
     // The backend README asks for exactly this: `drug` is the substance the module matched the
-    // patient's order to, which the order need not spell. This patient's ibuprofen order is Advil 400mg.
+    // patient's order to, which the order need not spell. This patient's ibuprofen order is Advil
+    // 400mg.
     renderResponse(ALLERGY_TO_A_CURRENT_MEDICATION);
     chipRows().forEach((row, i) => {
       const mark = within(row).getByText(MARK);
@@ -659,7 +661,8 @@ describe('AiResponsePanel ended-order chips', () => {
   });
 
   it('never states the end more exactly than a calendar day', () => {
-    // Not a shape the backend sends: a date the panel cannot read as one day is withheld, not trimmed.
+    // Not a shape the backend sends: a date the panel cannot read as one day is withheld, not
+    // trimmed.
     renderLiveResponse(ENDED_ORDER_NAMED_IN_A_HISTORY_QUESTION, {
       safetyWarnings: [{ ...ENDED, endedOrderStopDate: '2026-09-23T08:32:31Z' }],
       orderStopDates: [],
@@ -799,18 +802,19 @@ describe('AiResponsePanel safety-check coverage', () => {
     expect(
       screen.queryByText((_content, element) => Boolean(element?.className?.includes?.('limit'))),
     ).not.toBeInTheDocument();
-    // Nor the note that replaced the block's conditions line for a release: its coverage keys are on the
-    // response and it is not drawn either.
+    // Nor the note that replaced the block's conditions line for a release: its coverage keys are
+    // on the response and it is not drawn either.
     expect(screen.queryByText(/^Not checked against/)).not.toBeInTheDocument();
   });
 
   it('draws nothing for the pairs the screen related only below the warning threshold', () => {
-    // Removed from the panel: every such pair is a DDInter row rated Unknown with no mechanism text,
-    // so the line told a clinician only that a pair is listed, beside an answer that already names
-    // her orders, and "rates these below the warning threshold" read as a low rating the source never
-    // gave. The live shape, verbatim: "Is aspirin safe for her?" on a chart with lidocaine and
-    // tiotropium orders, whose belowFloor names exactly those two partners and whose answer names
-    // neither — so a partner's name anywhere on the panel can only have come from that line.
+    // Removed from the panel: every such pair is a DDInter row rated Unknown with no mechanism
+    // text, so the line told a clinician only that a pair is listed, beside an answer that already
+    // names her orders, and "rates these below the warning threshold" read as a low rating the
+    // source never gave. The live shape, verbatim: "Is aspirin safe for her?" on a chart with
+    // lidocaine and tiotropium orders, whose belowFloor names exactly those two partners and whose
+    // answer names neither — so a partner's name anywhere on the panel can only have come from that
+    // line.
     const response = ASPIRIN_CHIP_THE_ANSWER_CITES;
     expect(response.interactionPairs.belowFloor.map((pair) => pair.partner)).toEqual(['lidocaine', 'tiotropium']);
     render(
@@ -828,7 +832,8 @@ describe('AiResponsePanel safety-check coverage', () => {
     expect(
       screen.getByText((_content, element) => Boolean(element?.className?.includes?.('answerText'))),
     ).toHaveTextContent('Acetylsalicylic acid (aspirin) can be given');
-    // The chip collapses the box on this answer; open everything, so an absence is not of a folded box.
+    // The chip collapses the box on this answer; open everything, so an absence is not of a folded
+    // box.
     fireEvent.click(screen.getByRole('button', { name: 'Show safety checks' }));
     fireEvent.click(screen.getByRole('button', { name: 'Show details' }));
     expect(screen.queryByText(/Not raised as a warning|below the warning threshold/)).not.toBeInTheDocument();
@@ -854,8 +859,8 @@ describe('AiResponsePanel reference citation metadata', () => {
     expect(within(drugReference).getByText('[10] Drug reference')).toHaveAttribute('title', `Source: ${DDINTER}`);
     // On hover only: the source is no longer a line of its own under the citation.
     expect(drugReference).not.toHaveTextContent(DDINTER);
-    // 648 of its partners are withheld, and the count is not drawn: they are mostly drugs she is not on,
-    // and the safety check reads every one of them regardless.
+    // 648 of its partners are withheld, and the count is not drawn: they are mostly drugs she is
+    // not on, and the safety check reads every one of them regardless.
     expect(ENDED_ORDER_DRUG_PROPOSED.references.find((ref) => ref.index === 10)?.withheldInteractions).toBe(648);
     expect(drugReference).not.toHaveTextContent(/subset|not shown|648/);
 
@@ -1605,9 +1610,10 @@ describe('AiResponsePanel record the module attached', () => {
 });
 
 /**
- * A chip about another of the patient's medications than the drug the answer is about is drawn apart from
- * the findings about that drug: the live ibuprofen answer, beside which her lidocaine and tiotropium
- * allergies were raised because the answer named those orders as interaction partners.
+ * A chip about another of the patient's medications than the drug the answer is about is drawn
+ * apart from the findings about that drug: the live ibuprofen answer, beside which her lidocaine
+ * and tiotropium allergies were raised because the answer named those orders as interaction
+ * partners.
  */
 describe('AiResponsePanel chips about her other medications', () => {
   const LIDOCAINE = 'Lidocaine: The patient has a recorded allergy to Lidocaine.';
@@ -1747,8 +1753,8 @@ describe('AiResponsePanel already-prescribed mark', () => {
 
 /**
  * An answer saying an order has ended where no record it was built from says so (backend ADR
- * Decision 135) gets one line under it naming the drug: the rifampicin answer that said nevirapine's
- * order was no longer in force, of a chart holding no nevirapine order.
+ * Decision 135) gets one line under it naming the drug: the rifampicin answer that said
+ * nevirapine's order was no longer in force, of a chart holding no nevirapine order.
  */
 describe('AiResponsePanel an ended order no record states', () => {
   const response = RIFAMPICIN_ANSWER_CLAIMING_AN_ENDED_ORDER;
@@ -1861,9 +1867,9 @@ describe('AiResponsePanel a cited finding the answer leaves unqualified', () => 
 });
 
 /**
- * A chip about a drug other than the one the question proposes is drawn apart, as one about her other
- * medications is (backend ADR Decision 137): the live fluconazole answer, whose third chip is the listed
- * nevirapine against her lidocaine order.
+ * A chip about a drug other than the one the question proposes is drawn apart, as one about her
+ * other medications is (backend ADR Decision 137): the live fluconazole answer, whose third chip is
+ * the listed nevirapine against her lidocaine order.
  */
 describe('AiResponsePanel chips about a drug other than the one proposed', () => {
   const response = FLUCONAZOLE_BESIDE_A_LISTED_NEVIRAPINE_FINDING;
@@ -2029,8 +2035,9 @@ describe('AiResponsePanel chips naming their own record', () => {
     expect(screen.queryByText(/See \[46\]/)).not.toBeInTheDocument();
   });
 
-  // A check that names a finding keeps that chip in full; a rating the answer left unstated does not, the
-  // one-line chip stating it; a chip the answer does not cite stays in full whatever the checks say.
+  // A check that names a finding keeps that chip in full; a rating the answer left unstated does
+  // not, the one-line chip stating it; a chip the answer does not cite stays in full whatever the
+  // checks say.
   it('folds a cited chip no check named, keeping the named and the uncited ones in full', () => {
     renderResponse(NAMED_CHECKS_RESPONSE);
     const rows = chipRows();
@@ -2047,6 +2054,20 @@ describe('AiResponsePanel chips naming their own record', () => {
       'Coadministration with fluconazole may increase the plasma concentrations',
     );
     expect(row('Lidocaine')).not.toHaveTextContent(/See \[/);
+  });
+
+  // The module's own sentence after the answer states [55] and cites no marker; the response names
+  // it, so its chip is drawn as already stated rather than in full beside the sentence (backend ADR
+  // Decision 147).
+  it('folds a chip the module states after the answer, tagged as stated above', () => {
+    renderResponse(MODULE_STATED_FINDING_RESPONSE);
+    const lidocaine = chipRows().find((row) => row.textContent?.includes('Lidocaine'));
+    expect(lidocaine).toHaveTextContent('Fluconazole — Lidocaine (Moderate) Stated above');
+    expect(lidocaine).not.toHaveTextContent('Coadministration with fluconazole');
+    expect(screen.getByText('Stated above')).toHaveAttribute(
+      'title',
+      'The module states this finding after the answer; open the detail to read it in full.',
+    );
   });
 
   it('still draws every chip in full where a per-finding check stated no measurement', () => {

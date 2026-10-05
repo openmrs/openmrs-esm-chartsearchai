@@ -25,6 +25,7 @@ export const NO_ANSWER_LIMITS: MessageAnswerLimits = {
   cautionLedOverWithholding: null,
   interactionClaimPairs: null,
   answeredByTheModule: null,
+  findingsStatedByTheModule: null,
 };
 
 /**
@@ -63,6 +64,7 @@ export function mergeDisclosure(previous: MessageAnswerLimits, source: Partial<A
     cautionLedOverWithholding: source.cautionLedOverWithholding ?? previous.cautionLedOverWithholding,
     interactionClaimPairs: source.interactionClaimPairs ?? previous.interactionClaimPairs,
     answeredByTheModule: source.answeredByTheModule ?? previous.answeredByTheModule,
+    findingsStatedByTheModule: source.findingsStatedByTheModule ?? previous.findingsStatedByTheModule,
   };
 }
 

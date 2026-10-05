@@ -465,6 +465,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   unsupportedEndedOrderClaims,
   unstatedSignificanceQualifiers,
   answeredByTheModule,
+  findingsStatedByTheModule,
   questionId,
   error,
   isLoading,
@@ -547,6 +548,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
       cautionLedOverWithholding,
       interactionClaimPairs,
       answeredByTheModule,
+      findingsStatedByTheModule,
     });
     return new Map([...positions].map(([position, indexes]) => [all[position], indexes]));
   }, [
@@ -561,6 +563,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     cautionLedOverWithholding,
     interactionClaimPairs,
     answeredByTheModule,
+    findingsStatedByTheModule,
   ]);
   const [expandedWarnings, setExpandedWarnings] = useState<Set<AiSafetyWarning>>(() => new Set());
 
@@ -651,24 +654,36 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
           {compact && (
             <>
               {' '}
-              <span
-                className={styles.statedInAnswerTag}
-                title={
-                  answeredByTheModule === true
-                    ? t(
-                        'seeMarkerInTheModulesAnswerTitle',
-                        'The answer states this finding briefly at that marker; open the detail to read it in full.',
-                      )
-                    : t(
-                        'seeMarkerInTheAnswerTitle',
-                        'The answer cites this finding at that marker, and the module’s checks of how it was rendered found nothing, so its detail is collapsed rather than repeated. The answer may still word it differently or leave part of it out; open the detail to read the finding in full.',
-                      )
-                }
-              >
-                {t('seeMarkerInTheAnswer', 'See {{markers}} in the answer', {
-                  markers: (compactWarnings.get(warning) ?? []).map((index) => `[${index}]`).join(', '),
-                })}
-              </span>{' '}
+              {(compactWarnings.get(warning) ?? []).length === 0 ? (
+                <span
+                  className={styles.statedInAnswerTag}
+                  title={t(
+                    'statedAboveByTheModuleTitle',
+                    'The module states this finding after the answer; open the detail to read it in full.',
+                  )}
+                >
+                  {t('statedAboveByTheModule', 'Stated above')}
+                </span>
+              ) : (
+                <span
+                  className={styles.statedInAnswerTag}
+                  title={
+                    answeredByTheModule === true
+                      ? t(
+                          'seeMarkerInTheModulesAnswerTitle',
+                          'The answer states this finding briefly at that marker; open the detail to read it in full.',
+                        )
+                      : t(
+                          'seeMarkerInTheAnswerTitle',
+                          'The answer cites this finding at that marker, and no check of how it was rendered named it, so its detail is collapsed rather than repeated. The answer may still word it differently, leave part of it out or leave out its rating, which this line states; open the detail to read the finding in full.',
+                        )
+                  }
+                >
+                  {t('seeMarkerInTheAnswer', 'See {{markers}} in the answer', {
+                    markers: (compactWarnings.get(warning) ?? []).map((index) => `[${index}]`).join(', '),
+                  })}
+                </span>
+              )}{' '}
               <button
                 type="button"
                 className={styles.detailsToggle}

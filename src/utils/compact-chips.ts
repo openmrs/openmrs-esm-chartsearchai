@@ -108,7 +108,20 @@ export function compactChips(
       : noAnswerWideCheckFired(limits)
         ? findingsACheckNamed(limits)
         : null;
-  if (!answer || !Array.isArray(references) || !Array.isArray(warnings) || named === null) {
+  if (!answer || !Array.isArray(references) || !Array.isArray(warnings)) {
+    return compact;
+  }
+  // A finding the module's own sentence after the answer states (backend ADR Decision 147) is drawn
+  // as stated, its marker list empty: that sentence cites none, and it is the module's words, which
+  // no check of the model's prose judges.
+  const stated = new Set<number>(
+    Array.isArray(limits.findingsStatedByTheModule) ? limits.findingsStatedByTheModule : [],
+  );
+  warnings.forEach((warning, position) => {
+    const own = warning?.findingCitation;
+    if (typeof own === 'number' && stated.has(own)) compact.set(position, []);
+  });
+  if (named === null) {
     return compact;
   }
   const cited = new Set<number>();
@@ -132,6 +145,7 @@ export function compactChips(
     // the join:
     // the chip qualifies exactly where the answer cites that record, and its tag names that one
     // marker.
+    if (compact.has(position)) return;
     const own = warning.findingCitation;
     if (typeof own === 'number' && Number.isInteger(own)) {
       if (citedFindings.has(own) && !named.has(own)) compact.set(position, [own]);

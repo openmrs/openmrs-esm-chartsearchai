@@ -656,6 +656,7 @@ describe('useChartSearchAi answer-limit measurements', () => {
     unsupportedEndedOrderClaims: ['Nevirapine'],
     unstatedSignificanceQualifiers: [46],
     answeredByTheModule: true,
+    findingsStatedByTheModule: [55],
   };
 
   it('lists every key the merge carries', () => {
