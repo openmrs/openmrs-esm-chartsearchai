@@ -6,7 +6,8 @@ const BASE_PATH = `${restBaseUrl}/chartsearchai`;
  * Error code emitted via {@code onError} for every way an expired session surfaces on the SSE
  * endpoint: the 302 opaque redirect, a bare 401/403, and the committed-redirect 500. It is a stable
  * code, NOT a display string — user-facing text must be localized in a component (the translation
- * extractor only scans {@code *.component.tsx}). {@code AiResponsePanel} maps this to a translated message.
+ * extractor only scans {@code *.component.tsx}). {@code AiResponsePanel} maps this to a translated
+ * message.
  */
 export const SESSION_EXPIRED_ERROR_CODE = 'chartsearchai:session-expired';
 
@@ -148,10 +149,10 @@ export interface AiSafetyWarning {
   aboutACurrentMedication?: boolean;
   /**
    * Which of the patient's own active orders a contraindication chip about a medication she already
-   * takes is about (openmrs-module-chartsearchai#552), each as her chart displays it — her
-   * *Advil 400mg* on a chip whose {@link drug} is `Ibuprofen`. Name the order from here rather than
-   * resolving {@link drug} against her orders. Empty on every other chip; absent from a backend that
-   * predates the key.
+   * takes is about (openmrs-module-chartsearchai#552), each as her chart displays it — her *Advil
+   * 400mg* on a chip whose {@link drug} is `Ibuprofen`. Name the order from here rather than
+   * resolving {@link drug} against her orders. Empty on every other chip; absent from a backend
+   * that predates the key.
    */
   currentMedicationOrders?: Array<{ orderDisplay?: string | null; orderUuid?: string | null }>;
   /**
@@ -167,14 +168,15 @@ export interface AiSafetyWarning {
    */
   aboutAnEndedOrder?: boolean;
   /**
-   * Whether this chip is about one of the patient's own medications OTHER than the drug the response is
-   * about: a contraindication raised by checking one of her prescriptions against her own records, on a
-   * response that put another drug in play. {@link aboutACurrentMedication} cannot say it, since that is
-   * also `true` for a drug the question names that she takes — which is what was asked.
+   * Whether this chip is about one of the patient's own medications OTHER than the drug the
+   * response is about: a contraindication raised by checking one of her prescriptions against her
+   * own records, on a response that put another drug in play. {@link aboutACurrentMedication}
+   * cannot say it, since that is also `true` for a drug the question names that she takes — which
+   * is what was asked.
    *
-   * Only `true` is rendered, as a chip drawn apart from the findings about the drug in question. `false`
-   * is NOT a claim the chip is about that drug, and a backend that predates the key sends nothing, which
-   * reads the same as `false`.
+   * Only `true` is rendered, as a chip drawn apart from the findings about the drug in question.
+   * `false` is NOT a claim the chip is about that drug, and a backend that predates the key sends
+   * nothing, which reads the same as `false`.
    */
   aboutAnotherOfHerMedications?: boolean;
   /**
@@ -187,9 +189,10 @@ export interface AiSafetyWarning {
    */
   aboutADrugOtherThanTheOneProposed?: boolean;
   /**
-   * The record number this chip's own finding has in the prompt — the `index` of the `safety_finding`
-   * reference an answer's marker cites — or `null` where no single record is it (backend ADR
-   * Decision 138). The join from a chip to its citation where several findings share one key.
+   * The record number this chip's own finding has in the prompt — the `index` of the
+   * `safety_finding` reference an answer's marker cites — or `null` where no single record is it
+   * (backend ADR Decision 138). The join from a chip to its citation where several findings share
+   * one key.
    */
   findingCitation?: number | null;
   /**
@@ -200,11 +203,11 @@ export interface AiSafetyWarning {
    */
   endedOrderStopDate?: string | null;
   /**
-   * Whether the answer itself already states this finding (openmrs-module-chartsearchai ADR Decision
-   * 124): on a question asking only for the patient's allergies, the backend appends her conflicting
-   * order's name and this chip's own {@link detail} to the answer. A `true` chip is not drawn again.
-   * `false` says nothing about the answer's prose, and a backend that predates the key sends nothing,
-   * which reads the same as `false`.
+   * Whether the answer itself already states this finding (openmrs-module-chartsearchai ADR
+   * Decision 124): on a question asking only for the patient's allergies, the backend appends her
+   * conflicting order's name and this chip's own {@link detail} to the answer. A `true` chip is not
+   * drawn again. `false` says nothing about the answer's prose, and a backend that predates the key
+   * sends nothing, which reads the same as `false`.
    */
   statedInTheAnswer?: boolean;
   /**
@@ -359,25 +362,26 @@ export interface AiSearchResponse {
   // a verdict word this client predates.
   conditionRuleCoverage?: ConditionRuleCoverage | (string & {}) | null;
   /**
-   * The same three-valued verdict for the loaded dataset's DOSE-CEILING arm: whether it publishes an
-   * age-banded dose ceiling. Dose ceilings are the only thing the backend reads the patient's AGE
-   * against, so `absent` or `unloaded` is what licenses saying her age was not checked. `null` or absent
-   * (an older backend) states nothing, and never licenses that sentence.
+   * The same three-valued verdict for the loaded dataset's DOSE-CEILING arm: whether it publishes
+   * an age-banded dose ceiling. Dose ceilings are the only thing the backend reads the patient's
+   * AGE against, so `absent` or `unloaded` is what licenses saying her age was not checked. `null`
+   * or absent (an older backend) states nothing, and never licenses that sentence.
    */
   doseCeilingCoverage?: ConditionRuleCoverage | (string & {}) | null;
   /**
    * The drugs the answer says have an order that is no longer in force where no chart record the
-   * answer was built from marks an order of that drug as not in force (backend ADR Decision 135) — a
-   * statement in the answer that nothing in the records supports, never a finding that the order is
-   * in force. `[]` is a measurement of none and not a certificate (an answer saying "was stopped" is
-   * not read); `null` or absent is no measurement.
+   * answer was built from marks an order of that drug as not in force (backend ADR Decision 135) —
+   * a statement in the answer that nothing in the records supports, never a finding that the order
+   * is in force. `[]` is a measurement of none and not a certificate (an answer saying "was
+   * stopped" is not read); `null` or absent is no measurement.
    */
   unsupportedEndedOrderClaims?: string[] | null;
   /**
-   * The citation indexes of the safety findings the answer cites whose record says the interaction's
-   * clinical significance is unknown, where the answer says nothing of the kind (backend ADR Decision
-   * 136). The finding's own caveat the answer left out, never a correction of its rating. `[]` is not a
-   * certificate; `null` or absent is no measurement, which the early `done` always is.
+   * The citation indexes of the safety findings the answer cites whose record says the
+   * interaction's clinical significance is unknown, where the answer says nothing of the kind
+   * (backend ADR Decision 136). The finding's own caveat the answer left out, never a correction of
+   * its rating. `[]` is not a certificate; `null` or absent is no measurement, which the early
+   * `done` always is.
    */
   unstatedSignificanceQualifiers?: number[] | null;
   /** @see AiInteractionPairs */
@@ -419,6 +423,12 @@ export interface AiSearchResponse {
    * asked; it is no claim about the answer's quality.
    */
   answeredByTheModule?: boolean | null;
+  /**
+   * The record numbers of the findings the module's own sentence after a model's answer states
+   * (backend ADR Decision 147) — a sentence citing no marker, so this is how a chip is joined to
+   * it. `[]` stated none; `null` is no measurement, which is every answer the module wrote.
+   */
+  findingsStatedByTheModule?: number[] | null;
   questionId?: string;
 }
 
@@ -451,6 +461,7 @@ export type AiAnswerLimits = Pick<
   | 'cautionLedOverWithholding'
   | 'interactionClaimPairs'
   | 'answeredByTheModule'
+  | 'findingsStatedByTheModule'
 >;
 
 /**
@@ -492,7 +503,8 @@ export function warmupPatient(patientUuid: string, signal?: AbortSignal): void {
     body: JSON.stringify({ patient: patientUuid }),
     signal,
   }).catch(() => {
-    // ignore — the user does not depend on this completing, and aborts are expected on patient switch
+    // ignore — the user does not depend on this completing, and aborts are expected on patient
+    // switch
   });
 }
 
