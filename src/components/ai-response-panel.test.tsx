@@ -18,6 +18,7 @@ import {
 import { MODULE_CAUTION_ANSWER } from '../__fixtures__/module-caution-answer-response';
 import { NAMED_CHECKS_RESPONSE } from '../__fixtures__/named-checks-response';
 import { MODULE_STATED_FINDING_RESPONSE } from '../__fixtures__/module-stated-finding-response';
+import { LISTED_DRUG_NOT_IN_ANSWER_RESPONSE } from '../__fixtures__/listed-drug-not-in-answer-response';
 import {
   ALLERGY_TO_A_CURRENT_MEDICATION,
   ALLERGY_TO_A_PROPOSED_DRUG,
@@ -2067,6 +2068,29 @@ describe('AiResponsePanel chips naming their own record', () => {
     expect(screen.getByText('Stated above')).toHaveAttribute(
       'title',
       'The module states this finding after the answer; open the detail to read it in full.',
+    );
+  });
+
+  // A finding about the drug proposed against a drug the question only LISTS, which the answer does
+  // not cite, is drawn on one line: it rests on the question's word, not her chart. One against her
+  // own order is not.
+  it('folds an unmentioned finding against a listed drug, tagged not in the answer', () => {
+    renderResponse(LISTED_DRUG_NOT_IN_ANSWER_RESPONSE);
+    const rows = chipRows();
+    const ritonavir = rows.find((row) => row.textContent?.includes('Ritonavir'));
+    expect(ritonavir).toHaveTextContent(
+      'Fluconazole interacts with Ritonavir, also named in the question (Minor) Not in the answer',
+    );
+    expect(ritonavir).not.toHaveTextContent('The coadministration with fluconazole');
+    expect(rows.find((row) => row.textContent?.includes('Lopinavir'))).toHaveTextContent(
+      'prolongation of the QT interval',
+    );
+  });
+
+  it('still draws in full an unmentioned finding against one of her own orders', () => {
+    renderResponse({ ...LISTED_DRUG_NOT_IN_ANSWER_RESPONSE, findingsStatedByTheModule: [] });
+    expect(chipRows().find((row) => row.textContent?.includes('Lidocaine'))).toHaveTextContent(
+      'Coadministration with fluconazole may increase the plasma concentrations',
     );
   });
 

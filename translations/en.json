@@ -34,6 +34,8 @@
   "notGrounded": "Unsupported",
   "notGroundedTitle": "The cited record may not support this statement — verify against the chart.",
   "notHelpful": "Not helpful",
+  "notInTheAnswer": "Not in the answer",
+  "notInTheAnswerTitle": "The answer does not mention this finding. It relates the drug asked about to another drug the question names; open the detail to read it in full.",
   "notTheOrderNamed": "Not the order named",
   "orderStopDate": "Stopped {{stopDate}}",
   "orderStopDateTitle": "The date this prescription stopped being in force — not the record’s own date shown beside it.",

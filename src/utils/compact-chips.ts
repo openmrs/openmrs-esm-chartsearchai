@@ -66,6 +66,52 @@ function findingsACheckNamed(limits: AiAnswerLimits): Set<number> | null {
 }
 
 /**
+ * The finding records the answer's own markers cite, by key: a `safety_finding` reference the
+ * answer marks inline. One reading for {@link compactChips} and {@link notInTheAnswer}, so a chip
+ * cannot be both cited and not.
+ */
+function citedFindingRecords(answer: string, references: AiReference[]): Map<string, number[]> {
+  const cited = new Set<number>();
+  for (const match of answer.matchAll(citationGroupPattern())) {
+    for (const index of parseCitationIndices(match[1])) cited.add(index);
+  }
+  const records = new Map<string, number[]>();
+  for (const ref of references) {
+    if (ref?.resourceType !== 'safety_finding' || !cited.has(ref.index)) continue;
+    records.set(ref.resourceUuid, [...(records.get(ref.resourceUuid) ?? []), ref.index]);
+  }
+  return records;
+}
+
+/**
+ * The positions in `warnings` of chips the answer does not cite that are about the drug proposed
+ * against a drug the question only LISTS — an interaction naming no order of hers (`namedPartners`
+ * empty: a finding relating two drugs the question names) whose subject is not one of her
+ * prescriptions (`aboutAnotherOfHerMedications`). Such a finding rests on what the question names
+ * rather than on her orders, so the panel draws it on one line marked as not in the answer, its
+ * detail behind a toggle. A finding against one of her own orders the answer leaves out is never
+ * one of these: that is the finding a clinician must not have to go looking for.
+ */
+export function notInTheAnswer(answer: string, references: AiReference[], warnings: AiSafetyWarning[]): Set<number> {
+  const positions = new Set<number>();
+  if (!answer || !Array.isArray(references) || !Array.isArray(warnings)) return positions;
+  const cited = new Set<number>([...citedFindingRecords(answer, references).values()].flat());
+  warnings.forEach((warning, position) => {
+    if (
+      warning?.type === 'interaction' &&
+      Array.isArray(warning.namedPartners) &&
+      warning.namedPartners.length === 0 &&
+      warning.aboutAnotherOfHerMedications !== true &&
+      typeof warning.findingCitation === 'number' &&
+      !cited.has(warning.findingCitation)
+    ) {
+      positions.add(position);
+    }
+  });
+  return positions;
+}
+
+/**
  * The positions in `warnings` whose chip the answer already carries, so the panel can draw it on
  * one line with its detail behind a toggle instead of repeating the answer's paragraph beside it.
  *
@@ -124,15 +170,7 @@ export function compactChips(
   if (named === null) {
     return compact;
   }
-  const cited = new Set<number>();
-  for (const match of answer.matchAll(citationGroupPattern())) {
-    for (const index of parseCitationIndices(match[1])) cited.add(index);
-  }
-  const citedFindingIndexes = new Map<string, number[]>();
-  for (const ref of references) {
-    if (ref?.resourceType !== 'safety_finding' || !cited.has(ref.index)) continue;
-    citedFindingIndexes.set(ref.resourceUuid, [...(citedFindingIndexes.get(ref.resourceUuid) ?? []), ref.index]);
-  }
+  const citedFindingIndexes = citedFindingRecords(answer, references);
   const keyCounts = new Map<string, number>();
   for (const warning of warnings) {
     if (!warning) continue;
