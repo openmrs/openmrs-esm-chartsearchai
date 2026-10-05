@@ -9,7 +9,7 @@ import {
   type AiSafetyWarning,
   SESSION_EXPIRED_ERROR_CODE,
 } from '../api/chartsearchai';
-import { compactChips, notInTheAnswer } from '../utils/compact-chips';
+import { compactChips, notInTheAnswer, rewordedInTheAnswer } from '../utils/compact-chips';
 import { highlightReference } from '../utils/highlight-reference';
 import {
   citationGroupPattern,
@@ -574,6 +574,33 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     const all = safetyWarnings ?? [];
     return new Set([...notInTheAnswer(answer, references, all)].map((position) => all[position]));
   }, [isLoading, answer, references, safetyWarnings]);
+  // The cited chips whose finding the answer reworded and nothing else flagged, drawn on one line
+  // that says so — see rewordedInTheAnswer. They do not count towards collapsing the box, so the
+  // tag is seen. Never while streaming.
+  const rewordedWarnings = useMemo(() => {
+    if (isLoading) return new Map<AiSafetyWarning, number[]>();
+    const all = safetyWarnings ?? [];
+    const positions = rewordedInTheAnswer(answer, references, all, {
+      misattributedOrderCitations,
+      unstatedFindingSeverities,
+      unfoundedFindingSeverities,
+      unfaithfullyRenderedCitations,
+      cautionLedOverWithholding,
+      interactionClaimPairs,
+    });
+    return new Map([...positions].map(([position, indexes]) => [all[position], indexes]));
+  }, [
+    isLoading,
+    answer,
+    references,
+    safetyWarnings,
+    misattributedOrderCitations,
+    unstatedFindingSeverities,
+    unfoundedFindingSeverities,
+    unfaithfullyRenderedCitations,
+    cautionLedOverWithholding,
+    interactionClaimPairs,
+  ]);
   const [expandedWarnings, setExpandedWarnings] = useState<Set<AiSafetyWarning>>(() => new Set());
 
   // The whole safety box collapses to a summary line only where EVERY chip it draws qualifies for
@@ -635,7 +662,8 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     const { tagType, label } = safetyWarningTag(warning.type, t);
     const endedOn = calendarDay(warning.endedOrderStopDate);
     const absent = !compactWarnings.has(warning) && absentWarnings.has(warning);
-    const compact = compactWarnings.has(warning) || absent;
+    const reworded = !compactWarnings.has(warning) && rewordedWarnings.has(warning);
+    const compact = compactWarnings.has(warning) || absent || reworded;
     const collapsed = compact && !expandedWarnings.has(warning);
     const partners = Array.isArray(warning.namedPartners)
       ? warning.namedPartners.filter((partner) => typeof partner === 'string' && partner.trim())
@@ -667,7 +695,18 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
           {compact && (
             <>
               {' '}
-              {absent ? (
+              {reworded ? (
+                <span
+                  className={styles.statedInAnswerTag}
+                  title={t(
+                    'rewordedInTheAnswerTitle',
+                    'The answer cites this finding at {{markers}} and reworded it: it reproduces the record and then says something different inside the same sentence. Open the detail to compare it with the record’s own words.',
+                    { markers: (rewordedWarnings.get(warning) ?? []).map((index) => `[${index}]`).join(', ') },
+                  )}
+                >
+                  {t('rewordedInTheAnswer', 'Reworded in the answer, compare')}
+                </span>
+              ) : absent ? (
                 <span
                   className={styles.statedInAnswerTag}
                   title={t(

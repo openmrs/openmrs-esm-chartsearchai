@@ -84,6 +84,40 @@ function citedFindingRecords(answer: string, references: AiReference[]): Map<str
 }
 
 /**
+ * The positions in `warnings` of chips the answer cites that the answer reworded and nothing else
+ * flagged: the chip names its own record, the answer cites it, `unfaithfullyRenderedCitations`
+ * names it, and no other per-finding check nor any answer-wide one does. The panel draws such a
+ * chip on one line tagged as reworded, the record's own words one click away, rather than in full
+ * beside the reworded prose. Its markers are the ones the answer cites it at.
+ */
+export function rewordedInTheAnswer(
+  answer: string,
+  references: AiReference[],
+  warnings: AiSafetyWarning[],
+  limits: AiAnswerLimits,
+): Map<number, number[]> {
+  const reworded = new Map<number, number[]>();
+  if (!answer || !Array.isArray(references) || !Array.isArray(warnings) || !noAnswerWideCheckFired(limits)) {
+    return reworded;
+  }
+  const unfaithful = new Set<number>(
+    Array.isArray(limits.unfaithfullyRenderedCitations) ? limits.unfaithfullyRenderedCitations : [],
+  );
+  const otherwiseNamed = new Set<number>();
+  for (const finding of [...(limits.unfoundedFindingSeverities ?? []), ...(limits.cautionLedOverWithholding ?? [])]) {
+    if (finding && typeof finding.citation === 'number') otherwiseNamed.add(finding.citation);
+  }
+  const cited = new Set<number>([...citedFindingRecords(answer, references).values()].flat());
+  warnings.forEach((warning, position) => {
+    const own = warning?.findingCitation;
+    if (typeof own === 'number' && cited.has(own) && unfaithful.has(own) && !otherwiseNamed.has(own)) {
+      reworded.set(position, [own]);
+    }
+  });
+  return reworded;
+}
+
+/**
  * The positions in `warnings` of chips the answer does not cite that are about the drug proposed
  * against a drug the question only LISTS — an interaction naming no order of hers (`namedPartners`
  * empty: a finding relating two drugs the question names) whose subject is not one of her

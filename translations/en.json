@@ -47,6 +47,8 @@
   "referenceMaterialLabel": "Reference material",
   "references": "References",
   "referenceSourceHover": "Source: {{source}}",
+  "rewordedInTheAnswer": "Reworded in the answer, compare",
+  "rewordedInTheAnswerTitle": "The answer cites this finding at {{markers}} and reworded it: it reproduces the record and then says something different inside the same sentence. Open the detail to compare it with the record’s own words.",
   "safetyChecks": "Safety checks",
   "safetyChecksCitedInTheAnswer_one": "{{count}} finding, cited in the answer",
   "safetyChecksCitedInTheAnswer_other": "{{count}} findings, each cited in the answer",

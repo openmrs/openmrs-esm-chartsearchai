@@ -2036,9 +2036,9 @@ describe('AiResponsePanel chips naming their own record', () => {
     expect(screen.queryByText(/See \[46\]/)).not.toBeInTheDocument();
   });
 
-  // A check that names a finding keeps that chip in full; a rating the answer left unstated does
-  // not, the one-line chip stating it; a chip the answer does not cite stays in full whatever the
-  // checks say.
+  // A rating the answer left unstated does not keep a chip open, the one-line chip stating it; a
+  // finding the answer reworded is on one line that says so; a chip the answer does not cite, about
+  // her own order, stays in full whatever the checks say.
   it('folds a cited chip no check named, keeping the named and the uncited ones in full', () => {
     renderResponse(NAMED_CHECKS_RESPONSE);
     const rows = chipRows();
@@ -2047,10 +2047,8 @@ describe('AiResponsePanel chips naming their own record', () => {
       'Fluconazole interacts with Ritonavir, also named in the question (Minor) See [62] in the answer',
     );
     expect(row('Sulfamethoxazole')).toHaveTextContent('(Minor) See [63] in the answer');
-    expect(row('Lopinavir')).toHaveTextContent(
-      'Lopinavir in combination with ritonavir may cause dose-related prolongation',
-    );
-    expect(row('Lopinavir')).not.toHaveTextContent(/See \[/);
+    expect(row('Lopinavir')).toHaveTextContent('(Moderate) Reworded in the answer, compare');
+    expect(row('Lopinavir')).not.toHaveTextContent('prolongation');
     expect(row('Lidocaine')).toHaveTextContent(
       'Coadministration with fluconazole may increase the plasma concentrations',
     );
@@ -2082,15 +2080,34 @@ describe('AiResponsePanel chips naming their own record', () => {
       'Fluconazole interacts with Ritonavir, also named in the question (Minor) Not in the answer',
     );
     expect(ritonavir).not.toHaveTextContent('The coadministration with fluconazole');
-    expect(rows.find((row) => row.textContent?.includes('Lopinavir'))).toHaveTextContent(
-      'prolongation of the QT interval',
-    );
   });
 
   it('still draws in full an unmentioned finding against one of her own orders', () => {
     renderResponse({ ...LISTED_DRUG_NOT_IN_ANSWER_RESPONSE, findingsStatedByTheModule: [] });
     expect(chipRows().find((row) => row.textContent?.includes('Lidocaine'))).toHaveTextContent(
       'Coadministration with fluconazole may increase the plasma concentrations',
+    );
+  });
+
+  // A cited finding the answer reworded is drawn on one line that says so, rather than in full; the
+  // record's own words are one click away, and the box stays open so the tag is seen.
+  it('folds a cited finding the answer reworded, tagged to compare', () => {
+    renderResponse(LISTED_DRUG_NOT_IN_ANSWER_RESPONSE);
+    const lopinavir = chipRows().find((row) => row.textContent?.includes('Lopinavir'));
+    expect(lopinavir).toHaveTextContent(
+      'Fluconazole interacts with Lopinavir, also named in the question (Moderate) Reworded in the answer, compare',
+    );
+    expect(lopinavir).not.toHaveTextContent('prolongation of the QT interval');
+    expect(screen.queryByRole('button', { name: 'Show safety checks' })).not.toBeInTheDocument();
+  });
+
+  it('still draws in full a reworded finding another check also names', () => {
+    renderResponse({
+      ...LISTED_DRUG_NOT_IN_ANSWER_RESPONSE,
+      unfoundedFindingSeverities: [{ citation: 57, rating: 'Major' }],
+    });
+    expect(chipRows().find((row) => row.textContent?.includes('Lopinavir'))).toHaveTextContent(
+      'prolongation of the QT interval',
     );
   });
 
