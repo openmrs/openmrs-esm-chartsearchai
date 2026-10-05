@@ -16,6 +16,7 @@ import {
   RIFAMPICIN_CHIPS_NAMING_THEIR_RECORDS,
 } from '../__fixtures__/finding-citation-responses';
 import { MODULE_CAUTION_ANSWER } from '../__fixtures__/module-caution-answer-response';
+import { NAMED_CHECKS_RESPONSE } from '../__fixtures__/named-checks-response';
 import {
   ALLERGY_TO_A_CURRENT_MEDICATION,
   ALLERGY_TO_A_PROPOSED_DRUG,
@@ -1356,7 +1357,6 @@ describe('AiResponsePanel chip the answer already cites', () => {
 
   it.each([
     ['misattributedOrderCitations', [46]],
-    ['unstatedFindingSeverities', [46]],
     ['unfoundedFindingSeverities', [{ citation: 46, rating: 'Major' }]],
     ['unfaithfullyRenderedCitations', [46]],
     ['cautionLedOverWithholding', [{ citation: 46, rating: 'Major' }]],
@@ -1366,6 +1366,14 @@ describe('AiResponsePanel chip the answer already cites', () => {
     renderAspirin({ [key]: value });
     expect(chipItems()[0]).toHaveTextContent(DROPPED_SENTENCE);
     expect(screen.queryByRole('button', { name: 'Show details' })).not.toBeInTheDocument();
+  });
+
+  // A rating the answer left unstated does not keep its chip open: the one-line chip states it.
+  it('folds the chip where unstatedFindingSeverities names it, the line stating the rating', () => {
+    renderAspirin({ unstatedFindingSeverities: [{ citation: 46, rating: 'Minor' }] });
+    openSafetyChecks();
+    expect(chipItems()[0]).toHaveTextContent('Acetylsalicylic acid (aspirin) — Metoclopramide (Minor)');
+    expect(chipItems()[0]).toHaveTextContent('See [46] in the answer');
   });
 
   it.each([
@@ -2019,6 +2027,31 @@ describe('AiResponsePanel chips naming their own record', () => {
     renderResponse({ ...MODULE_CAUTION_ANSWER, answeredByTheModule: false });
     expect(screen.queryByRole('button', { name: 'Show safety checks' })).not.toBeInTheDocument();
     expect(screen.queryByText(/See \[46\]/)).not.toBeInTheDocument();
+  });
+
+  // A check that names a finding keeps that chip in full; a rating the answer left unstated does not, the
+  // one-line chip stating it; a chip the answer does not cite stays in full whatever the checks say.
+  it('folds a cited chip no check named, keeping the named and the uncited ones in full', () => {
+    renderResponse(NAMED_CHECKS_RESPONSE);
+    const rows = chipRows();
+    const row = (finding: string) => rows.find((r) => r.textContent?.includes(finding));
+    expect(row('Ritonavir')).toHaveTextContent(
+      'Fluconazole interacts with Ritonavir, also named in the question (Minor) See [62] in the answer',
+    );
+    expect(row('Sulfamethoxazole')).toHaveTextContent('(Minor) See [63] in the answer');
+    expect(row('Lopinavir')).toHaveTextContent(
+      'Lopinavir in combination with ritonavir may cause dose-related prolongation',
+    );
+    expect(row('Lopinavir')).not.toHaveTextContent(/See \[/);
+    expect(row('Lidocaine')).toHaveTextContent(
+      'Coadministration with fluconazole may increase the plasma concentrations',
+    );
+    expect(row('Lidocaine')).not.toHaveTextContent(/See \[/);
+  });
+
+  it('still draws every chip in full where a per-finding check stated no measurement', () => {
+    renderResponse({ ...NAMED_CHECKS_RESPONSE, unstatedFindingSeverities: null });
+    expect(screen.queryByText(/See \[\d+\]/)).not.toBeInTheDocument();
   });
 
   it('draws a chip in full whose record the answer does not cite', () => {
