@@ -464,6 +464,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   interactionClaimPairs,
   unsupportedEndedOrderClaims,
   unstatedSignificanceQualifiers,
+  answeredByTheModule,
   questionId,
   error,
   isLoading,
@@ -545,6 +546,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
       unfaithfullyRenderedCitations,
       cautionLedOverWithholding,
       interactionClaimPairs,
+      answeredByTheModule,
     });
     return new Map([...positions].map(([position, indexes]) => [all[position], indexes]));
   }, [
@@ -558,6 +560,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     unfaithfullyRenderedCitations,
     cautionLedOverWithholding,
     interactionClaimPairs,
+    answeredByTheModule,
   ]);
   const [expandedWarnings, setExpandedWarnings] = useState<Set<AiSafetyWarning>>(() => new Set());
 
@@ -650,10 +653,17 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
               {' '}
               <span
                 className={styles.statedInAnswerTag}
-                title={t(
-                  'seeMarkerInTheAnswerTitle',
-                  'The answer cites this finding at that marker, and the module’s checks of how it was rendered found nothing, so its detail is collapsed rather than repeated. The answer may still word it differently or leave part of it out; open the detail to read the finding in full.',
-                )}
+                title={
+                  answeredByTheModule === true
+                    ? t(
+                        'seeMarkerInTheModulesAnswerTitle',
+                        'The answer states this finding briefly at that marker; open the detail to read it in full.',
+                      )
+                    : t(
+                        'seeMarkerInTheAnswerTitle',
+                        'The answer cites this finding at that marker, and the module’s checks of how it was rendered found nothing, so its detail is collapsed rather than repeated. The answer may still word it differently or leave part of it out; open the detail to read the finding in full.',
+                      )
+                }
               >
                 {t('seeMarkerInTheAnswer', 'See {{markers}} in the answer', {
                   markers: (compactWarnings.get(warning) ?? []).map((index) => `[${index}]`).join(', '),
