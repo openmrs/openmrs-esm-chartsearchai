@@ -657,6 +657,7 @@ describe('useChartSearchAi answer-limit measurements', () => {
     unstatedSignificanceQualifiers: [46],
     answeredByTheModule: true,
     findingsStatedByTheModule: [55],
+    asksWhetherSheHasTakenADrug: true,
   };
 
   it('lists every key the merge carries', () => {

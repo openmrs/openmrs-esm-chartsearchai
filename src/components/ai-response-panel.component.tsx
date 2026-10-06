@@ -466,6 +466,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   unstatedSignificanceQualifiers,
   answeredByTheModule,
   findingsStatedByTheModule,
+  asksWhetherSheHasTakenADrug,
   questionId,
   error,
   isLoading,
@@ -612,13 +613,18 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   // of its own: still in the box and one click away, but it neither keeps the box open nor sits
   // among the findings about that drug. Only `true` moves a chip; `false` is no claim it is about
   // the drug in question.
+  // A question asking whether she has ever taken a drug (backend asksWhetherSheHasTakenADrug,
+  // ADR Decision 156) draws every chip apart: they are about that drug's place in her chart, not
+  // a reading of the question.
+  const historyQuestion = asksWhetherSheHasTakenADrug === true;
   const mainWarnings = useMemo(
-    () => shownSafetyWarnings.filter((warning) => !isApartFromTheDrugAsked(warning)),
-    [shownSafetyWarnings],
+    () => (historyQuestion ? [] : shownSafetyWarnings.filter((warning) => !isApartFromTheDrugAsked(warning))),
+    [shownSafetyWarnings, historyQuestion],
   );
   const otherWarnings = useMemo(
-    () => shownSafetyWarnings.filter((warning) => isApartFromTheDrugAsked(warning)),
-    [shownSafetyWarnings],
+    () =>
+      historyQuestion ? shownSafetyWarnings : shownSafetyWarnings.filter((warning) => isApartFromTheDrugAsked(warning)),
+    [shownSafetyWarnings, historyQuestion],
   );
   // The line says the patient takes them only where every chip behind it is one of her own
   // prescriptions.
@@ -1012,15 +1018,20 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
           {otherWarnings.length > 0 && (
             <>
               <span className={styles.otherMedicationsLine}>
-                {otherWarningsAreHerMedications
-                  ? t('otherMedicationFindings', '{{count}} finding about another of this patient’s medications', {
+                {historyQuestion
+                  ? t('historyQuestionFindings', '{{count}} finding about this patient’s medications', {
                       count: otherWarnings.length,
-                      defaultValue_other: '{{count}} findings about other medications this patient takes',
+                      defaultValue_other: '{{count}} findings about this patient’s medications',
                     })
-                  : t('notAboutTheDrugAsked', '{{count}} finding not about the drug asked about', {
-                      count: otherWarnings.length,
-                      defaultValue_other: '{{count}} findings not about the drug asked about',
-                    })}{' '}
+                  : otherWarningsAreHerMedications
+                    ? t('otherMedicationFindings', '{{count}} finding about another of this patient’s medications', {
+                        count: otherWarnings.length,
+                        defaultValue_other: '{{count}} findings about other medications this patient takes',
+                      })
+                    : t('notAboutTheDrugAsked', '{{count}} finding not about the drug asked about', {
+                        count: otherWarnings.length,
+                        defaultValue_other: '{{count}} findings not about the drug asked about',
+                      })}{' '}
                 <button
                   type="button"
                   className={styles.detailsToggle}
