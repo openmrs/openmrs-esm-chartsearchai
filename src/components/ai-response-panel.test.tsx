@@ -19,6 +19,7 @@ import { MODULE_CAUTION_ANSWER } from '../__fixtures__/module-caution-answer-res
 import { NAMED_CHECKS_RESPONSE } from '../__fixtures__/named-checks-response';
 import { MODULE_STATED_FINDING_RESPONSE } from '../__fixtures__/module-stated-finding-response';
 import { LISTED_DRUG_NOT_IN_ANSWER_RESPONSE } from '../__fixtures__/listed-drug-not-in-answer-response';
+import { METOCLOPRAMIDE_HISTORY_QUESTION } from '../__fixtures__/history-question-response';
 import {
   ALLERGY_TO_A_CURRENT_MEDICATION,
   ALLERGY_TO_A_PROPOSED_DRUG,
@@ -2123,5 +2124,55 @@ describe('AiResponsePanel chips naming their own record', () => {
     renderResponse(FLUCONAZOLE_CHIPS_NAMING_THEIR_RECORDS, safetyWarnings);
     expect(screen.queryByRole('button', { name: 'Show safety checks' })).not.toBeInTheDocument();
     expect(screen.queryByText(/See \[\d+\]/)).not.toBeInTheDocument();
+  });
+});
+
+describe('AiResponsePanel chips beside a question whether she has ever taken a drug', () => {
+  // Backend ADR Decision 156: the chip is about the drug asked, a medication she takes, so
+  // without the key it is drawn red and open among the findings about that drug.
+  const CHIP = /Metoclopramide interacts with active order Lidocaine — Major/;
+  const LINE = /^1 finding about this patient’s medications/;
+
+  function renderHistory(overrides: Record<string, unknown> = {}) {
+    const response = { ...METOCLOPRAMIDE_HISTORY_QUESTION, ...overrides };
+    return render(
+      <AiResponsePanel
+        {...(response as object)}
+        answer={response.answer as string}
+        references={response.references as unknown as AiReference[]}
+        safetyWarnings={response.safetyWarnings as unknown as AiSafetyWarning[]}
+        questionId={response.questionId as string}
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+  }
+
+  const safetySection = () =>
+    screen.getByText((_content, element) =>
+      Boolean(element?.className?.includes?.('safetyWarningsSection') && element?.tagName === 'DIV'),
+    );
+
+  it('draws every chip neutral and collapsed behind a line of its own', () => {
+    renderHistory();
+    expect(screen.getByText(LINE)).toBeInTheDocument();
+    expect(screen.queryByText(CHIP)).not.toBeInTheDocument();
+    expect(safetySection().className).toContain('safetyWarningsSectionNeutral');
+  });
+
+  it('opens them on a click', () => {
+    renderHistory();
+    fireEvent.click(within(screen.getByText(LINE)).getByRole('button', { name: 'Show details' }));
+    expect(screen.getByText(CHIP)).toBeInTheDocument();
+  });
+
+  it('draws the chip as before where the key is false, absent, or not the boolean true', () => {
+    for (const value of [false, undefined, 'true']) {
+      const { unmount } = renderHistory({ asksWhetherSheHasTakenADrug: value });
+      expect(screen.queryByText(LINE)).not.toBeInTheDocument();
+      expect(safetySection().className).not.toContain('safetyWarningsSectionNeutral');
+      unmount();
+    }
   });
 });

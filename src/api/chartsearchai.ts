@@ -429,6 +429,12 @@ export interface AiSearchResponse {
    * it. `[]` stated none; `null` is no measurement, which is every answer the module wrote.
    */
   findingsStatedByTheModule?: number[] | null;
+  /**
+   * `true` where the question asked whether the patient has ever taken one drug (backend
+   * `asksWhetherSheHasTakenADrug`, ADR Decision 156). The chips beside such an answer are about
+   * that drug's place in her chart, not a reading of the question, so they are drawn apart.
+   */
+  asksWhetherSheHasTakenADrug?: boolean | null;
   questionId?: string;
 }
 
@@ -462,6 +468,7 @@ export type AiAnswerLimits = Pick<
   | 'interactionClaimPairs'
   | 'answeredByTheModule'
   | 'findingsStatedByTheModule'
+  | 'asksWhetherSheHasTakenADrug'
 >;
 
 /**
