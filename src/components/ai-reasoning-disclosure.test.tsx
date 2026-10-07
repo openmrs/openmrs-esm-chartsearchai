@@ -43,26 +43,15 @@ describe('AiReasoningDisclosure', () => {
     expect(screen.getByText('Model reasoning')).toHaveAttribute('title', CAVEAT);
   });
 
-  it('draws the caveat as a line of its own while the reasoning streams', () => {
-    // The most exposed moment: the panel is open and streaming before any answer exists, and a
-    // title shows on hover only, so without this line a touch user, or a reader who never hovers,
-    // sees unverified notes with no qualifier on them (openmrs-module-chartsearchai#254).
+  it('draws no caveat line of its own, even while the reasoning streams', () => {
+    // On hover only: the summary's `title` above. A line drawn in the open panel repeated the same
+    // sentence under every answer whose reasoning was open, which the owner ruled is noise; what that
+    // gives up — a reader who never hovers, on the open streaming panel — is the trade they chose
+    // (openmrs-module-chartsearchai#254).
     render(<AiReasoningDisclosure reasoning={TRANSCRIPT} isStreaming />);
 
-    expect(screen.getByText(CAVEAT)).toBeVisible();
     expect(screen.getByText(TRANSCRIPT)).toBeVisible();
-  });
-
-  it('hides the caveat line with the transcript once collapsed, and shows it again on expansion', async () => {
-    // Inside the disclosure, not beside it: it frames the notes, so it is on screen exactly when
-    // they are, and a collapsed row stays one line.
-    render(<AiReasoningDisclosure reasoning={TRANSCRIPT} isStreaming={false} />);
-    expect(screen.getByText(CAVEAT)).not.toBeVisible();
-
-    await userEvent.setup().click(screen.getByText('Model reasoning'));
-
-    expect(screen.getByText(CAVEAT)).toBeVisible();
-    expect(screen.getByText(TRANSCRIPT)).toBeVisible();
+    expect(screen.queryByText(CAVEAT)).not.toBeInTheDocument();
   });
 
   it('collapses itself when the answer starts arriving', () => {

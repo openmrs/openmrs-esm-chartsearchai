@@ -96,16 +96,14 @@ const AiReasoningDisclosure: React.FC<AiReasoningDisclosureProps> = ({ reasoning
     >
       {/* The caveat is on the summary as a native `title`, the same approach the response panel's
           badges use: the summary already has naming content, so per HTML-AAM the title becomes its
-          accessible DESCRIPTION, and hovering the collapsed row shows it. It is also drawn as a
-          line of its own inside the disclosure, so it is on screen whenever the transcript is: a
-          title shows on hover only, and the most exposed moment is the open, streaming panel
-          before any answer exists, when a touch user or a reader who never hovers would otherwise
-          see unverified notes with no qualifier on them (openmrs-module-chartsearchai#254). */}
+          accessible DESCRIPTION, and hovering the row shows it. On hover ONLY: a line drawn inside
+          the open panel repeated the sentence under every answer whose reasoning was open, and the
+          owner ruled that noise. What it gives up is a reader who never hovers — a touch user —
+          seeing the open, streaming panel with no qualifier on it (openmrs-module-chartsearchai#254). */}
       <summary className={styles.summary} title={caveat}>
         <ChevronDown size={16} className={styles.chevron} />
         {t('modelReasoning', 'Model reasoning')}
       </summary>
-      <p className={styles.caveat}>{caveat}</p>
       {/* Capped and scrollable only once settled. While it streams the growth is what the chat
           history's scroll-to-bottom effect follows, and an inner scrollbox would hide the newest
           text behind a scrollbar nothing moves. */}
