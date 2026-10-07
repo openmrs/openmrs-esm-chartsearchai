@@ -81,7 +81,9 @@ profiles for bundled inference. `showModelPicker` defaults to `true`; hiding the
 control still permits discovery of the required default profile.
 
 The conversation panel mounts these controls. Restored history adopts its recorded
-provider; switching providers starts a fresh conversation. An unavailable explicit
+provider; switching providers starts a fresh conversation. The selection and transcript
+change only after that request succeeds. If it fails, the existing provider, conversation
+and active answer remain available. An unavailable explicit
 selection remains visible until the user chooses a supported replacement.
 
 ## API endpoints used

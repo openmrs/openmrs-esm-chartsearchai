@@ -41,7 +41,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({
   const rootRef = useRef<HTMLDivElement>(null);
   const historyAreaRef = useRef<HTMLDivElement>(null);
 
-  const { messages, isAwaitingAnswer, submitQuestion, stopCurrent, startNewChatSession } =
+  const { messages, isAwaitingAnswer, isStartingSession, submitQuestion, stopCurrent, startNewChatSession } =
     useChartSearchAi(patientUuid);
 
   const questionRef = useRef(question);
@@ -233,10 +233,13 @@ const AiChatContent: React.FC<AiChatContentProps> = ({
 
   // A provider switch starts a fresh conversation: the backend attributes each
   // conversation to a single provider and closes it on switch.
-  const handleProviderSwitched = useCallback(() => {
-    if (!patientUuid) return;
-    startNewChatSession(patientUuid);
-  }, [patientUuid, startNewChatSession]);
+  const handleProviderSelected = useCallback(
+    (providerId: string) => {
+      if (!patientUuid) return;
+      startNewChatSession(patientUuid, providerId);
+    },
+    [patientUuid, startNewChatSession],
+  );
 
   return (
     <div
@@ -381,7 +384,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({
       )}
 
       <div className={styles.modelPickerRow}>
-        <ProviderPicker onSwitched={handleProviderSwitched} />
+        <ProviderPicker onSelect={handleProviderSelected} disabled={isStartingSession} />
         <ModelPicker />
       </div>
 

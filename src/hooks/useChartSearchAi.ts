@@ -74,6 +74,7 @@ interface UseChartSearchAiReturn {
    * still streaming in the background.
    */
   isAwaitingAnswer: boolean;
+  isStartingSession: boolean;
   submitQuestion: (patientUuid: string, question: string) => void;
   clearMessages: () => void;
   stopCurrent: () => void;
@@ -81,7 +82,7 @@ interface UseChartSearchAiReturn {
    * Close the current server-side session for this patient and open a
    * fresh one. Use for the "New chat" button.
    */
-  startNewChatSession: (patientUuid: string) => void;
+  startNewChatSession: (patientUuid: string, requestedProviderId?: string) => void;
 }
 
 function generateId(): string {
@@ -346,9 +347,9 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
     }
   }, [patientUuid]);
 
-  const startNewChatSession = useCallback((patientUuid: string) => {
+  const startNewChatSession = useCallback((patientUuid: string, requestedProviderId?: string) => {
     if (sessionStartRef.current) return;
-    const providerId = chatSessionStore.getState().selectedProviderId ?? undefined;
+    const providerId = requestedProviderId ?? chatSessionStore.getState().selectedProviderId ?? undefined;
     setIsStartingSession(true);
     const pending = startNewChat(patientUuid, providerId)
       .then((response) => {
@@ -360,6 +361,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         inFlightMessageIdRef.current = null;
         updateMessages(patientUuid, () => []);
         setSessionUuid(patientUuid, response.session ?? null);
+        chatSessionStore.setState({ selectedProviderId: response.provider ?? providerId ?? null });
       })
       .catch((err) => {
         console.warn('[useChartSearchAi] startNewChat failed', err);
@@ -744,6 +746,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
   return {
     messages,
     isAwaitingAnswer,
+    isStartingSession,
     submitQuestion,
     clearMessages,
     stopCurrent,
