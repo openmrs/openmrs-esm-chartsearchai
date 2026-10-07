@@ -833,6 +833,33 @@ describe('AiResponsePanel safety warnings', () => {
     expect(summary).toHaveTextContent('chartsearchai-cross-reactivity-research-v1 (2) - evidence curated');
   });
 
+  it.each([
+    ['checks_partially_disabled', 'Some medication-safety checks are disabled.'],
+    ['no_applicable_check', 'This answer did not trigger an applicable medication-safety check.'],
+    ['condition_rules_unavailable', 'The reference source has no condition rules for a medication in this check.'],
+    ['interaction_reference_unavailable', 'A medication in this check has no usable interaction reference data.'],
+    ['no_actionable_dose_reference', 'No dose reference could be applied to the available patient context.'],
+    ['dose_not_assessable', 'The answer did not supply a dose and schedule that this check could assess.'],
+    ['weight_unavailable', 'A weight-based dose check could not run because the patient weight was unavailable.'],
+  ])('explains the specific safety limitation %s', (issue, explanation) => {
+    render(
+      <AiResponsePanel
+        answer="Recorded medication."
+        references={[]}
+        safetyWarnings={[]}
+        safetyStatus="limited"
+        safetyCheck={{ status: 'limited', issues: [issue] }}
+        auditLogId={42}
+        error={null}
+        phase="complete"
+        patientUuid={patientUuid}
+      />,
+    );
+    const summary = screen.getByTestId('safety-check-summary');
+    expect(summary).toHaveTextContent(explanation);
+    expect(summary).not.toHaveTextContent('Medication, allergy, or condition context may be incomplete');
+  });
+
   it('explains malformed primary and relationship reference data in plain language', () => {
     render(
       <AiResponsePanel
