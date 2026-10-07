@@ -1,13 +1,41 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { fetchProviders, type ClinicalProviderDescriptor } from '../api/chartsearchai';
+import {
+  chatPatientChartStream,
+  fetchChatHistory,
+  fetchProviders,
+  startNewChat,
+  type ClinicalProviderDescriptor,
+} from '../api/chartsearchai';
+import { useConfig } from '@openmrs/esm-framework';
+import { useChartSearchAi } from '../hooks/useChartSearchAi';
 import { chatSessionStore } from '../store/chat-session.store';
 import ProviderPicker from './provider-picker.component';
 
-vi.mock('../api/chartsearchai', () => ({ fetchProviders: vi.fn() }));
+vi.mock('../api/chartsearchai', () => ({
+  fetchProviders: vi.fn(),
+  fetchChatHistory: vi.fn(),
+  chatPatientChartStream: vi.fn(),
+  startNewChat: vi.fn(),
+}));
 
 const mockFetch = fetchProviders as Mock;
+
+// Exercise the real picker, shared state, history hydration and request selection together.
+// Only the network boundary is mocked; this is not a backend persistence test.
+const ChatWithPicker = () => {
+  const { messages, submitQuestion, startNewChatSession } = useChartSearchAi('patient-uuid');
+  return (
+    <>
+      <ProviderPicker onSelect={(providerId) => startNewChatSession('patient-uuid', providerId)} />
+      {messages.map((message) => (
+        <p key={message.id}>{message.answer}</p>
+      ))}
+      <button onClick={() => submitQuestion('patient-uuid', 'Next question')}>Ask next</button>
+    </>
+  );
+};
 
 const provider = (overrides: Partial<ClinicalProviderDescriptor>): ClinicalProviderDescriptor => ({
   id: 'bundled',
@@ -49,6 +77,9 @@ beforeEach(() => {
     selectedProviderId: null,
   });
   mockFetch.mockReturnValue(new Promise(() => {}));
+  (useConfig as Mock).mockReturnValue({ useStreaming: true, showReasoning: true });
+  (fetchChatHistory as Mock).mockResolvedValue({ session: null, messages: [] });
+  (startNewChat as Mock).mockResolvedValue({ session: 'new-session' });
 });
 
 describe('ProviderPicker', () => {
@@ -75,16 +106,18 @@ describe('ProviderPicker', () => {
     expect(screen.getByRole('menuitemradio', { name: /Med-Agent Hub/i })).toBeInTheDocument();
   });
 
-  it('stores the selected provider and notifies its caller on switch', async () => {
+  it('lets the conversation owner commit the requested provider', async () => {
     mockFetch.mockResolvedValueOnce(DUAL);
-    const onSwitched = vi.fn();
-    render(<ProviderPicker onSwitched={onSwitched} />);
+    const onSelect = vi.fn();
+    render(<ProviderPicker onSelect={onSelect} />);
     await openMenu();
 
     fireEvent.click(screen.getByRole('menuitemradio', { name: /Med-Agent Hub/i }));
 
-    await waitFor(() => expect(chatSessionStore.getState().selectedProviderId).toBe('hub'));
-    expect(onSwitched).toHaveBeenCalledWith('hub');
+    expect(onSelect).toHaveBeenCalledWith('hub');
+    expect(chatSessionStore.getState().selectedProviderId).toBe('bundled');
+    act(() => chatSessionStore.setState({ selectedProviderId: 'hub' }));
+    await screen.findByRole('button', { name: /Med-Agent Hub/i });
   });
 
   it('shows an unavailable provider as disabled, never a silent fallback', async () => {
@@ -151,27 +184,29 @@ describe('ProviderPicker', () => {
         pickerVisible: advertised,
         providers: [provider({}), ...(advertised ? [provider({ id, label, enabled, ready, default: false })] : [])],
       });
-      const onSwitched = vi.fn();
-      render(<ProviderPicker onSwitched={onSwitched} />);
+      const onSelect = vi.fn();
+      render(<ProviderPicker onSelect={onSelect} />);
 
       fireEvent.click(await screen.findByRole('button', { name: `${label} (unavailable)` }));
       expect(chatSessionStore.getState().selectedProviderId).toBe(id);
-      expect(onSwitched).not.toHaveBeenCalled();
+      expect(onSelect).not.toHaveBeenCalled();
       fireEvent.click(screen.getByRole('menuitemradio', { name: /Bundled \(local\)/i }));
+      expect(onSelect).toHaveBeenCalledExactlyOnceWith('bundled');
+      expect(chatSessionStore.getState().selectedProviderId).toBe(id);
+      act(() => chatSessionStore.setState({ selectedProviderId: 'bundled' }));
       expect(chatSessionStore.getState().selectedProviderId).toBe('bundled');
-      expect(onSwitched).toHaveBeenCalledExactlyOnceWith('bundled');
     },
   );
 
   it('does not start a new conversation when re-selecting the current provider', async () => {
     mockFetch.mockResolvedValueOnce(DUAL);
-    const onSwitched = vi.fn();
-    render(<ProviderPicker onSwitched={onSwitched} />);
+    const onSelect = vi.fn();
+    render(<ProviderPicker onSelect={onSelect} />);
     await openMenu();
 
     fireEvent.click(screen.getByRole('menuitemradio', { name: /Bundled \(local\).*default/i }));
 
-    expect(onSwitched).not.toHaveBeenCalled();
+    expect(onSelect).not.toHaveBeenCalled();
   });
   it('ignores an obsolete discovery response after React restarts the effect', async () => {
     let resolveOld: (value: typeof SINGLE) => void;
@@ -189,5 +224,84 @@ describe('ProviderPicker', () => {
     await screen.findByRole('button', { name: /Bundled/ });
     await act(async () => resolveOld(SINGLE));
     expect(screen.getByRole('button', { name: /Bundled/ })).toBeInTheDocument();
+  });
+});
+
+describe('restored conversation provider with the real hook', () => {
+  it.each([true, false])('commits a requested provider only after the new session succeeds (%s)', async (succeed) => {
+    chatSessionStore.setState({ selectedProfileId: 'single-e4b-checked', profileDiscoveryStatus: 'ready' });
+    mockFetch.mockResolvedValueOnce(DUAL);
+    (fetchChatHistory as Mock).mockResolvedValueOnce({
+      session: 'restored-hub-session',
+      provider: 'hub',
+      messages: [
+        { messageId: 'u-1', role: 'user', content: 'Earlier question', createdAt: 1 },
+        { messageId: 'a-1', role: 'assistant', content: 'Existing answer', createdAt: 2 },
+      ],
+    });
+    let resolve!: (value: unknown) => void;
+    let reject!: (error: Error) => void;
+    (startNewChat as Mock).mockReturnValueOnce(
+      new Promise((done, fail) => {
+        resolve = done;
+        reject = fail;
+      }),
+    );
+    render(<ChatWithPicker />);
+    await screen.findByText('Existing answer');
+    fireEvent.click(await screen.findByRole('button', { name: /Med-Agent Hub/i }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Bundled \(local\)/i }));
+    expect(startNewChat).toHaveBeenCalledExactlyOnceWith('patient-uuid', 'bundled');
+    expect(chatSessionStore.getState().selectedProviderId).toBe('hub');
+    expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('restored-hub-session');
+    expect(screen.getByText('Existing answer')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Ask next' }));
+    expect(chatPatientChartStream).not.toHaveBeenCalled();
+    await act(async () => {
+      if (succeed) resolve({ session: 'new-session', provider: 'bundled', messages: [] });
+      else reject(new Error('server unavailable'));
+    });
+    expect(chatSessionStore.getState().selectedProviderId).toBe(succeed ? 'bundled' : 'hub');
+    if (succeed) expect(screen.queryByText('Existing answer')).not.toBeInTheDocument();
+    else expect(screen.getByText('Existing answer')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Ask next' }));
+    const request = (chatPatientChartStream as Mock).mock.calls[0];
+    expect(request[1]).toBe(succeed ? 'new-session' : 'restored-hub-session');
+    expect(request[6]).toBe(succeed ? 'bundled' : 'hub');
+  });
+
+  it('keeps a restored conversation bound to its unavailable provider on the next request', async () => {
+    chatSessionStore.setState({ selectedProfileId: 'single-e4b-checked', profileDiscoveryStatus: 'ready' });
+    mockFetch.mockResolvedValueOnce({
+      ...DUAL,
+      providers: [provider({}), provider({ id: 'hub', label: 'Med-Agent Hub', ready: false, default: false })],
+    });
+    (fetchChatHistory as Mock).mockResolvedValueOnce({
+      session: 'restored-hub-session',
+      provider: 'hub',
+      messages: [
+        { messageId: 'u-1', role: 'user', content: 'Earlier question', createdAt: 1 },
+        { messageId: 'a-1', role: 'assistant', content: 'Existing answer', createdAt: 2 },
+      ],
+    });
+    render(<ChatWithPicker />);
+
+    await screen.findByText('Existing answer');
+    await screen.findByRole('button', { name: /Med-Agent Hub.*unavailable/i });
+    fireEvent.click(screen.getByRole('button', { name: 'Ask next' }));
+    expect(chatPatientChartStream).toHaveBeenCalledOnce();
+    const request = (chatPatientChartStream as Mock).mock.calls[0];
+    expect(request[1]).toBe('restored-hub-session');
+    expect(request[6]).toBe('hub');
+    expect(startNewChat).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /Med-Agent Hub.*unavailable/i }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Bundled \(local\)/i }));
+    await waitFor(() => expect(startNewChat).toHaveBeenCalledExactlyOnceWith('patient-uuid', 'bundled'));
+    await waitFor(() => expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('new-session'));
+    fireEvent.click(screen.getByRole('button', { name: 'Ask next' }));
+    const nextRequest = (chatPatientChartStream as Mock).mock.calls[1];
+    expect(nextRequest[1]).toBe('new-session');
+    expect(nextRequest[6]).toBe('bundled');
   });
 });

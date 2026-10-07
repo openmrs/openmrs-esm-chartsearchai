@@ -14,7 +14,7 @@ A floating AI button appears on the patient chart page. Clicking it opens a sear
 - "Has she ever had a bad reaction to penicillin?"
 - "Is her diabetes getting better or worse?"
 
-The module streams an answer token-by-token (via SSE) with numbered citations (e.g. `[1]`, `[2]`) that link back to the relevant section of the patient chart (Results, Orders, Allergies, etc.).
+The conversation panel returns an answer with numbered citations (e.g. `[1]`, `[2]`) that link to chart records. Bundled inference can show tokens as they arrive; providers that supply only completed answers use the same conversation flow. The selected provider and Hub profile stay explicit.
 
 ### Answer formatting
 
@@ -23,14 +23,14 @@ numbered citations linked to chart records. Citation warnings, omitted severity
 ratings and clinical-significance caveats retain the same meaning in formatted text.
 Streaming answers remain plain text until they finish.
 
-The structured table renderer is also extracted from the integration branch, with
-its existing cell-reference behavior and tests. Connecting those blocks to the
-conversation view belongs to the dependent conversation-lifecycle contribution;
-this change does not activate the staged answer or In-Depth workflow.
+Provider-supplied structured tables, source details and grounding results render with
+the answer. When a provider supplies asynchronous review or In-Depth, their status
+and output remain separate. Original, edited or withheld output stays inspectable
+for manual review. Missing optional sections do not prevent plain-answer display.
 
 ### Model reasoning
 
-The backend streams the model's reasoning before the answer, on its own `thinking` SSE event. The reasoning phase is long and CPU-bound, so the text shows itself while it arrives — a dead spinner says nothing about whether anything is happening — and then **collapses** to a `Model reasoning` row above the answer rather than disappearing. A reader who looked away, or who wants to know how an answer was reached, opens the row; the choice is remembered for the session, so wanting to watch it costs one click rather than one per answer.
+When the selected provider supplies model reasoning, the conversation displays it as it arrives if streaming is enabled. After the answer arrives, the reasoning remains in a collapsed `Model reasoning` disclosure below the answer. The reader's choice to expand it is remembered for the session. With streaming disabled, supplied reasoning appears only after the complete answer arrives. Providers that supply no reasoning still return their supported answer.
 
 It is the model's scratchpad, not a finding: none of it goes through the grounding pass that verifies the answer's citations, and it can state things the answer does not. That caveat is the `Model reasoning` row's tooltip — a native `title`, so it is the summary's accessible description for a screen reader, but it appears on hover only. A touch user, or a reader who never hovers, sees no caveat on the transcript itself and has only the panel's own "AI-generated … verify against the records" disclaimer. The transcript is never copied by the answer's Copy button, never written to browser storage, and is dropped with the chat history at logout. `showReasoning: false` switches it off entirely — nothing is shown, and nothing is retained.
 
@@ -40,10 +40,7 @@ When the backend's optional [drug-reference feature](https://github.com/openmrs/
 
 ## Backend
 
-This frontend requires the [Chart Search AI backend module](https://github.com/openmrs/openmrs-module-chartsearchai), which uses a RAG (Retrieval Augmented Generation) architecture:
-
-1. **Retrieval** -- patient records are embedded with all-MiniLM-L6-v2 (ONNX, CPU) and narrowed to the top-K most relevant via cosine similarity.
-2. **Generation** -- the filtered records are sent to a local GGUF LLM (default: Llama 3.3 8B via llama.cpp) with a system prompt that produces cited, structured answers.
+This frontend requires the [Chart Search AI backend module](https://github.com/openmrs/openmrs-module-chartsearchai). The backend uses QueryStore to retrieve patient-chart evidence and routes the conversation to the explicitly selected provider. Bundled inference supports its configured local or remote model; Med-Agent Hub exposes configured product profiles. The frontend uses the same conversation interface for both and displays the capabilities and output they actually provide.
 
 See the [backend README](https://github.com/openmrs/openmrs-module-chartsearchai#readme) for full setup instructions, model downloads, and global property configuration.
 
@@ -71,22 +68,23 @@ The following options can be set via the OpenMRS 3.x config system:
 | --------------------- | --------- | -------------------------------- | -------------------------------------------------------------------- |
 | `aiSearchPlaceholder` | `string`  | `"Ask AI about this patient..."` | Placeholder text for the search input                                |
 | `maxQuestionLength`   | `number`  | `1000`                           | Maximum characters allowed in a question                             |
-| `useStreaming`        | `boolean` | `true`                           | Use the SSE streaming endpoint for token-by-token responses          |
+| `useStreaming`        | `boolean` | `true`                           | Show incremental answer/reasoning output; false shows the complete answer on the same conversation path |
 | `showReasoning`       | `boolean` | `true`                           | Show the model's reasoning — see [Model reasoning](#model-reasoning) |
 
 ### Provider and profile selection components
 
-The extracted provider selector reads `/providers`, uses the backend's advertised
+The provider selector reads `/providers`, uses the backend's advertised
 default, and keeps an unavailable explicit selection until the user chooses a
 replacement. The Hub profile selector reads `/models`, shows product profiles and
 their availability, and selects the Hub-advertised default. It does not query Hub
 profiles for bundled inference. `showModelPicker` defaults to `true`; hiding the
 control still permits discovery of the required default profile.
 
-These components and discovery calls are prepared for the conversation workflow.
-The current search view does not mount them. Their integration with history,
-new-conversation requests and answer submission belongs to the dependent lifecycle
-change.
+The conversation panel mounts these controls. Restored history adopts its recorded
+provider; switching providers starts a fresh conversation. The selection and transcript
+change only after that request succeeds. If it fails, the existing provider, conversation
+and active answer remain available. An unavailable explicit
+selection remains visible until the user chooses a supported replacement.
 
 ## API endpoints used
 
@@ -94,10 +92,15 @@ All endpoints are served by the backend module under `/ws/rest/v1/chartsearchai/
 
 | Method | Path             | Description                                         |
 | ------ | ---------------- | --------------------------------------------------- |
-| POST   | `/search`        | Synchronous search (returns complete answer)        |
-| POST   | `/search/stream` | SSE streaming search (tokens streamed in real-time) |
+| POST | `/chat/stream` | Conversation answer, optional review/evidence/In-Depth and terminal result |
+| GET | `/chat?patient=<uuid>` | Active conversation history for the current user |
+| POST | `/chat/new` | New conversation for a patient and optional explicit provider |
+| GET | `/providers` | Configured provider capabilities and availability |
+| GET | `/models` | Hub product profiles and availability |
+| POST | `/feedback` | Audit feedback under `questionId`, with rating and optional comment |
 
-Request body: `{ "patient": "<uuid>", "question": "<text>" }`
+Chat request: `{ "patient": "<uuid>", "question": "<text>", "session": "<optional uuid>", "provider": "<optional id>", "profile": "<Hub profile>" }`. Hub requests require a profile.
+The existing `/search` and `/search/stream` clients remain available for their backend contracts; the visible conversation panel uses `/chat/stream`.
 
 Response:
 
@@ -341,10 +344,23 @@ validation and evidence updates, optional In-Depth events, and the final turn re
 Requests carry the patient, new question, optional conversation identifier and
 provider selection; Hub requests require a product profile.
 
-This transport is available for the conversation integration. The current chat
-panel continues to use `/search/stream`; this contribution does not change its
-rendering or session behavior. The existing stream tests and shared conformance
-fixture cover the extracted client contract.
+The conversation panel uses this transport. `useStreaming: false` suppresses
+incremental display while retaining the selected provider/profile, conversation
+identity, history, cancellation and review status. Any supplied enabled reasoning
+is then offered only after the complete answer arrives. The transport still uses
+`/chat/stream`; this display preference does not yet suppress backend token generation.
+A provider that emits no token, reasoning, structured-block, review or In-Depth
+events still delivers its supported complete answer. No alternate provider or
+model is selected to obtain a missing feature.
+
+Stop retains displayed answer or enabled reasoning, drops temporary previews and
+marks unfinished checks and In-Depth as interrupted. Once the direct answer settles,
+a new question may preempt trailing In-Depth. Completed responses do not pull a
+reader away from earlier transcript content. Feedback uses the numeric audit id
+internally and sends the existing backend `questionId` field.
+
+This source requires the corresponding backend conversation endpoints and provider
+contracts. Local component checks do not establish combined runtime acceptance.
 
 ## Conversation history client
 
@@ -358,6 +374,6 @@ provider/profile selections. Logout or a user change clears them together with t
 messages and reasoning-display preference; refreshing the same user's session
 preserves them. These values remain in memory, not browser storage.
 
-These client and state contracts support the later conversation-hook integration.
-The visible panel still uses the existing search workflow; history hydration and
-the New chat control are not activated by this extraction.
+The panel hydrates this history and offers New chat even before the first question.
+An expired or failed turn remains visible with its recorded error, while interrupted
+review or In-Depth is not restored as permanently pending work.

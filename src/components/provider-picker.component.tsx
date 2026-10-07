@@ -7,18 +7,19 @@ import { chatSessionStore } from '../store/chat-session.store';
 import styles from './provider-picker.scss';
 
 interface ProviderPickerProps {
-  /** Called with the newly selected provider id when the user switches provider. */
-  onSwitched?: (providerId: string) => void;
+  /** Request a provider change; the caller commits shared state after opening its conversation. */
+  onSelect?: (providerId: string) => void;
+  disabled?: boolean;
 }
 
 /**
  * Clinical-answer provider picker (bundled local inference vs. the med-agent-hub
  * relay). A single ready provider needs no picker. An unavailable saved selection
  * stays visible so the user can explicitly choose a replacement. The caller starts
- * a fresh conversation through onSwitched because the backend attributes each
+ * a fresh conversation through onSelect because the backend attributes each
  * conversation to a single provider and never silently falls back.
  */
-const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSwitched }) => {
+const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSelect, disabled = false }) => {
   const { t } = useTranslation();
   const { selectedProviderId } = useStore(chatSessionStore);
   const [data, setData] = useState<ProviderListResponse | null>(null);
@@ -72,10 +73,13 @@ const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSwitched }) => {
       if (providerId === effectiveProviderId) {
         return;
       }
-      chatSessionStore.setState({ selectedProviderId: providerId });
-      onSwitched?.(providerId);
+      if (onSelect) {
+        onSelect(providerId);
+      } else {
+        chatSessionStore.setState({ selectedProviderId: providerId });
+      }
     },
-    [effectiveProviderId, onSwitched],
+    [effectiveProviderId, onSelect],
   );
 
   if (!data || (!data.pickerVisible && providerReady)) {
@@ -87,6 +91,7 @@ const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSwitched }) => {
       <div className={styles.triggerRow}>
         <MenuButton
           data-testid="chartsearchai-provider-picker"
+          disabled={disabled}
           label={triggerLabel}
           kind="ghost"
           size="sm"

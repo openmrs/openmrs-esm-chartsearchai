@@ -1,23 +1,36 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConfig, usePatient } from '@openmrs/esm-framework';
-import { Close, Microphone, MicrophoneFilled, Send, StopFilled } from '@carbon/react/icons';
-import { InlineLoading } from '@carbon/react';
+import { Add, Close, Maximize, Microphone, MicrophoneFilled, Minimize, Send, StopFilled } from '@carbon/react/icons';
+import { Button, IconButton, InlineLoading } from '@carbon/react';
 import { useChartSearchAi } from '../hooks/useChartSearchAi';
+import { isAwaitingAnswer as isPhaseAwaiting } from '../hooks/turn-phase';
 import { answerLimitsOf } from '../utils/answer-limits';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { type ChartSearchAiConfig } from '../config-schema';
 import AiReasoningDisclosure from './ai-reasoning-disclosure.component';
 import AiResponsePanel from './ai-response-panel.component';
+import ModelPicker from './model-picker.component';
+import ProviderPicker from './provider-picker.component';
 import styles from './ai-chat-content.scss';
 
 interface AiChatContentProps {
   mode: 'floating' | 'workspace';
   onClose?: () => void;
   patientUuid?: string;
+  /** Floating mode only: whether the panel is maximized to full screen. */
+  isExpanded?: boolean;
+  /** Floating mode only: toggle the maximized state. When omitted, the maximize control is hidden. */
+  onToggleExpand?: () => void;
 }
 
-const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUuid: patientUuidProp }) => {
+const AiChatContent: React.FC<AiChatContentProps> = ({
+  mode,
+  onClose,
+  patientUuid: patientUuidProp,
+  isExpanded = false,
+  onToggleExpand,
+}) => {
   const { t } = useTranslation();
   const config = useConfig<ChartSearchAiConfig>();
   const { patient, isLoading: isPatientLoading } = usePatient();
@@ -28,7 +41,8 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
   const rootRef = useRef<HTMLDivElement>(null);
   const historyAreaRef = useRef<HTMLDivElement>(null);
 
-  const { messages, isAnyLoading, submitQuestion, stopCurrent } = useChartSearchAi(patientUuid);
+  const { messages, isAwaitingAnswer, isStartingSession, submitQuestion, stopCurrent, startNewChatSession } =
+    useChartSearchAi(patientUuid);
 
   const questionRef = useRef(question);
   questionRef.current = question;
@@ -38,14 +52,14 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
       const existing = questionRef.current.trimEnd();
       const fullQuestion = existing ? existing + ' ' + transcript : transcript;
       const trimmed = fullQuestion.trim();
-      if (trimmed && patientUuid && !isAnyLoading) {
+      if (trimmed && patientUuid && !isAwaitingAnswer) {
         submitQuestion(patientUuid, trimmed);
         setQuestion('');
       } else {
         setQuestion(fullQuestion);
       }
     },
-    [patientUuid, isAnyLoading, submitQuestion],
+    [patientUuid, isAwaitingAnswer, submitQuestion],
   );
 
   const {
@@ -61,12 +75,12 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
     (e?: React.FormEvent) => {
       e?.preventDefault();
       const trimmedQuestion = question.trim();
-      if (!trimmedQuestion || !patientUuid || isAnyLoading) return;
+      if (!trimmedQuestion || !patientUuid || isAwaitingAnswer) return;
       clearSpeechError();
       submitQuestion(patientUuid, trimmedQuestion);
       setQuestion('');
     },
-    [question, patientUuid, isAnyLoading, submitQuestion, clearSpeechError],
+    [question, patientUuid, isAwaitingAnswer, submitQuestion, clearSpeechError],
   );
 
   const handleInputKeyDown = useCallback(
@@ -88,7 +102,9 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
         return;
       }
 
-      if (e.key !== 'Tab' || !rootRef.current) return;
+      // The docked panel is non-modal: keyboard users must still be able to reach the patient chart.
+      // Only the expanded panel has a backdrop and traps focus as a modal dialog.
+      if (!isExpanded || e.key !== 'Tab' || !rootRef.current) return;
 
       const focusable = rootRef.current.querySelectorAll<HTMLElement>(
         'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
@@ -106,7 +122,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
         first.focus();
       }
     },
-    [mode, onClose],
+    [isExpanded, mode, onClose],
   );
 
   // Whether the history follows new content to the bottom. Only the reader moves it: a scroll UP that
@@ -146,14 +162,22 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
   const lastMessage = messages.length > 0 ? messages[messages.length - 1] : undefined;
   const lastAnswer = lastMessage?.answer ?? '';
   const lastReasoning = lastMessage?.reasoning ?? '';
-  // Track the preview text so the live preview scrolls into view (same reason as lastReasoning);
-  // it is hidden once committed reasoning or the answer arrives.
   const lastPreliminary = lastMessage?.preliminaryReasoning ?? '';
+  // In-depth arrives after the answer settles; track it so it keeps the transcript scrolled to
+  // the bottom too.
+  const lastInDepth = lastMessage?.inDepth?.answer ?? '';
   useEffect(() => {
     if (historyAreaRef.current && pinnedToBottomRef.current) {
       historyAreaRef.current.scrollTop = historyAreaRef.current.scrollHeight;
     }
-  }, [lastAnswer, lastReasoning, lastPreliminary, isAnyLoading]);
+  }, [
+    lastAnswer,
+    lastReasoning,
+    lastPreliminary,
+    lastInDepth,
+    lastMessage?.phase,
+    lastMessage?.answerValidation?.status,
+  ]);
 
   // When an answer finishes and the reader is still following it, a message taller than the history area
   // is aligned to its TOP, not its bottom: following the stream to the bottom suits text as it arrives,
@@ -163,7 +187,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
   const prevIsAnyLoadingForScrollRef = useRef(false);
   useEffect(() => {
     const el = historyAreaRef.current;
-    if (el && prevIsAnyLoadingForScrollRef.current && !isAnyLoading && pinnedToBottomRef.current) {
+    if (el && prevIsAnyLoadingForScrollRef.current && !isAwaitingAnswer && pinnedToBottomRef.current) {
       const pairs = el.querySelectorAll('[data-message-pair]');
       const last = pairs.length > 0 ? pairs[pairs.length - 1] : null;
       if (last) {
@@ -173,18 +197,20 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
         }
       }
     }
-    prevIsAnyLoadingForScrollRef.current = isAnyLoading;
-  }, [isAnyLoading]);
+    prevIsAnyLoadingForScrollRef.current = isAwaitingAnswer;
+  }, [isAwaitingAnswer]);
 
-  const hasCompletedAnswer = messages.some((m) => !m.isLoading && m.answer);
+  const hasCompletedAnswer = messages.some((m) => !isPhaseAwaiting(m.phase) && m.answer);
 
-  const prevIsAnyLoadingRef = useRef(false);
+  // Return focus to the composer as soon as the answer SETTLES (so the next question can be typed
+  // while in-depth still streams), not after the whole turn (incl. in-depth) finishes.
+  const prevAwaitingRef = useRef(false);
   useEffect(() => {
-    if (prevIsAnyLoadingRef.current && !isAnyLoading) {
+    if (prevAwaitingRef.current && !isAwaitingAnswer) {
       inputRef.current?.focus();
     }
-    prevIsAnyLoadingRef.current = isAnyLoading;
-  }, [isAnyLoading]);
+    prevAwaitingRef.current = isAwaitingAnswer;
+  }, [isAwaitingAnswer]);
 
   const handleMicClick = useCallback(() => {
     if (isListening) {
@@ -198,11 +224,31 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
     inputRef.current?.focus();
   }, []);
 
+  const handleNewChat = useCallback(() => {
+    if (!patientUuid) return;
+    startNewChatSession(patientUuid);
+    setQuestion('');
+    inputRef.current?.focus();
+  }, [patientUuid, startNewChatSession]);
+
+  // A provider switch starts a fresh conversation: the backend attributes each
+  // conversation to a single provider and closes it on switch.
+  const handleProviderSelected = useCallback(
+    (providerId: string) => {
+      if (!patientUuid) return;
+      startNewChatSession(patientUuid, providerId);
+    },
+    [patientUuid, startNewChatSession],
+  );
+
   return (
     <div
-      className={`${styles.chatRoot} ${mode === 'floating' ? styles.chatRootFloating : styles.chatRootWorkspace}`}
+      className={`${styles.chatRoot} ${mode === 'floating' ? styles.chatRootFloating : styles.chatRootWorkspace} ${
+        mode === 'floating' && isExpanded ? styles.chatRootFloatingExpanded : ''
+      }`}
       ref={rootRef}
       role={mode === 'floating' ? 'dialog' : undefined}
+      aria-modal={mode === 'floating' && isExpanded ? true : undefined}
       aria-label={mode === 'floating' ? t('aiChartSearch', 'AI Chart Search') : undefined}
       onKeyDown={handlePanelKeyDown}
     >
@@ -212,9 +258,39 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
             <span className={styles.sparkle}>&#10024;</span>
             {t('aiChartSearch', 'AI Chart Search')}
           </span>
-          <button className={styles.closeButton} onClick={onClose} aria-label={t('close', 'Close')} type="button">
-            <Close size={16} />
-          </button>
+          <span className={styles.panelHeaderActions}>
+            <IconButton
+              kind="ghost"
+              size="sm"
+              align="bottom"
+              label={t('newChat', 'New chat')}
+              onClick={handleNewChat}
+              disabled={!patientUuid}
+            >
+              <Add size={16} />
+            </IconButton>
+            {onToggleExpand && (
+              <IconButton
+                kind="ghost"
+                size="sm"
+                align="bottom"
+                label={isExpanded ? t('restore', 'Restore') : t('maximize', 'Maximize')}
+                onClick={onToggleExpand}
+              >
+                {isExpanded ? <Minimize size={16} /> : <Maximize size={16} />}
+              </IconButton>
+            )}
+            <IconButton kind="ghost" size="sm" align="bottom-end" label={t('close', 'Close')} onClick={onClose}>
+              <Close size={16} />
+            </IconButton>
+          </span>
+        </div>
+      )}
+      {mode === 'workspace' && (
+        <div className={styles.workspaceActions}>
+          <Button kind="ghost" size="sm" renderIcon={Add} onClick={handleNewChat} disabled={!patientUuid}>
+            {t('newChat', 'New chat')}
+          </Button>
         </div>
       )}
 
@@ -237,7 +313,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
           <div key={msg.id} className={styles.messagePair} data-message-pair>
             <div className={styles.questionBubble}>{msg.question}</div>
             <div className={styles.answerBubble}>
-              {msg.isLoading && !msg.answer && (
+              {isPhaseAwaiting(msg.phase) && !msg.answer && (
                 <div>
                   <InlineLoading description={t('thinkingEllipsis', 'Thinking...')} />
                   {/* Provisional preview reasoning, shown only until the committed reasoning/answer
@@ -255,26 +331,36 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
                   )}
                 </div>
               )}
-              {/* Above the answer, which is where the reasoning happened in time, and OUTSIDE
+              <AiResponsePanel
+                answer={msg.answer}
+                references={msg.references}
+                safetyWarnings={msg.safetyWarnings}
+                {...answerLimitsOf(msg)}
+                error={msg.error}
+                phase={msg.phase}
+                safetyStatus={msg.safetyStatus}
+                safetyCheck={msg.safetyCheck}
+                blocks={msg.blocks}
+                confidence={msg.confidence}
+                answerValidation={msg.answerValidation}
+                inDepth={msg.inDepth}
+                auditLogId={msg.auditLogId}
+                resolvedModel={msg.resolvedModel}
+                patientUuid={patientUuid ?? ''}
+                onFeedbackComplete={handleFeedbackComplete}
+              />
+              {/* After the answer so retained working notes do not precede clinical output. Outside
                   AiResponsePanel on purpose: that panel returns early on an error with no answer,
                   and an errored run is the case where "what was it doing?" is worth most.
                   The config test is not the hook's: the hook decides whether reasoning is
                   ingested at all, this decides whether a transcript already on a message —
                   one that predates an operator flipping the flag off — is still offered. */}
               {config.showReasoning && msg.reasoning && (
-                <AiReasoningDisclosure reasoning={msg.reasoning} isStreaming={msg.isLoading && !msg.answer} />
+                <AiReasoningDisclosure
+                  reasoning={msg.reasoning}
+                  isStreaming={isPhaseAwaiting(msg.phase) && !msg.answer}
+                />
               )}
-              <AiResponsePanel
-                answer={msg.answer}
-                references={msg.references}
-                safetyWarnings={msg.safetyWarnings}
-                {...answerLimitsOf(msg)}
-                questionId={msg.questionId}
-                error={msg.error}
-                isLoading={msg.isLoading}
-                patientUuid={patientUuid ?? ''}
-                onFeedbackComplete={handleFeedbackComplete}
-              />
             </div>
           </div>
         ))}
@@ -297,6 +383,11 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
         </p>
       )}
 
+      <div className={styles.modelPickerRow}>
+        <ProviderPicker onSelect={handleProviderSelected} disabled={isStartingSession} />
+        <ModelPicker />
+      </div>
+
       <form className={styles.inputArea} onSubmit={handleSubmit}>
         <input
           ref={inputRef}
@@ -307,10 +398,10 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
           onKeyDown={handleInputKeyDown}
           placeholder={config.aiSearchPlaceholder}
           maxLength={config.maxQuestionLength}
-          disabled={isAnyLoading}
+          disabled={isAwaitingAnswer}
           autoFocus={mode === 'floating'}
         />
-        {isSpeechSupported && !isAnyLoading && (
+        {isSpeechSupported && !isAwaitingAnswer && (
           <button
             className={`${styles.micButton} ${isListening ? styles.micButtonActive : ''}`}
             onClick={handleMicClick}
@@ -322,7 +413,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
             {isListening ? <MicrophoneFilled size={20} /> : <Microphone size={20} />}
           </button>
         )}
-        {isAnyLoading ? (
+        {isAwaitingAnswer ? (
           <button
             className={styles.actionButton}
             onClick={stopCurrent}

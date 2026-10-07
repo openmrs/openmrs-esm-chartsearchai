@@ -20,7 +20,12 @@ function pluralDefault(defaultValue, options) {
 module.exports = {
   ...reactI18next,
   useTranslation: () => ({
-    t: (key, defaultValue, options) => interpolate(pluralDefault(defaultValue, options) ?? key, options),
+    t: (key, defaultValue, options) => {
+      const values = typeof defaultValue === 'object' && defaultValue !== null ? defaultValue : options;
+      const template =
+        typeof defaultValue === 'object' && defaultValue !== null ? defaultValue.defaultValue : defaultValue;
+      return interpolate(pluralDefault(template, values) ?? key, values);
+    },
     i18n: { language: 'en' },
   }),
 };
