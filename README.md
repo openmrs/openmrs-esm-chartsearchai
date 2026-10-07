@@ -16,6 +16,18 @@ A floating AI button appears on the patient chart page. Clicking it opens a sear
 
 The module streams an answer token-by-token (via SSE) with numbered citations (e.g. `[1]`, `[2]`) that link back to the relevant section of the patient chart (Results, Orders, Allergies, etc.).
 
+### Answer formatting
+
+Completed answers render Markdown headings, emphasis, lists and tables while keeping
+numbered citations linked to chart records. Citation warnings, omitted severity
+ratings and clinical-significance caveats retain the same meaning in formatted text.
+Streaming answers remain plain text until they finish.
+
+The structured table renderer is also extracted from the integration branch, with
+its existing cell-reference behavior and tests. Connecting those blocks to the
+conversation view belongs to the dependent conversation-lifecycle contribution;
+this change does not activate the staged answer or In-Depth workflow.
+
 ### Model reasoning
 
 The backend streams the model's reasoning before the answer, on its own `thinking` SSE event. The reasoning phase is long and CPU-bound, so the text shows itself while it arrives — a dead spinner says nothing about whether anything is happening — and then **collapses** to a `Model reasoning` row above the answer rather than disappearing. A reader who looked away, or who wants to know how an answer was reached, opens the row; the choice is remembered for the session, so wanting to watch it costs one click rather than one per answer.
