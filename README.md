@@ -319,3 +319,19 @@ This transport is available for the conversation integration. The current chat
 panel continues to use `/search/stream`; this contribution does not change its
 rendering or session behavior. The existing stream tests and shared conformance
 fixture cover the extracted client contract.
+
+## Conversation history client
+
+`fetchChatHistory` reads the current user's active conversation for a patient.
+An empty history has a null session identifier; reading it does not create a
+conversation. `startNewChat` requests a fresh conversation, optionally for an
+explicit provider. Both calls support cancellation and pass failures to the caller.
+
+The session store carries per-patient conversation identifiers and browser-session
+provider/profile selections. Logout or a user change clears them together with the
+messages and reasoning-display preference; refreshing the same user's session
+preserves them. These values remain in memory, not browser storage.
+
+These client and state contracts support the later conversation-hook integration.
+The visible panel still uses the existing search workflow; history hydration and
+the New chat control are not activated by this extraction.
