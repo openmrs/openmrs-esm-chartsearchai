@@ -536,14 +536,49 @@ describe('AiResponsePanel current-medication chips', () => {
     expect(within(chipRows()[0]).queryByText(MARK)).not.toBeInTheDocument();
   });
 
-  it('draws no safety box at all when the answer states every chip', () => {
+  it('draws no chip when the answer states every chip, and one neutral line saying the check ran', () => {
+    // No box at all read as "no safety check ran". The line is neutral, not the red warning box:
+    // every finding is in the answer just above it.
     renderResponse({
       answer: ANSWER_BY_SUBSTANCE,
       references: FIXTURE_REFERENCES,
       safetyWarnings: [{ ...TAKEN, statedInTheAnswer: true }],
     });
     expect(chipRows()).toHaveLength(0);
-    expect(screen.queryByText('Safety checks:')).not.toBeInTheDocument();
+    const section = screen.getByText((_content, element) =>
+      Boolean(element?.className?.includes?.('safetyWarningsSection') && element?.tagName === 'DIV'),
+    );
+    expect(section).toHaveClass('safetyWarningsSectionNeutral');
+    expect(within(section).getByText('1 finding, stated above')).toBeInTheDocument();
+    expect(screen.getByText('Safety checks:', { exact: false })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show safety checks' })).not.toBeInTheDocument();
+  });
+
+  it('counts every stated chip in that line', () => {
+    renderResponse({
+      answer: ANSWER_BY_SUBSTANCE,
+      references: FIXTURE_REFERENCES,
+      safetyWarnings: [
+        { ...TAKEN, statedInTheAnswer: true },
+        { ...PROPOSED, statedInTheAnswer: true },
+      ],
+    });
+    expect(chipRows()).toHaveLength(0);
+    expect(screen.getByText('2 findings, all stated above')).toBeInTheDocument();
+  });
+
+  it('says nothing about stated findings while any chip is still drawn', () => {
+    renderResponse({
+      answer: ANSWER_BY_SUBSTANCE,
+      references: FIXTURE_REFERENCES,
+      safetyWarnings: [{ ...TAKEN, statedInTheAnswer: true }, PROPOSED],
+    });
+    expect(screen.queryByText(/stated above/)).not.toBeInTheDocument();
+  });
+
+  it('draws no safety line when there are no findings at all', () => {
+    renderResponse({ answer: ANSWER_BY_SUBSTANCE, references: FIXTURE_REFERENCES, safetyWarnings: [] });
+    expect(screen.queryByText(/Safety checks/)).not.toBeInTheDocument();
   });
 
   it('marks nothing on a chip from a backend that predates the key', () => {
