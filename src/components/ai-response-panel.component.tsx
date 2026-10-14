@@ -179,12 +179,12 @@ function misattributedTitle(t: Translate): string {
 }
 
 /**
- * The text a clinician may open under a reference citation: a DRUG REFERENCE entry's only. That
- * is the one thing the answer leaned on that is shown nowhere else; a safety finding's text is
- * what the answer itself states, so opening it would repeat a sentence just read.
+ * The text a clinician may open under a reference citation, of every kind alike: such a record
+ * lives nowhere a link could go. A safety finding opens too — its text carries what the answer's
+ * one line about it leaves out, such as the interaction's mechanism.
  */
 function openableReferenceText(ref: AiReference): string | null {
-  if (!isReferenceData(ref) || referenceKind(ref) !== 'drug_reference' || typeof ref.referenceText !== 'string') {
+  if (!isReferenceData(ref) || typeof ref.referenceText !== 'string') {
     return null;
   }
   return ref.referenceText.trim() || null;
@@ -210,7 +210,7 @@ function referenceLabel(ref: AiReference, t: Translate): string {
 
 /**
  * What each kind of module-supplied citation IS, shown on both surfaces that carry it — the
- * inline marker's tooltip and an opened drug-reference panel — so a clinician reading the same
+ * inline marker's tooltip and an opened reference panel — so a clinician reading the same
  * citation in two places is never told two different things.
  *
  * Split per kind for the same reason {@link REFERENCE_KIND_LABEL} is. One wording used to serve
@@ -931,7 +931,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
               const sourceTitle = source
                 ? t('referenceSourceHover', 'Source: {{source}}', { source, interpolation: { escapeValue: false } })
                 : undefined;
-              // What a drug-reference citation was checked against, read where a chart citation
+              // What a reference citation was checked against, read where a chart citation
               // would be opened: such a record lives nowhere a link could go.
               const referenceText = url ? null : openableReferenceText(ref);
               const textKey = `${ref.index}:${ref.resourceUuid}`;

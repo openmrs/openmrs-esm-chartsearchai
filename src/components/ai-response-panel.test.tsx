@@ -2320,6 +2320,8 @@ describe('AiResponsePanel chips beside a question whether she has ever taken a d
 });
 
 describe('AiResponsePanel reference-citation text', () => {
+  const FINDING_TEXT =
+    'Safety finding — Mebendazole: Mebendazole interacts with active order Metronidazole — Major. The mechanism is additive toxicity.';
   const ENTRY_TEXT =
     'Mebendazole (ATC P02CA01). Interactions: Metronidazole — Major: risk of Stevens-Johnson syndrome.';
   const references: AiReference[] = [
@@ -2357,7 +2359,7 @@ describe('AiResponsePanel reference-citation text', () => {
       date: '',
       grounded: null,
       group: 'reference',
-      referenceText: 'Safety finding — Mebendazole: Mebendazole interacts with active order Metronidazole — Major.',
+      referenceText: FINDING_TEXT,
     },
   ];
 
@@ -2398,11 +2400,30 @@ describe('AiResponsePanel reference-citation text', () => {
     expect(screen.queryByText('must never be drawn for a chart record')).not.toBeInTheDocument();
   });
 
-  it('does not open a safety finding, whose text the answer itself states', () => {
+  it('opens a safety finding the same way, for the mechanism the answer leaves out', () => {
+    // A finding's text carries what the answer's one line about it does not: on the demo,
+    // "Fluconazole interacts with active order Nevirapine — Moderate." in the answer, and the
+    // CYP450 3A4 mechanism only in the finding.
     renderPanel();
-    expect(screen.queryByRole('button', { name: '[4] Safety finding' })).not.toBeInTheDocument();
-    expect(screen.getByText('[4] Safety finding').tagName).toBe('SPAN');
-    expect(screen.queryByText(/interacts with active order Metronidazole — Major\.$/)).not.toBeInTheDocument();
+    const toggle = screen.getByRole('button', { name: '[4] Safety finding' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    const region = screen.getByRole('region', { name: '[4] Safety finding' });
+    expect(within(region).getByText(FINDING_TEXT)).toBeInTheDocument();
+    expect(
+      within(region).getByText(
+        'The module’s own safety finding, computed from this patient’s chart — not a chart record to open.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps one citation open at a time', () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: '[1] Drug reference' }));
+    fireEvent.click(screen.getByRole('button', { name: '[4] Safety finding' }));
+    expect(screen.getByRole('button', { name: '[1] Drug reference' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText(ENTRY_TEXT)).not.toBeInTheDocument();
+    expect(screen.getByText(FINDING_TEXT)).toBeInTheDocument();
   });
 
   it('draws no second "Reference" pill beside any reference citation', () => {
