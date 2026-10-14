@@ -134,6 +134,12 @@ export interface AiSafetyWarning {
    */
   chartOrderBridges?: AiChartOrderBridge[] | null;
   /**
+   * True when the module found nothing corroborating the chart record behind this finding.
+   * Render a qualification about the module's evidence on the chip, never hide the finding or
+   * suggest it is wrong. False is not a certificate; older backends may omit the key.
+   */
+  restsOnAnUncorroboratedChartMatch?: boolean;
+  /**
    * Whether the module raised this chip from one of the patient's own active orders, so that it is
    * about a medication the patient is already taking rather than a drug a question proposed.
    *

@@ -1428,6 +1428,95 @@ describe('AiResponsePanel chip the answer already cites', () => {
   });
 });
 
+describe('AiResponsePanel uncorroborated chart match qualification', () => {
+  // Constructed contraindication inputs, not live captures: issue #32 and the backend client
+  // contract require an evidence qualification for true, never a doubt about the finding.
+  const QUALIFICATION = 'The module could not confirm this against the chart.';
+  const warning = {
+    type: 'contraindication',
+    drug: 'Fixture drug',
+    detail: 'Backend-supplied contraindication detail.',
+    severity: null,
+    namedPartners: [],
+  };
+
+  const chipItems = () =>
+    screen.queryAllByText((_content, element) => Boolean(element?.className?.includes?.('safetyWarningItem')));
+
+  function renderWarnings(safetyWarnings: unknown[]) {
+    return render(
+      <AiResponsePanel
+        answer="A response without a finding citation."
+        references={[]}
+        safetyWarnings={safetyWarnings as AiSafetyWarning[]}
+        questionId="uncorroborated-chart-match"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+  }
+
+  it('qualifies only the true chip, preserving identical findings and their order', () => {
+    renderWarnings([
+      { ...warning, restsOnAnUncorroboratedChartMatch: false },
+      { ...warning, restsOnAnUncorroboratedChartMatch: true },
+    ]);
+
+    const chips = chipItems();
+    expect(chips).toHaveLength(2);
+    for (const chip of chips) {
+      expect(chip).toHaveTextContent(warning.detail);
+      expect(within(chip).getByText('Contraindication')).toBeVisible();
+    }
+    expect(within(chips[0]).queryByText(QUALIFICATION)).not.toBeInTheDocument();
+    expect(within(chips[1]).getByText(QUALIFICATION)).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Show safety checks' })).not.toBeInTheDocument();
+  });
+
+  it.each([false, undefined, null, 'true'])('adds no qualification for %s', (value) => {
+    renderWarnings([{ ...warning, ...(value === undefined ? {} : { restsOnAnUncorroboratedChartMatch: value }) }]);
+
+    expect(chipItems()).toHaveLength(1);
+    expect(chipItems()[0]).toHaveTextContent(warning.detail);
+    expect(screen.queryByText(QUALIFICATION)).not.toBeInTheDocument();
+  });
+
+  it('shows the qualification on a compact chip before and after opening its detail', () => {
+    // Reuse the captured response's empty fidelity checks for UI mechanics, with a coherent
+    // synthetic contraindication and its own cited record. The captured interaction stays intact.
+    const response = ASPIRIN_CHIP_THE_ANSWER_CITES;
+    render(
+      <AiResponsePanel
+        {...(response as object)}
+        answer="Backend-supplied contraindication detail [46]."
+        references={[
+          { index: 46, resourceType: 'safety_finding', resourceUuid: 'contraindication:Fixture drug', date: '' },
+        ]}
+        safetyWarnings={
+          [{ ...warning, findingCitation: 46, restsOnAnUncorroboratedChartMatch: true }] as AiSafetyWarning[]
+        }
+        questionId="compact-uncorroborated-chart-match"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+    expect(chipItems()).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Show safety checks' }));
+    const chip = chipItems()[0];
+    expect(within(chip).getByText(QUALIFICATION)).toBeVisible();
+    expect(chip).not.toHaveTextContent(warning.detail);
+    expect(within(chip).getByRole('button', { name: 'Show details' })).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(within(chip).getByRole('button', { name: 'Show details' }));
+    expect(chip).toHaveTextContent(warning.detail);
+    expect(within(chip).getByText(QUALIFICATION)).toBeVisible();
+    expect(within(chip).getByRole('button', { name: 'Hide details' })).toHaveAttribute('aria-expanded', 'true');
+  });
+});
+
 /**
  * Where EVERY chip in the safety box qualifies for the one-line form, the box itself collapses to a
  * summary line; one chip that does not keeps the whole box open, since that chip is the one a
