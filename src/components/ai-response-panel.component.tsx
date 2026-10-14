@@ -508,6 +508,34 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     [references],
   );
 
+  // A record the module attached that the answer's prose carries no marker for, keyed to the cited
+  // findings it backs: it is drawn inside those findings' panels rather than as a pill of its own,
+  // whose "source of" tag existed only to explain it. Only where EVERY finding it backs opens, so
+  // the record is never left with nowhere to be shown.
+  const foldedInto = useMemo(() => {
+    const folded = new Map<number, number[]>();
+    if (isLoading || !answer) return folded;
+    const marked = new Set<number>();
+    for (const match of answer.matchAll(citationGroupPattern())) {
+      for (const index of parseCitationIndices(match[1])) marked.add(index);
+    }
+    const all = Array.isArray(references) ? references : [];
+    for (const ref of all) {
+      const findings = attachedForOf(ref, citedFindings);
+      if (findings.length === 0 || marked.has(ref.index)) continue;
+      const opens = findings.every((index) => {
+        const finding = all.find((other) => other.index === index);
+        return Boolean(finding && openableReferenceText(finding));
+      });
+      if (opens) folded.set(ref.index, findings);
+    }
+    return folded;
+  }, [answer, references, citedFindings, isLoading]);
+  const shownReferences = useMemo(
+    () => (Array.isArray(references) ? references : []).filter((ref) => !foldedInto.has(ref.index)),
+    [references, foldedInto],
+  );
+
   const severities = useMemo(
     () => resolveFindingSeverities(answer, references, safetyWarnings ?? [], unstatedFindingSeverities),
     [answer, references, safetyWarnings, unstatedFindingSeverities],
@@ -898,11 +926,11 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
         </div>
       )}
 
-      {references.length > 0 && (
+      {shownReferences.length > 0 && (
         <div className={styles.referencesSection}>
           <span className={styles.referencesLabel}>{t('references', 'References')}:</span>
           <div className={styles.referencesList}>
-            {references.map((ref) => {
+            {shownReferences.map((ref) => {
               const isMisattributed = misattributed.has(ref.index);
               const url = buildReferenceUrl(ref, patientUuid, isMisattributed);
               const referenceData = isReferenceData(ref);
@@ -1049,11 +1077,37 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
             }
             const heading = `[${open.index}] ${referenceLabel(open, t)}`;
             const source = typeof open.source === 'string' && open.source.trim() ? open.source.trim() : null;
+            const basedOn = references.filter((ref) => foldedInto.get(ref.index)?.includes(open.index));
             return (
               <section id={`reference-text-${open.index}`} className={styles.referenceTextPanel} aria-label={heading}>
                 <p className={styles.referenceTextHeading}>{heading}</p>
                 <p className={styles.referenceTextNote}>{referenceTitle(open, t)}</p>
                 <p className={styles.referenceTextBody}>{text}</p>
+                {basedOn.length > 0 && (
+                  <p className={styles.referenceTextNote}>
+                    {t('basedOnRecords', 'Based on the patient’s record:')}
+                    {basedOn.map((ref) => {
+                      const url = buildReferenceUrl(ref, patientUuid, false);
+                      const label = `[${ref.index}] ${ref.resourceType}${ref.date ? ` — ${ref.date}` : ''}`;
+                      return (
+                        <React.Fragment key={ref.index}>
+                          {' '}
+                          {url ? (
+                            <a
+                              className={styles.referenceTag}
+                              href={url}
+                              onClick={(e) => handleReferenceNavigate(e, url, ref)}
+                            >
+                              {label}
+                            </a>
+                          ) : (
+                            <span className={styles.referenceTagInert}>{label}</span>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </p>
+                )}
                 {source && (
                   <p className={styles.referenceTextNote}>
                     {t('referenceSourceHover', 'Source: {{source}}', {

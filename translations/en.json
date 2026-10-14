@@ -10,6 +10,7 @@
   "alreadyPrescribedTitle": "The patient has an active order for this drug, so this finding is about a medication already prescribed, not one being proposed. The drug shown is the substance the module matched that order to, which the order itself may name differently — a brand name, for example.",
   "askAi": "Ask AI",
   "askAiAboutPatient": "Ask AI about this patient",
+  "basedOnRecords": "Based on the patient’s record:",
   "cancel": "Cancel",
   "close": "Close",
   "copy": "Copy",

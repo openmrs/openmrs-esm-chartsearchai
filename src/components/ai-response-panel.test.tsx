@@ -1628,22 +1628,30 @@ describe('AiResponsePanel record the module attached', () => {
       ref.index === 45 ? { ...ref, referenceText: FINDING_45_TEXT } : ref,
     );
 
-  it('opens the finding a record is the source of from its tag', () => {
+  it('folds a record the answer has no marker for into the finding it backs', () => {
+    // The pill and its "source of" tag only explained a record the prose never cites. Inside the
+    // finding's own panel it needs no explaining, and the references row keeps only what the answer
+    // cites.
     renderScreen({ references: withFinding45Text() });
-    const tag = within(chipFor('[3] allergy')).getByRole('button', { name: 'source of [45]' });
-    expect(tag).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByText(FINDING_45_TEXT)).not.toBeInTheDocument();
+    expect(screen.queryByText('[3] allergy')).not.toBeInTheDocument();
+    expect(screen.queryByText('source of [45]')).not.toBeInTheDocument();
 
-    fireEvent.click(tag);
-    expect(tag).toHaveAttribute('aria-expanded', 'true');
-    expect(
-      within(screen.getByRole('region', { name: '[45] Safety finding' })).getByText(FINDING_45_TEXT),
-    ).toBeInTheDocument();
-    // One panel, so the finding's own citation reads open too.
-    expect(screen.getByRole('button', { name: '[45] Safety finding' })).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(screen.getByRole('button', { name: '[45] Safety finding' }));
+    const region = screen.getByRole('region', { name: '[45] Safety finding' });
+    expect(within(region).getByText(FINDING_45_TEXT)).toBeInTheDocument();
+    expect(within(region).getByText('Based on the patient’s record:', { exact: false })).toBeInTheDocument();
+    expect(within(region).getByRole('link', { name: '[3] allergy' })).toHaveAttribute(
+      'href',
+      `/openmrs/spa/patient/${patientUuid}/chart/Allergies`,
+    );
+  });
 
-    fireEvent.click(tag);
-    expect(screen.queryByText(FINDING_45_TEXT)).not.toBeInTheDocument();
+  it('keeps the pill of a record the answer itself marks', () => {
+    renderScreen({
+      references: withFinding45Text(),
+      answer: `${SCREEN_WITH_ATTACHED_ALLERGY_RECORDS.answer}\n- Lidocaine: recorded allergy to this drug [3].`,
+    });
+    expect(chipFor('[3] allergy')).toBeInTheDocument();
   });
 
   it('leaves the tag plain where its finding carries no text to open', () => {
