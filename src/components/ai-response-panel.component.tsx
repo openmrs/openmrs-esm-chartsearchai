@@ -1041,6 +1041,22 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
         </div>
       )}
 
+      {/* Every finding is in the answer's own text, so no chip is drawn (backend ADR Decision 124).
+          Drawing nothing at all read as "no safety check ran", so one neutral line says it did. */}
+      {shownSafetyWarnings.length === 0 && (safetyWarnings ?? []).length > 0 && (
+        <div className={`${styles.safetyWarningsSection} ${styles.safetyWarningsSectionNeutral}`}>
+          <span className={styles.safetyWarningsLabel}>
+            {t('safetyChecks', 'Safety checks')}:{' '}
+            <span className={styles.safetyWarningsSummary}>
+              {t('safetyChecksStatedAbove', '{{count}} finding, stated above', {
+                count: (safetyWarnings ?? []).length,
+                defaultValue_other: '{{count}} findings, all stated above',
+              })}
+            </span>
+          </span>
+        </div>
+      )}
+
       {shownSafetyWarnings.length > 0 && (
         // No live-region role: the panel already sits inside the chat history's role="log" aria-
         // live="polite", which announces this content in order. An assertive role="alert" here
