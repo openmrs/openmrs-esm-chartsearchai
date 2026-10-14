@@ -208,6 +208,20 @@
   color: colors.$gray-70;
 }
 
+// The same tag where it opens the one finding it names: a button, so it drops the browser's own
+// button chrome and reads as the tag it is, with the reference panel's purple for the text it opens.
+.attachedTagOpens {
+  border: none;
+  font-family: inherit;
+  color: colors.$purple-70;
+  cursor: pointer;
+
+  &:hover,
+  &[aria-expanded='true'] {
+    text-decoration: underline;
+  }
+}
+
 // Marks a safety chip raised from one of the patient's own active orders. Teal, not a severity
 // tone: it says what the finding is about, never how much it counts, which the backend does not
 // publish. Inline after the chip's text, so it reads as a note on that finding.

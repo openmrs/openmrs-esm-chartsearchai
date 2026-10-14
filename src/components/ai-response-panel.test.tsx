@@ -1621,6 +1621,44 @@ describe('AiResponsePanel record the module attached', () => {
     }
   });
 
+  /** The fixture's references, with finding [45] carrying its text as the backend now publishes it. */
+  const FINDING_45_TEXT = 'Safety finding — Ibuprofen: the text the cited finding [45] carries.';
+  const withFinding45Text = () =>
+    (SCREEN_WITH_ATTACHED_ALLERGY_RECORDS.references as unknown as AiReference[]).map((ref) =>
+      ref.index === 45 ? { ...ref, referenceText: FINDING_45_TEXT } : ref,
+    );
+
+  it('opens the finding a record is the source of from its tag', () => {
+    renderScreen({ references: withFinding45Text() });
+    const tag = within(chipFor('[3] allergy')).getByRole('button', { name: 'source of [45]' });
+    expect(tag).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText(FINDING_45_TEXT)).not.toBeInTheDocument();
+
+    fireEvent.click(tag);
+    expect(tag).toHaveAttribute('aria-expanded', 'true');
+    expect(
+      within(screen.getByRole('region', { name: '[45] Safety finding' })).getByText(FINDING_45_TEXT),
+    ).toBeInTheDocument();
+    // One panel, so the finding's own citation reads open too.
+    expect(screen.getByRole('button', { name: '[45] Safety finding' })).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(tag);
+    expect(screen.queryByText(FINDING_45_TEXT)).not.toBeInTheDocument();
+  });
+
+  it('leaves the tag plain where its finding carries no text to open', () => {
+    renderScreen();
+    expect(within(chipFor('[3] allergy')).queryByRole('button', { name: 'source of [45]' })).not.toBeInTheDocument();
+    expect(within(chipFor('[3] allergy')).getByText('source of [45]')).toBeInTheDocument();
+  });
+
+  it('leaves the tag plain where it names several findings, since one click cannot open them all', () => {
+    const references = withFinding45Text().map((ref) => (ref.index === 1 ? { ...ref, attachedFor: [45, 46] } : ref));
+    renderScreen({ references });
+    expect(within(chipFor('[1] allergy')).queryByRole('button')).not.toBeInTheDocument();
+    expect(within(chipFor('[1] allergy')).getByText('source of [45], [46]')).toBeInTheDocument();
+  });
+
   it('lists every finding one record backs', () => {
     const references = (SCREEN_WITH_ATTACHED_ALLERGY_RECORDS.references as unknown as AiReference[]).map((ref) =>
       ref.index === 1 ? { ...ref, attachedFor: [45, 46] } : ref,

@@ -995,20 +995,47 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                       tag says what the record is to the answer: the source of the cited findings it
                       backs (`attachedFor`), never who attached it, which a clinician cannot act on.
                       Nothing where the response names no finding for it. */}
-                  {sourceOf.length > 0 && (
-                    <span
-                      className={styles.attachedTag}
-                      title={t(
-                        'sourceOfFindingsTitle',
-                        'The chart record the cited safety finding is based on. The answer has no marker for it, since it cites the finding; opening it goes to the record.',
-                      )}
-                    >
-                      {t('sourceOfFindings', 'source of {{citations}}', {
+                  {sourceOf.length > 0 &&
+                    (() => {
+                      const sourceLabel = t('sourceOfFindings', 'source of {{citations}}', {
                         citations: sourceOf.map((index) => `[${index}]`).join(', '),
                         interpolation: { escapeValue: false },
-                      })}
-                    </span>
-                  )}
+                      });
+                      // One finding with text to open: the tag opens it, as its own citation does. Several
+                      // stay a plain tag, since one click cannot open them all.
+                      const finding =
+                        sourceOf.length === 1 ? references.find((other) => other.index === sourceOf[0]) : undefined;
+                      if (finding && openableReferenceText(finding)) {
+                        const findingKey = `${finding.index}:${finding.resourceUuid}`;
+                        const findingOpen = openReferenceText === findingKey;
+                        return (
+                          <button
+                            type="button"
+                            className={`${styles.attachedTag} ${styles.attachedTagOpens}`}
+                            title={t(
+                              'sourceOfFindingOpensTitle',
+                              'The chart record the cited safety finding is based on. Click to read that finding.',
+                            )}
+                            aria-expanded={findingOpen}
+                            aria-controls={`reference-text-${finding.index}`}
+                            onClick={() => setOpenReferenceText(findingOpen ? null : findingKey)}
+                          >
+                            {sourceLabel}
+                          </button>
+                        );
+                      }
+                      return (
+                        <span
+                          className={styles.attachedTag}
+                          title={t(
+                            'sourceOfFindingsTitle',
+                            'The chart record the cited safety finding is based on. The answer has no marker for it, since it cites the finding; opening it goes to the record.',
+                          )}
+                        >
+                          {sourceLabel}
+                        </span>
+                      );
+                    })()}
                   {badge}
                 </span>
               );
