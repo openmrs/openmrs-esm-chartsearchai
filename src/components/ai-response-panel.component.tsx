@@ -179,16 +179,15 @@ function misattributedTitle(t: Translate): string {
 }
 
 /**
- * Badge for a reference-data citation: reference data, not a grounded/ungrounded patient
- * record, so it gets its own neutral purple "Reference" tag rather than a grounding verdict.
- * Returns the shared {@link GroundedTag} shape so the badge renderer treats it uniformly.
+ * The text a clinician may open under a reference citation: a DRUG REFERENCE entry's only. That
+ * is the one thing the answer leaned on that is shown nowhere else; a safety finding's text is
+ * what the answer itself states, so opening it would repeat a sentence just read.
  */
-function referenceTag(ref: AiReference, t: Translate): GroundedTag {
-  return {
-    type: 'purple',
-    text: t('reference', 'Reference'),
-    title: referenceTitle(ref, t),
-  };
+function openableReferenceText(ref: AiReference): string | null {
+  if (!isReferenceData(ref) || referenceKind(ref) !== 'drug_reference' || typeof ref.referenceText !== 'string') {
+    return null;
+  }
+  return ref.referenceText.trim() || null;
 }
 
 /**
@@ -211,8 +210,8 @@ function referenceLabel(ref: AiReference, t: Translate): string {
 
 /**
  * What each kind of module-supplied citation IS, shown on both surfaces that carry it — the
- * chip's badge and the inline marker — so a clinician hovering the same citation in two places
- * is never told two different things.
+ * inline marker's tooltip and an opened drug-reference panel — so a clinician reading the same
+ * citation in two places is never told two different things.
  *
  * Split per kind for the same reason {@link REFERENCE_KIND_LABEL} is. One wording used to serve
  * all of them, and it was written when the predicate above matched `drug_reference` alone:
@@ -225,7 +224,7 @@ function referenceLabel(ref: AiReference, t: Translate): string {
  * about this patient.
  *
  * This is a difference in WORDING only. Every kind still gets the same treatment the backend
- * requires of the group: no grounding verdict, no navigation target, the same neutral tag. The
+ * requires of the group: no grounding verdict, no navigation target, no badge. The
  * README's "must not treat the `reference`-group types differently" is aimed at a client that
  * keys the badge, the label or the navigation on `resourceType` and drops a type into a default
  * branch — which is why this, like the label map, is a total `Record` with an explicit `other`.
@@ -645,6 +644,9 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   const safetyBoxCollapsible = mainWarnings.length > 0 && mainWarnings.every((warning) => compactWarnings.has(warning));
   const [safetyBoxOpen, setSafetyBoxOpen] = useState(false);
   const [otherMedicationsOpen, setOtherMedicationsOpen] = useState(false);
+  // The reference-group citation whose text is open below the list, one at a time, keyed on its
+  // index AND uuid so a later answer reusing the index does not open a different record.
+  const [openReferenceText, setOpenReferenceText] = useState<string | null>(null);
   const toggleWarning = useCallback((warning: AiSafetyWarning) => {
     setExpandedWarnings((previous) => {
       const next = new Set(previous);
@@ -908,7 +910,9 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
               // Only append the date when there is one — an allergy and a safety finding carry
               // none, and "— null" was reaching the screen.
               const label = `[${ref.index}] ${typeLabel}${ref.date ? ` — ${ref.date}` : ''}`;
-              const g = referenceData ? referenceTag(ref, t) : groundedTag(ref.grounded, t);
+              // A reference citation carries no badge: its label already says what it is, and a
+              // grounding verdict is not published for it.
+              const g = referenceData ? null : groundedTag(ref.grounded, t);
               // Tooltip via a native-title wrapper rather than Tag's deprecated `title` prop.
               // Rendered as a sibling of the link (Carbon Tag is a <div>) so the metadata
               // badge is not nested in, or part of, the navigation click target.
@@ -927,6 +931,11 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
               const sourceTitle = source
                 ? t('referenceSourceHover', 'Source: {{source}}', { source, interpolation: { escapeValue: false } })
                 : undefined;
+              // What a drug-reference citation was checked against, read where a chart citation
+              // would be opened: such a record lives nowhere a link could go.
+              const referenceText = url ? null : openableReferenceText(ref);
+              const textKey = `${ref.index}:${ref.resourceUuid}`;
+              const textOpen = referenceText !== null && openReferenceText === textKey;
               const link = url ? (
                 <a
                   className={styles.referenceTag}
@@ -936,6 +945,17 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                 >
                   {label}
                 </a>
+              ) : referenceText ? (
+                <button
+                  type="button"
+                  className={styles.referenceTagExpandable}
+                  title={sourceTitle}
+                  aria-expanded={textOpen}
+                  aria-controls={`reference-text-${ref.index}`}
+                  onClick={() => setOpenReferenceText(textOpen ? null : textKey)}
+                >
+                  {label}
+                </button>
               ) : (
                 <span
                   className={isMisattributed ? styles.referenceTagMisattributed : styles.referenceTagInert}
@@ -994,6 +1014,30 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
               );
             })}
           </div>
+          {(() => {
+            const open = references.find((ref) => `${ref.index}:${ref.resourceUuid}` === openReferenceText);
+            const text = open ? openableReferenceText(open) : null;
+            if (!open || !text) {
+              return null;
+            }
+            const heading = `[${open.index}] ${referenceLabel(open, t)}`;
+            const source = typeof open.source === 'string' && open.source.trim() ? open.source.trim() : null;
+            return (
+              <section id={`reference-text-${open.index}`} className={styles.referenceTextPanel} aria-label={heading}>
+                <p className={styles.referenceTextHeading}>{heading}</p>
+                <p className={styles.referenceTextNote}>{referenceTitle(open, t)}</p>
+                <p className={styles.referenceTextBody}>{text}</p>
+                {source && (
+                  <p className={styles.referenceTextNote}>
+                    {t('referenceSourceHover', 'Source: {{source}}', {
+                      source,
+                      interpolation: { escapeValue: false },
+                    })}
+                  </p>
+                )}
+              </section>
+            );
+          })()}
         </div>
       )}
 

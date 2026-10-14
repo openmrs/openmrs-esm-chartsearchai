@@ -87,6 +87,12 @@ export interface AiReference {
    * large count normally means the rest are not relevant to this patient.
    */
   withheldInteractions?: number | null;
+  /**
+   * The cited record's text, for a `reference`-group citation only — the drug-reference entry or
+   * module finding the answer was checked against — and null for a chart record, which is opened
+   * by its uuid instead. Absent from a backend that predates the key.
+   */
+  referenceText?: string | null;
 }
 
 /**

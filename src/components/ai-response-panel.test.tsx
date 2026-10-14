@@ -332,8 +332,8 @@ describe('AiResponsePanel drug-reference citations', () => {
     // The reference chip reads "Drug reference" (not the raw resourceType + date).
     const chip = screen.getByText('[6] Drug reference');
     expect(chip.tagName).not.toBe('A');
-    // A distinct "Reference" badge is shown.
-    expect(screen.getByText('Reference')).toBeInTheDocument();
+    // No second "Reference" pill beside it: the label already says what the record is.
+    expect(screen.queryByText('Reference')).not.toBeInTheDocument();
     // The inline citation does not navigate (it is a span, not a link).
     expect(screen.queryByRole('link', { name: '6' })).not.toBeInTheDocument();
   });
@@ -2274,5 +2274,103 @@ describe('AiResponsePanel chips beside a question whether she has ever taken a d
       expect(safetySection().className).not.toContain('safetyWarningsSectionNeutral');
       unmount();
     }
+  });
+});
+
+describe('AiResponsePanel reference-citation text', () => {
+  const ENTRY_TEXT =
+    'Mebendazole (ATC P02CA01). Interactions: Metronidazole — Major: risk of Stevens-Johnson syndrome.';
+  const references: AiReference[] = [
+    {
+      index: 1,
+      resourceType: 'drug_reference',
+      resourceUuid: 'drug_reference:Mebendazole',
+      date: '',
+      grounded: null,
+      group: 'reference',
+      source: 'DDInter 2.0 (via openmrs-ddi-knowledge-base)',
+      referenceText: ENTRY_TEXT,
+    },
+    {
+      index: 2,
+      resourceType: 'order',
+      resourceUuid: 'uuid-202',
+      date: '2025-02-20',
+      grounded: null,
+      group: 'chart',
+      referenceText: 'must never be drawn for a chart record',
+    },
+    {
+      index: 3,
+      resourceType: 'drug_reference',
+      resourceUuid: 'drug_reference:Metronidazole',
+      date: '',
+      grounded: null,
+      group: 'reference',
+    },
+    {
+      index: 4,
+      resourceType: 'safety_finding',
+      resourceUuid: 'interaction:Mebendazole',
+      date: '',
+      grounded: null,
+      group: 'reference',
+      referenceText: 'Safety finding — Mebendazole: Mebendazole interacts with active order Metronidazole — Major.',
+    },
+  ];
+
+  const renderPanel = () =>
+    render(
+      <AiResponsePanel
+        answer="Mebendazole interacts with her Metronidazole [1] [2] [3] [4]."
+        references={references}
+        questionId="q"
+        error={null}
+        isLoading={false}
+        patientUuid={patientUuid}
+      />,
+    );
+
+  it('lets a clinician open and close the text a drug-reference citation was checked against', () => {
+    renderPanel();
+    const toggle = screen.getByRole('button', { name: '[1] Drug reference' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText(ENTRY_TEXT)).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    const region = screen.getByRole('region', { name: '[1] Drug reference' });
+    expect(within(region).getByText(ENTRY_TEXT)).toBeInTheDocument();
+    expect(within(region).getByText('Clinical reference data — not this patient’s record.')).toBeInTheDocument();
+    expect(within(region).getByText('Source: DDInter 2.0 (via openmrs-ddi-knowledge-base)')).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText(ENTRY_TEXT)).not.toBeInTheDocument();
+  });
+
+  it('keeps a chart citation a link and never draws text for it', () => {
+    renderPanel();
+    expect(screen.getByText('[2] order — 2025-02-20').tagName).toBe('A');
+    expect(screen.queryByRole('button', { name: /\[2\]/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('must never be drawn for a chart record')).not.toBeInTheDocument();
+  });
+
+  it('does not open a safety finding, whose text the answer itself states', () => {
+    renderPanel();
+    expect(screen.queryByRole('button', { name: '[4] Safety finding' })).not.toBeInTheDocument();
+    expect(screen.getByText('[4] Safety finding').tagName).toBe('SPAN');
+    expect(screen.queryByText(/interacts with active order Metronidazole — Major\.$/)).not.toBeInTheDocument();
+  });
+
+  it('draws no second "Reference" pill beside any reference citation', () => {
+    renderPanel();
+    expect(screen.queryByText('Reference')).not.toBeInTheDocument();
+  });
+
+  it('leaves a drug-reference citation with no text, from a backend that predates the key, inert', () => {
+    renderPanel();
+    expect(screen.queryByRole('button', { name: '[3] Drug reference' })).not.toBeInTheDocument();
+    expect(screen.getByText('[3] Drug reference').tagName).toBe('SPAN');
   });
 });
