@@ -536,25 +536,31 @@ describe('AiResponsePanel current-medication chips', () => {
     expect(within(chipRows()[0]).queryByText(MARK)).not.toBeInTheDocument();
   });
 
-  it('draws no chip when the answer states every chip, and one neutral line saying the check ran', () => {
-    // No box at all read as "no safety check ran". The line is neutral, not the red warning box:
-    // every finding is in the answer just above it.
+  it('draws the red safety box collapsed when the answer states every chip, and opens it on request', () => {
+    // No box at all read as "no safety check ran", and a grey line read as an all-clear: these are
+    // real findings, only already written in the answer. So the box is the same red one as any
+    // other, collapsed like a box whose chips the answer cites.
     renderResponse({
       answer: ANSWER_BY_SUBSTANCE,
       references: FIXTURE_REFERENCES,
       safetyWarnings: [{ ...TAKEN, statedInTheAnswer: true }],
     });
-    expect(chipRows()).toHaveLength(0);
     const section = screen.getByText((_content, element) =>
       Boolean(element?.className?.includes?.('safetyWarningsSection') && element?.tagName === 'DIV'),
     );
-    expect(section).toHaveClass('safetyWarningsSectionNeutral');
+    expect(section).not.toHaveClass('safetyWarningsSectionNeutral');
     expect(within(section).getByText('1 finding, stated above')).toBeInTheDocument();
-    expect(screen.getByText('Safety checks:', { exact: false })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Show safety checks' })).not.toBeInTheDocument();
+    expect(chipRows()).toHaveLength(0);
+
+    const toggle = screen.getByRole('button', { name: 'Show safety checks' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    expect(screen.getByRole('button', { name: 'Hide safety checks' })).toHaveAttribute('aria-expanded', 'true');
+    expect(chipRows()).toHaveLength(1);
+    expect(chipRows()[0]).toHaveTextContent(TAKEN.detail);
   });
 
-  it('counts every stated chip in that line', () => {
+  it('counts every stated chip in that box and opens every one', () => {
     renderResponse({
       answer: ANSWER_BY_SUBSTANCE,
       references: FIXTURE_REFERENCES,
@@ -563,8 +569,9 @@ describe('AiResponsePanel current-medication chips', () => {
         { ...PROPOSED, statedInTheAnswer: true },
       ],
     });
-    expect(chipRows()).toHaveLength(0);
     expect(screen.getByText('2 findings, all stated above')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show safety checks' }));
+    expect(chipRows()).toHaveLength(2);
   });
 
   it('says nothing about stated findings while any chip is still drawn', () => {

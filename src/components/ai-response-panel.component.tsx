@@ -1041,10 +1041,11 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
         </div>
       )}
 
-      {/* Every finding is in the answer's own text, so no chip is drawn (backend ADR Decision 124).
-          Drawing nothing at all read as "no safety check ran", so one neutral line says it did. */}
+      {/* Every finding is in the answer's own text (backend ADR Decision 124), so none is drawn
+          by default. Drawing no box at all read as "no safety check ran", and a grey line as an
+          all-clear, so this is the same red box as any other, collapsed until opened. */}
       {shownSafetyWarnings.length === 0 && (safetyWarnings ?? []).length > 0 && (
-        <div className={`${styles.safetyWarningsSection} ${styles.safetyWarningsSectionNeutral}`}>
+        <div className={styles.safetyWarningsSection}>
           <span className={styles.safetyWarningsLabel}>
             {t('safetyChecks', 'Safety checks')}:{' '}
             <span className={styles.safetyWarningsSummary}>
@@ -1052,8 +1053,21 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                 count: (safetyWarnings ?? []).length,
                 defaultValue_other: '{{count}} findings, all stated above',
               })}
-            </span>
+            </span>{' '}
+            <button
+              type="button"
+              className={styles.detailsToggle}
+              aria-expanded={safetyBoxOpen}
+              onClick={() => setSafetyBoxOpen((open) => !open)}
+            >
+              {safetyBoxOpen
+                ? t('hideSafetyChecks', 'Hide safety checks')
+                : t('showSafetyChecks', 'Show safety checks')}
+            </button>
           </span>
+          {safetyBoxOpen && (
+            <div className={styles.safetyWarningsList}>{(safetyWarnings ?? []).map(renderWarning)}</div>
+          )}
         </div>
       )}
 
