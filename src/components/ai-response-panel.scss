@@ -34,14 +34,33 @@
     margin-bottom: 0;
   }
 
+  // The shell's Carbon reset sets `ol, ul { list-style: none }` and zeroes table-cell padding.
   ul,
   ol {
     margin: layout.$spacing-02 0;
     padding-left: layout.$spacing-06;
   }
 
+  ul {
+    list-style: disc;
+  }
+
+  ol {
+    list-style: decimal;
+  }
+
   li {
     margin-bottom: layout.$spacing-01;
+  }
+
+  th,
+  td {
+    padding: layout.$spacing-02 layout.$spacing-04 layout.$spacing-02 0;
+    text-align: left;
+  }
+
+  th {
+    font-weight: 600;
   }
 }
 

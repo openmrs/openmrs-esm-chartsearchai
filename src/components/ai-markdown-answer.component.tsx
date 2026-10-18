@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -16,6 +16,16 @@ interface MarkdownAnswerProps {
   decorations?: Pick<CitationContext, 'misattributed' | 'severities' | 'qualified'>;
 }
 
+const REMARK_PLUGINS: React.ComponentProps<typeof ReactMarkdown>['remarkPlugins'] = [
+  [remarkGfm, { singleTilde: false }],
+  remarkBreaks,
+  function disableBlockQuote(this: { data: () => { micromarkExtensions?: Array<Record<string, unknown>> } }) {
+    const data = this.data();
+    data.micromarkExtensions ??= [];
+    data.micromarkExtensions.push({ disable: { null: ['blockQuote'] } });
+  } as never,
+];
+
 /**
  * Render the assistant answer as markdown (the synthesizer emits `**Answer**` / `**In
  * Depth**` headers, bold, lists) WHILE keeping inline `[N]` citation chips. react-markdown
@@ -26,71 +36,81 @@ interface MarkdownAnswerProps {
  */
 const MarkdownAnswer: React.FC<MarkdownAnswerProps> = ({ answer, references, patientUuid, decorations }) => {
   const { t } = useTranslation();
-  const applied: CitationContext = {
-    references,
-    patientUuid,
-    t,
-    misattributed: decorations?.misattributed ?? new Set<number>(),
-    severities: decorations?.severities ?? new Map<number, string>(),
-    qualified: decorations?.qualified ?? new Set<number>(),
-    badged: new Set<number>(),
-    noted: new Set<number>(),
-  };
-  // React may render a Markdown element more than once. Reuse its already decorated
-  // children so the answer-wide deduplication sets do not erase clinical disclosures.
-  const renderedNodes = new WeakMap<object, React.ReactNode>();
-  const cite = (children: React.ReactNode, node?: object): React.ReactNode => {
-    if (node && renderedNodes.has(node)) return renderedNodes.get(node);
-    const rendered = React.Children.map(children, (child) =>
-      typeof child === 'string' ? renderTextWithCitations(child, applied) : child,
-    );
-    if (node) renderedNodes.set(node, rendered);
-    return rendered;
-  };
+  const misattributed = decorations?.misattributed;
+  const severities = decorations?.severities;
+  const qualified = decorations?.qualified;
+  const rendered = useMemo(() => {
+    const applied: CitationContext = {
+      references,
+      patientUuid,
+      t,
+      misattributed: misattributed ?? new Set<number>(),
+      severities: severities ?? new Map<number, string>(),
+      qualified: qualified ?? new Set<number>(),
+      badged: new Set<number>(),
+      noted: new Set<number>(),
+    };
+    // React may render a Markdown element more than once. Reuse its already decorated
+    // children so the answer-wide deduplication sets do not erase clinical disclosures.
+    const renderedNodes = new WeakMap<object, React.ReactNode>();
+    const cite = (children: React.ReactNode, node?: object): React.ReactNode => {
+      if (node && renderedNodes.has(node)) return renderedNodes.get(node);
+      const decorated = React.Children.map(children, (child) =>
+        typeof child === 'string' ? renderTextWithCitations(child, applied) : child,
+      );
+      if (node) renderedNodes.set(node, decorated);
+      return decorated;
+    };
 
-  const linkText = (children: React.ReactNode): string =>
-    React.Children.toArray(children)
-      .map((child) => {
-        if (typeof child === 'string' || typeof child === 'number') return String(child);
-        return React.isValidElement<{ children?: React.ReactNode }>(child) ? linkText(child.props.children) : '';
-      })
-      .join('');
+    const linkText = (children: React.ReactNode): string =>
+      React.Children.toArray(children)
+        .map((child) => {
+          if (typeof child === 'string' || typeof child === 'number') return String(child);
+          return React.isValidElement<{ children?: React.ReactNode }>(child) ? linkText(child.props.children) : '';
+        })
+        .join('');
 
-  // Map every text-bearing element through the citation renderer; headings collapse to a
-  // single subtle heading level (the answer's bold **Answer** / **In Depth** become <strong>).
-  const components: Components = {
-    // Model output must not load images, including URLs that disclose patient context.
-    img: () => null,
-    a: ({ children, href, node }) => {
-      const label = linkText(children);
-      const citation = `[${label}]`;
-      if (citationGroupPattern().exec(citation)?.[0] === citation) {
-        return <>{cite(citation, node)}</>;
-      }
-      return <a href={href}>{children}</a>;
-    },
-    p: ({ children, node }) => <p className={styles.answerParagraph}>{cite(children, node)}</p>,
-    strong: ({ children, node }) => <strong>{cite(children, node)}</strong>,
-    em: ({ children, node }) => <em>{cite(children, node)}</em>,
-    li: ({ children, node }) => <li>{cite(children, node)}</li>,
-    td: ({ children, node }) => <td>{cite(children, node)}</td>,
-    th: ({ children, node }) => <th>{cite(children, node)}</th>,
-    del: ({ children, node }) => <del>{cite(children, node)}</del>,
-    h1: ({ children, node }) => <h4 className={styles.answerHeading}>{cite(children, node)}</h4>,
-    h2: ({ children, node }) => <h4 className={styles.answerHeading}>{cite(children, node)}</h4>,
-    h3: ({ children, node }) => <h4 className={styles.answerHeading}>{cite(children, node)}</h4>,
-    h4: ({ children, node }) => <h4 className={styles.answerHeading}>{cite(children, node)}</h4>,
-    h5: ({ children, node }) => <h4 className={styles.answerHeading}>{cite(children, node)}</h4>,
-    h6: ({ children, node }) => <h4 className={styles.answerHeading}>{cite(children, node)}</h4>,
-  };
+    // Map every text-bearing element through the citation renderer; headings collapse to a
+    // single subtle heading level (the answer's bold **Answer** / **In Depth** become <strong>).
+    const components: Components = {
+      // Model output must not load images, including URLs that disclose patient context.
+      img: () => null,
+      a: ({ children, href, node }) => {
+        const label = linkText(children);
+        const citation = `[${label}]`;
+        if (citationGroupPattern().exec(citation)?.[0] === citation) {
+          return <>{cite(citation, node)}</>;
+        }
+        // A marker inside link text keeps its chip and disclosures; the model-supplied URL is dropped.
+        if (citationGroupPattern().test(label)) {
+          return <>{cite(children, node)}</>;
+        }
+        return <a href={href}>{children}</a>;
+      },
+      code: ({ children, node }) => <code>{cite(children, node)}</code>,
+      p: ({ children, node }) => <p className={styles.answerParagraph}>{cite(children, node)}</p>,
+      strong: ({ children, node }) => <strong>{cite(children, node)}</strong>,
+      em: ({ children, node }) => <em>{cite(children, node)}</em>,
+      li: ({ children, node }) => <li>{cite(children, node)}</li>,
+      td: ({ children, node }) => <td>{cite(children, node)}</td>,
+      th: ({ children, node }) => <th>{cite(children, node)}</th>,
+      del: ({ children, node }) => <del>{cite(children, node)}</del>,
+      h1: ({ children, node }) => <h4 className={styles.answerHeading}>{cite(children, node)}</h4>,
+      h2: ({ children, node }) => <h4 className={styles.answerHeading}>{cite(children, node)}</h4>,
+      h3: ({ children, node }) => <h4 className={styles.answerHeading}>{cite(children, node)}</h4>,
+      h4: ({ children, node }) => <h4 className={styles.answerHeading}>{cite(children, node)}</h4>,
+      h5: ({ children, node }) => <h4 className={styles.answerHeading}>{cite(children, node)}</h4>,
+      h6: ({ children, node }) => <h4 className={styles.answerHeading}>{cite(children, node)}</h4>,
+    };
 
-  return (
-    <div className={styles.markdownAnswer}>
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={components}>
+    return (
+      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components}>
         {answer}
       </ReactMarkdown>
-    </div>
-  );
+    );
+  }, [answer, references, patientUuid, misattributed, severities, qualified, t]);
+
+  return <div className={styles.markdownAnswer}>{rendered}</div>;
 };
 
 export default MarkdownAnswer;

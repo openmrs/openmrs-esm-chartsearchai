@@ -1,6 +1,7 @@
 /* eslint-disable testing-library/no-container, testing-library/no-node-access */
 import React from 'react';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as reactI18next from 'react-i18next';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import MarkdownAnswer from './ai-markdown-answer.component';
 
@@ -48,12 +49,82 @@ describe('MarkdownAnswer', () => {
     ['level-five heading', '##### Record [4]'],
     ['level-six heading', '###### Record [4]'],
     ['strikethrough', '~~Order [4]~~'],
+    ['inline code', 'The finding `interaction [4]` applies.'],
+    ['ordinary link text', 'See [the order [4]](https://example.test/x)'],
   ])('keeps citations navigable in a %s', (_kind, answer) => {
     render(<MarkdownAnswer answer={answer} references={references} patientUuid={patientUuid} />);
     expect(screen.getByRole('link', { name: '4' })).toHaveAttribute(
       'href',
       `/openmrs/spa/patient/${patientUuid}/chart/Orders`,
     );
+  });
+
+  it('retains citation disclosures inside inline code and ordinary link text', () => {
+    render(
+      <MarkdownAnswer
+        answer="See `interaction [4]` and [the order [4]](https://example.test/x)."
+        references={references}
+        patientUuid={patientUuid}
+        decorations={{ misattributed: new Set([4]), severities: new Map([[4, 'Major']]), qualified: new Set([4]) }}
+      />,
+    );
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.getAllByTitle(/module reports that this citation/)).toHaveLength(2);
+    expect(screen.getAllByText('Major')).toHaveLength(1);
+    expect(screen.getAllByText('Clinical significance unknown')).toHaveLength(1);
+  });
+
+  it('keeps single-tilde dose ranges and leading greater-than thresholds literal', () => {
+    const { container } = render(
+      <MarkdownAnswer
+        answer={'Give 5~10 mg now and 20~30 mg later\n\n>1,000,000 copies/mL'}
+        references={[]}
+        patientUuid={patientUuid}
+      />,
+    );
+    expect(container.querySelector('del')).toBeNull();
+    expect(container.querySelector('blockquote')).toBeNull();
+    expect(container).toHaveTextContent('Give 5~10 mg now and 20~30 mg later');
+    expect(container).toHaveTextContent('>1,000,000 copies/mL');
+  });
+
+  it('preserves rendered DOM nodes and focus across rerenders when inputs are unchanged', () => {
+    const stableT = ((_key: string, fallback: string) => fallback) as unknown as ReturnType<
+      typeof reactI18next.useTranslation
+    >['t'];
+    const spy = vi.spyOn(reactI18next, 'useTranslation').mockReturnValue({
+      t: stableT,
+      i18n: { language: 'en' },
+    } as unknown as ReturnType<typeof reactI18next.useTranslation>);
+    try {
+      const misattributed = new Set<number>();
+      const severities = new Map([[4, 'Major']]);
+      const qualified = new Set([4]);
+      const { rerender } = render(
+        <MarkdownAnswer
+          answer="The regimen is outdated [4]."
+          references={references}
+          patientUuid={patientUuid}
+          decorations={{ misattributed, severities, qualified }}
+        />,
+      );
+      const chip = screen.getByRole('link', { name: '4' });
+      chip.focus();
+      expect(chip).toHaveFocus();
+
+      rerender(
+        <MarkdownAnswer
+          answer="The regimen is outdated [4]."
+          references={references}
+          patientUuid={patientUuid}
+          decorations={{ misattributed, severities, qualified }}
+        />,
+      );
+      expect(screen.getByRole('link', { name: '4' })).toBe(chip);
+      expect(chip).toHaveFocus();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('retains upstream severity and significance disclosures once across markdown elements and rerenders', () => {
