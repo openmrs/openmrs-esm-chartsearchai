@@ -3,10 +3,18 @@ import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useConfig, usePatient } from '@openmrs/esm-framework';
+import { warmupPatient } from '../api/chartsearchai';
+import { chatSessionStore } from '../store/chat-session.store';
 import AiSearchButton from './ai-search-button.component';
 
 const mockUsePatient = usePatient as Mock;
 const mockUseConfig = useConfig as Mock;
+
+vi.mock('../api/chartsearchai', () => ({
+  warmupPatient: vi.fn(),
+}));
+
+const mockWarmupPatient = warmupPatient as Mock;
 
 vi.mock('./ai-search-panel.component', () => {
   const MockPanel = ({ onClose }: { onClose: () => void }) => (
@@ -19,6 +27,8 @@ vi.mock('./ai-search-panel.component', () => {
 
 describe('AiSearchButton', () => {
   beforeEach(() => {
+    mockWarmupPatient.mockClear();
+    chatSessionStore.setState({ selectedProviderId: null, providerByPatient: {} });
     mockUsePatient.mockReturnValue({ patientUuid: 'test-patient-uuid' });
     mockUseConfig.mockReturnValue({ chatLaunchMode: 'floating' });
   });
@@ -26,6 +36,17 @@ describe('AiSearchButton', () => {
   it('renders the AI button', () => {
     render(<AiSearchButton />);
     expect(screen.getByRole('button', { name: /ai search/i })).toBeInTheDocument();
+  });
+
+  it('pre-warms the patient chart when bundled inference is active and skips warmup when Hub is selected', () => {
+    const { unmount } = render(<AiSearchButton />);
+    expect(mockWarmupPatient).toHaveBeenCalledWith('test-patient-uuid', expect.any(AbortSignal));
+    unmount();
+
+    mockWarmupPatient.mockClear();
+    chatSessionStore.setState({ selectedProviderId: 'hub' });
+    render(<AiSearchButton />);
+    expect(mockWarmupPatient).not.toHaveBeenCalled();
   });
 
   it('opens the search panel when clicked', async () => {

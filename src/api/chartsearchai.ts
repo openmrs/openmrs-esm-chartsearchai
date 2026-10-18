@@ -10,6 +10,12 @@ const BASE_PATH = `${restBaseUrl}/chartsearchai`;
  * message.
  */
 export const SESSION_EXPIRED_ERROR_CODE = 'chartsearchai:session-expired';
+export const PROFILES_LOADING_ERROR_CODE = 'profiles_loading';
+export const PROFILES_UNAVAILABLE_ERROR_CODE = 'profiles_unavailable';
+export const PROFILE_REQUIRED_ERROR_CODE = 'profile_required';
+export const IN_DEPTH_INTERRUPTED_ERROR_CODE = 'in_depth_interrupted';
+export const ANSWER_CHECK_INTERRUPTED_SUMMARY_CODE = 'answer_check_interrupted';
+export const NEW_CHAT_ERROR_CODE = 'new_chat_failed';
 
 // Stable codes chatPatientChartStream emits via onError for its own transport failures, for the
 // same reason as SESSION_EXPIRED_ERROR_CODE: the conversation panel translates them. Problem codes
@@ -27,6 +33,8 @@ export const STREAM_CONNECTION_FAILED_ERROR_CODE = 'chartsearchai:connection-fai
 
 export interface AiReference {
   index: number;
+  /** Stable evidence-ledger id supplied by med-agent-hub. */
+  sourceId?: string;
   resourceType: string;
   /**
    * OpenMRS UUID of the cited record (the backend serializes this field as `resourceUuid`).
@@ -34,6 +42,15 @@ export interface AiReference {
    */
   resourceUuid: string;
   date: string;
+  /** Resolved source record text, when supplied by the hub staged path. */
+  sourceText?: string;
+  /** Human-readable source title supplied by the evidence ledger. */
+  title?: string;
+  /** Whether the citation index resolved to a record in this turn's evidence ledger. */
+  resolutionStatus?: 'resolved' | 'unresolved';
+  /** Answer, In-Depth, or table locations that used this source. */
+  usage?: Array<{ location: string; text: string; path?: string }>;
+
   /**
    * Citation grounding verdict from the backend: true = the cited record
    * supports the claim, false = it does not, null/absent = unverified.
@@ -62,6 +79,24 @@ export interface AiReference {
    * certifiable. So do not render any null as evidence that the module tried.
    */
   grounded?: boolean | null;
+  /**
+   * Lifecycle/status for citation grounding. `checking` means the backend has resolved
+   * the source record but final support verification is still running.
+   */
+  groundingStatus?: 'checking' | 'verified' | 'unsupported' | 'unchecked' | 'mixed';
+  /** Whether support was evaluated from this record alone or a cited source set. */
+  groundingScope?: 'record' | 'source_set';
+  /** Citation indices evaluated together when groundingScope is source_set. */
+  groundingGroup?: number[];
+  /** Claim/path-level verdicts retained when one record is used more than once. */
+  groundingChecks?: Array<{
+    status: 'verified' | 'unsupported' | 'unchecked';
+    claim: string;
+    location: string;
+    path?: string;
+    source_indices: number[];
+  }>;
+
   /**
    * Which corpus the cited record came from: `chart` = the patient's own record,
    * `reference` = module-supplied reference material (a drug-reference entry, a
@@ -439,7 +474,7 @@ export type AiAnswerValidationStatus = 'checking' | 'checked' | 'edited' | 'need
 
 export interface AiAnswerValidation {
   status: AiAnswerValidationStatus;
-  label: string;
+  label?: string;
   summary?: string;
   issues?: unknown[];
   completedAt?: string;
@@ -947,6 +982,7 @@ export function chatPatientChartStream(
   question: string,
   callbacks: {
     onSession: (uuid: string) => void;
+    onTurnStarted?: (meta: { session?: string; provider?: string; messageId?: string }) => void;
     /**
      * One `answer_delta` frame: a slice of the answer text from a provider that declares
      * `token_streaming` (the bundled engine). Additive and provisional; `answer_done` restates the
@@ -1140,10 +1176,11 @@ export function chatPatientChartStream(
           // canonical stream does not set the session response header, so this
           // is the earliest point the client can pin the conversation uuid.
           try {
-            const raw = JSON.parse(data) as { session?: string };
+            const raw = JSON.parse(data) as { session?: string; provider?: string; messageId?: string };
             if (raw.session) {
               callbacks.onSession(raw.session);
             }
+            callbacks.onTurnStarted?.(raw);
           } catch {
             // A malformed marker is not fatal; the session also arrives on
             // answer_done and turn_done.

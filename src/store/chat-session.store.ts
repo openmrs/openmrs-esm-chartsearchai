@@ -11,6 +11,14 @@ export interface ChatSessionState {
    * logout (see {@link setupChatSessionLogoutCleanup}).
    */
   sessionUuidByPatient: Record<string, string | null>;
+  /**
+   * Provider bound to each patient's active conversation, populated from
+   * history hydration, `/chat/new` and `turn_started`. Follow-up turns on an
+   * existing conversation send this provider rather than the global selection,
+   * so switching provider on another patient cannot silently close an earlier
+   * patient's conversation.
+   */
+  providerByPatient?: Record<string, string | null>;
   /** Hub product profile selected for this browser session. */
   selectedProfileId: string | null;
   /** Whether selectedProfileId was chosen explicitly by the user through the profile menu. */
@@ -51,6 +59,7 @@ export interface ChatSessionState {
 export const chatSessionStore = createGlobalStore<ChatSessionState>('chartsearchai-chat-session', {
   messagesByPatient: {},
   sessionUuidByPatient: {},
+  providerByPatient: {},
   selectedProfileId: null,
   profileExplicitlySelected: false,
   profileDiscoveryStatus: 'loading',
@@ -70,6 +79,7 @@ export function setupChatSessionLogoutCleanup(): () => void {
       chatSessionStore.setState({
         messagesByPatient: {},
         sessionUuidByPatient: {},
+        providerByPatient: {},
         selectedProfileId: null,
         profileExplicitlySelected: false,
         profileDiscoveryStatus: 'loading',
