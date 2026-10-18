@@ -61,6 +61,7 @@ beforeEach(() => {
     messagesByPatient: {},
     sessionUuidByPatient: {},
     selectedProfileId: null,
+    profileExplicitlySelected: false,
     profileDiscoveryStatus: 'loading',
     selectedProviderId: 'hub',
   });
@@ -84,13 +85,13 @@ describe('ModelPicker', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('shows an unavailable state and clears selection when profile discovery fails', async () => {
-    chatSessionStore.setState({ selectedProfileId: 'stale-profile' });
+  it('shows an unavailable state and preserves selection when profile discovery fails', async () => {
+    chatSessionStore.setState({ selectedProfileId: 'team-med-checked', profileExplicitlySelected: true });
     mockFetch.mockRejectedValueOnce(new Error('unavailable'));
     render(<ModelPicker />);
 
     expect(await screen.findByRole('status')).toHaveTextContent(/AI profiles unavailable/i);
-    expect(chatSessionStore.getState().selectedProfileId).toBeNull();
+    expect(chatSessionStore.getState().selectedProfileId).toBe('team-med-checked');
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('unavailable');
   });
 
@@ -111,13 +112,12 @@ describe('ModelPicker', () => {
 
   it('stores only the selected product profile id', async () => {
     mockFetch.mockResolvedValueOnce(PROFILE_DATA);
-    const onSwitched = vi.fn();
-    render(<ModelPicker onSwitched={onSwitched} />);
+    render(<ModelPicker />);
     await openMenu();
 
     fireEvent.click(screen.getByRole('menuitemradio', { name: /Checked medical team/i }));
     await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('team-med-checked'));
-    expect(onSwitched).toHaveBeenCalledWith('team-med-checked');
+    expect(chatSessionStore.getState().profileExplicitlySelected).toBe(true);
   });
 
   it('never discovers profiles or changes provider for bundled inference', async () => {
@@ -154,12 +154,41 @@ describe('ModelPicker', () => {
     expect(screen.queryByRole('menuitemradio', { name: /High checked team/i })).not.toBeInTheDocument();
   });
 
-  it('replaces a stale or unavailable saved selection with the advertised default', async () => {
-    chatSessionStore.setState({ selectedProfileId: 'team-high-unavailable' });
+  it('replaces a non-explicit unavailable selection with the advertised default', async () => {
+    chatSessionStore.setState({ selectedProfileId: 'team-high-unavailable', profileExplicitlySelected: false });
     mockFetch.mockResolvedValueOnce(PROFILE_DATA);
     render(<ModelPicker />);
 
     await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('single-e4b-checked'));
+    expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
+  });
+
+  it('keeps an explicit menu pick when a later discovery reports it unavailable and restores ready on recovery', async () => {
+    mockFetch.mockResolvedValueOnce(PROFILE_DATA);
+    const { unmount } = render(<ModelPicker />);
+    await openMenu();
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Checked medical team/i }));
+    await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('team-med-checked'));
+    unmount();
+
+    mockFetch.mockResolvedValueOnce({
+      object: 'list',
+      data: [
+        profile({ default: true }),
+        profile({ id: 'team-med-checked', label: 'Checked medical team', topology: 'team', available: false }),
+      ],
+    });
+    const { unmount: unmountUnavailable } = render(<ModelPicker />);
+    expect(await screen.findByRole('button', { name: /Checked medical team \(unavailable\)/i })).toBeInTheDocument();
+    expect(chatSessionStore.getState().selectedProfileId).toBe('team-med-checked');
+    expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('unavailable');
+    unmountUnavailable();
+
+    mockFetch.mockResolvedValueOnce(PROFILE_DATA);
+    render(<ModelPicker />);
+    expect(await screen.findByRole('button', { name: /^Checked medical team$/i })).toBeInTheDocument();
+    expect(chatSessionStore.getState().selectedProfileId).toBe('team-med-checked');
+    expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
   });
 
   it('requires manual selection when the hub advertises no available default', async () => {

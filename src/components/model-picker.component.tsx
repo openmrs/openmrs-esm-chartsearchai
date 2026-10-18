@@ -7,10 +7,6 @@ import { fetchProfiles, type HubProfileListResponse, type HubProfileMetadata } f
 import { chatSessionStore } from '../store/chat-session.store';
 import styles from './model-picker.scss';
 
-interface ModelPickerProps {
-  onSwitched?: (profileId: string) => void;
-}
-
 interface ProfileSection {
   key: string;
   label: string;
@@ -18,10 +14,10 @@ interface ProfileSection {
 }
 
 /** Product-profile picker backed entirely by med-agent-hub metadata. */
-const ModelPicker: React.FC<ModelPickerProps> = ({ onSwitched }) => {
+const ModelPicker: React.FC = () => {
   const { t } = useTranslation();
   const { showModelPicker } = useConfig<ChartSearchAiConfig>();
-  const { selectedProfileId, selectedProviderId } = useStore(chatSessionStore);
+  const { selectedProfileId, profileExplicitlySelected, selectedProviderId } = useStore(chatSessionStore);
   const [data, setData] = useState<HubProfileListResponse | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
 
@@ -43,7 +39,7 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onSwitched }) => {
         if (!controller.signal.aborted && error?.name !== 'AbortError') {
           setData(null);
           setLoadFailed(true);
-          chatSessionStore.setState({ selectedProfileId: null, profileDiscoveryStatus: 'unavailable' });
+          chatSessionStore.setState({ profileDiscoveryStatus: 'unavailable' });
         }
       });
     return () => controller.abort();
@@ -58,21 +54,32 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onSwitched }) => {
     () => availableProfiles.find((profile) => profile.default) ?? null,
     [availableProfiles],
   );
+  const preserveExplicitSelection = Boolean(
+    profileExplicitlySelected && selectedProfileId && showModelPicker !== false,
+  );
+  const availableSelectedProfile = useMemo(
+    () => availableProfiles.find((profile) => profile.id === selectedProfileId) ?? null,
+    [availableProfiles, selectedProfileId],
+  );
   const effectiveProfile = useMemo(
-    () => availableProfiles.find((profile) => profile.id === selectedProfileId) ?? defaultProfile,
-    [availableProfiles, defaultProfile, selectedProfileId],
+    () => availableSelectedProfile ?? (preserveExplicitSelection ? null : defaultProfile),
+    [availableSelectedProfile, preserveExplicitSelection, defaultProfile],
+  );
+  const selectedProductProfile = useMemo(
+    () => productProfiles.find((profile) => profile.id === selectedProfileId) ?? null,
+    [productProfiles, selectedProfileId],
   );
 
   useEffect(() => {
     if (!data) {
       return;
     }
-    const nextId = effectiveProfile?.id ?? null;
-    const profileDiscoveryStatus = nextId ? 'ready' : 'unavailable';
+    const nextId = effectiveProfile?.id ?? (preserveExplicitSelection ? selectedProfileId : null);
+    const profileDiscoveryStatus = effectiveProfile ? 'ready' : 'unavailable';
     if (nextId !== selectedProfileId || chatSessionStore.getState().profileDiscoveryStatus !== profileDiscoveryStatus) {
       chatSessionStore.setState({ selectedProfileId: nextId, profileDiscoveryStatus });
     }
-  }, [data, effectiveProfile, selectedProfileId]);
+  }, [data, effectiveProfile, preserveExplicitSelection, selectedProfileId]);
 
   const sections = useMemo<ProfileSection[]>(() => {
     const definitions = [
@@ -92,13 +99,13 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onSwitched }) => {
       : known;
   }, [availableProfiles, t]);
 
-  const handleSelect = useCallback(
-    (profileId: string) => {
-      chatSessionStore.setState({ selectedProfileId: profileId });
-      onSwitched?.(profileId);
-    },
-    [onSwitched],
-  );
+  const handleSelect = useCallback((profileId: string) => {
+    chatSessionStore.setState({
+      selectedProfileId: profileId,
+      profileExplicitlySelected: true,
+      profileDiscoveryStatus: 'ready',
+    });
+  }, []);
 
   if (showModelPicker === false || selectedProviderId !== 'hub') {
     return null;
@@ -115,7 +122,7 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onSwitched }) => {
     return null;
   }
 
-  if (availableProfiles.length === 0) {
+  if (availableProfiles.length === 0 && !preserveExplicitSelection) {
     return (
       <div className={styles.root} role="status">
         {t('profilesUnavailable', 'AI profiles unavailable')}
@@ -124,7 +131,18 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onSwitched }) => {
   }
 
   const unavailableProfiles = productProfiles.filter((profile) => !profile.available);
-  const triggerLabel = effectiveProfile?.label ?? t('chooseAiProfile', 'Choose AI profile');
+  const unavailableExplicitLabel = preserveExplicitSelection
+    ? `${selectedProductProfile?.label ?? selectedProfileId} (${t('unavailable', 'unavailable')})`
+    : null;
+  const triggerLabel = effectiveProfile?.label ?? unavailableExplicitLabel ?? t('chooseAiProfile', 'Choose AI profile');
+
+  if (availableProfiles.length === 0) {
+    return (
+      <div className={styles.root} role="status">
+        {triggerLabel}
+      </div>
+    );
+  }
 
   return (
     <div className={styles.root}>

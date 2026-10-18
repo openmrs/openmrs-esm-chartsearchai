@@ -12,6 +12,8 @@ export interface ChatSessionState {
   sessionUuidByPatient: Record<string, string | null>;
   /** Hub product profile selected for this browser session. */
   selectedProfileId: string | null;
+  /** Whether selectedProfileId was chosen explicitly by the user through the profile menu. */
+  profileExplicitlySelected?: boolean;
   /** Whether product-profile discovery can safely authorize a chat request. */
   profileDiscoveryStatus: 'loading' | 'ready' | 'unavailable';
   /**
@@ -39,6 +41,7 @@ export const chatSessionStore = createGlobalStore<ChatSessionState>('chartsearch
   messagesByPatient: {},
   sessionUuidByPatient: {},
   selectedProfileId: null,
+  profileExplicitlySelected: false,
   profileDiscoveryStatus: 'loading',
   selectedProviderId: null,
 });
@@ -56,6 +59,7 @@ export function setupChatSessionLogoutCleanup(): () => void {
         messagesByPatient: {},
         sessionUuidByPatient: {},
         selectedProfileId: null,
+        profileExplicitlySelected: false,
         profileDiscoveryStatus: 'loading',
         selectedProviderId: null,
         reasoningExpanded: undefined,
