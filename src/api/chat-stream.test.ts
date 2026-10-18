@@ -1,6 +1,8 @@
 import { TextEncoder, TextDecoder } from 'util';
 import { ReadableStream } from 'node:stream/web';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi, type MockInstance } from 'vitest';
+// Byte-for-byte mirror of datasets/validation/conformance/dual-provider-conformance.v1.json in
+// pmanko/clinical-ai-validation-harness. Ignored by Prettier so the umbrella byte-identity check holds.
 import conformance from '../conformance/dual-provider-conformance.v1.json';
 import { chatPatientChartStream, SESSION_EXPIRED_ERROR_CODE } from './chartsearchai';
 
@@ -213,6 +215,20 @@ describe('chatPatientChartStream', () => {
     expect(sentBody()).not.toHaveProperty('profile');
   });
 
+  it('sends the conversation session when there is one', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse(['event:turn_done\ndata: {"answer":"","references":[],"session":"sess-1"}\n\n']),
+      );
+
+    chatPatientChartStream('uuid-1', 'sess-1', 'q?', cb, undefined, undefined, 'bundled');
+    await flushPromises();
+
+    expect(sentBody()).toMatchObject({ session: 'sess-1' });
+  });
+
   it('rejects an empty hub profile instead of relying on a relay fallback', () => {
     const cb = makeCallbacks();
     fetchSpy = vi.spyOn(window, 'fetch');
@@ -235,6 +251,70 @@ describe('chatPatientChartStream', () => {
 
     expect(cb.onError).toHaveBeenCalledWith(SESSION_EXPIRED_ERROR_CODE);
     expect(cb.onDone).not.toHaveBeenCalled();
+  });
+
+  it('treats a non-JSON 500 as session expiry (sendRedirect-after-commit)', async () => {
+    const cb = makeCallbacks();
+    const resp = {
+      ok: false,
+      status: 500,
+      body: null,
+      json: () => Promise.reject(new Error('no body')),
+    } as unknown as Response;
+    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(resp);
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled');
+    await flushPromises();
+
+    expect(cb.onError).toHaveBeenCalledWith(SESSION_EXPIRED_ERROR_CODE);
+  });
+
+  it('surfaces a JSON 500 error verbatim rather than as session expiry', async () => {
+    const cb = makeCallbacks();
+    const resp = {
+      ok: false,
+      status: 500,
+      body: null,
+      json: () => Promise.resolve({ error: 'Internal error' }),
+    } as unknown as Response;
+    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(resp);
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled');
+    await flushPromises();
+
+    expect(cb.onError).toHaveBeenCalledWith('Internal error');
+  });
+
+  it('treats a non-JSON 401 as session expiry', async () => {
+    const cb = makeCallbacks();
+    const resp = {
+      ok: false,
+      status: 401,
+      body: null,
+      json: () => Promise.reject(new Error('no body')),
+    } as unknown as Response;
+    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(resp);
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled');
+    await flushPromises();
+
+    expect(cb.onError).toHaveBeenCalledWith(SESSION_EXPIRED_ERROR_CODE);
+  });
+
+  it('still reports a generic server error for a non-auth status with no JSON body', async () => {
+    const cb = makeCallbacks();
+    const resp = {
+      ok: false,
+      status: 400,
+      body: null,
+      json: () => Promise.reject(new Error('no body')),
+    } as unknown as Response;
+    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(resp);
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled');
+    await flushPromises();
+
+    expect(cb.onError).toHaveBeenCalledWith('Server error: 400');
   });
 
   it("maps the answer_done event's `model` field onto resolvedModel", async () => {

@@ -689,6 +689,32 @@ export async function searchPatientChart(
   return response.data as AiSearchResponse;
 }
 
+async function streamRequestError(response: Response): Promise<string> {
+  let bodyError: string | null = null;
+  try {
+    const body = await response.json();
+    if (body?.error) {
+      bodyError = body.error;
+    }
+  } catch {
+    // non-JSON body (a bare container/auth response, not a controller error)
+  }
+  if (bodyError) {
+    // The controller always serializes its errors as JSON, so a parseable error is a genuine
+    // server-side failure — surface it verbatim.
+    return bodyError;
+  }
+  if (response.status >= 500 || response.status === 401 || response.status === 403) {
+    // No JSON body means this came from OpenMRS's auth/session layer, not the controller:
+    // a 401/403, or a 500 that is really "sendRedirect() after the response was committed"
+    // (the SSE stream commits the response, so the expired-session login redirect can't fire
+    // and surfaces as a bare HTML 500). Treat all of these as session expiry — the same
+    // actionable cause as the 302 handled above — rather than a cryptic "Server error: 500".
+    return SESSION_EXPIRED_ERROR_CODE;
+  }
+  return `Server error: ${response.status}`;
+}
+
 /**
  * Opens an SSE (Server-Sent Events) stream for AI search.
  *
@@ -769,29 +795,7 @@ export function searchPatientChartStream(
       }
 
       if (!response.ok) {
-        let bodyError: string | null = null;
-        try {
-          const body = await response.json();
-          if (body?.error) {
-            bodyError = body.error;
-          }
-        } catch {
-          // non-JSON body (a bare container/auth response, not a controller error)
-        }
-        if (bodyError) {
-          // The controller always serializes its errors as JSON, so a parseable error is a genuine
-          // server-side failure — surface it verbatim.
-          callbacks.onError(bodyError);
-        } else if (response.status >= 500 || response.status === 401 || response.status === 403) {
-          // No JSON body means this came from OpenMRS's auth/session layer, not the controller:
-          // a 401/403, or a 500 that is really "sendRedirect() after the response was committed"
-          // (the SSE stream commits the response, so the expired-session login redirect can't fire
-          // and surfaces as a bare HTML 500). Treat all of these as session expiry — the same
-          // actionable cause as the 302 handled above — rather than a cryptic "Server error: 500".
-          callbacks.onError(SESSION_EXPIRED_ERROR_CODE);
-        } else {
-          callbacks.onError(`Server error: ${response.status}`);
-        }
+        callbacks.onError(await streamRequestError(response));
         return;
       }
 
@@ -911,8 +915,7 @@ export function searchPatientChartStream(
  *   - sends an optional {@code session} uuid so the server can reuse the
  *     prior conversation thread
  *   - sends a product profile only for med-agent-hub requests
- *   - accepts the optional session response header and the canonical
- *     {@code turn_started} session marker
+ *   - accepts the canonical {@code turn_started} session marker
  *
  * The server is the source of truth for conversation history — the client
  * sends only the new user message, not the rendered transcript.
@@ -990,25 +993,8 @@ export function chatPatientChartStream(
       }
 
       if (!response.ok) {
-        let message = `Server error: ${response.status}`;
-        try {
-          const errBody = await response.json();
-          if (errBody?.error) {
-            message = errBody.error;
-          }
-        } catch {
-          // no JSON body
-        }
-        callbacks.onError(message);
+        callbacks.onError(await streamRequestError(response));
         return;
-      }
-
-      // Capture the session uuid the server pinned for this conversation
-      // before we start consuming the stream — the client uses it to thread
-      // subsequent posts onto the same conversation row.
-      const sessionHeader = response.headers.get('X-ChartSearchAi-Session');
-      if (sessionHeader) {
-        callbacks.onSession(sessionHeader);
       }
 
       const reader = response.body;
