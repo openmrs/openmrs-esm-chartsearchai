@@ -1,13 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useConfig, usePatient } from '@openmrs/esm-framework';
+import { useConfig, usePatient, useStore } from '@openmrs/esm-framework';
 import { Add, Close, Microphone, MicrophoneFilled, Send, StopFilled } from '@carbon/react/icons';
 import { Button, IconButton, InlineLoading } from '@carbon/react';
+import { warmupPatient } from '../api/chartsearchai';
 import { useChartSearchAi } from '../hooks/useChartSearchAi';
 import { isAwaitingAnswer as isPhaseAwaiting } from '../hooks/turn-phase';
 import { answerLimitsOf } from '../utils/answer-limits';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { type ChartSearchAiConfig } from '../config-schema';
+import { chatSessionStore, requestProviderFor } from '../store/chat-session.store';
 import AiReasoningDisclosure from './ai-reasoning-disclosure.component';
 import AiResponsePanel from './ai-response-panel.component';
 import ModelPicker from './model-picker.component';
@@ -49,6 +51,20 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
       setQuestion('');
     }
   }, [isStartingSession, sessionError]);
+
+  const effectiveProviderId = requestProviderFor(useStore(chatSessionStore), patientUuid);
+
+  // Pre-warm the server-side LLM prompt cache while the clinician types, so the first question
+  // skips the full chart prefill. Fired when the chat opens, not when the chart does: every chart
+  // open used to spend a request, including charts where nobody asks anything. Only the bundled
+  // provider has a cache to warm, so nothing is sent while Hub is selected. The cleanup aborts an
+  // in-flight warmup on a patient or provider switch, or when the chat closes.
+  useEffect(() => {
+    if (!patientUuid || effectiveProviderId === 'hub') return;
+    const controller = new AbortController();
+    warmupPatient(patientUuid, controller.signal);
+    return () => controller.abort();
+  }, [patientUuid, effectiveProviderId]);
 
   const questionRef = useRef(question);
   questionRef.current = question;

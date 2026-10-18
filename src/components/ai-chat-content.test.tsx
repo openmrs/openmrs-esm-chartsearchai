@@ -2,9 +2,10 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useConfig, usePatient } from '@openmrs/esm-framework';
+import { openmrsFetch, useConfig, usePatient } from '@openmrs/esm-framework';
 import { useChartSearchAi } from '../hooks/useChartSearchAi';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
+import { chatSessionStore, initialChatSessionState } from '../store/chat-session.store';
 import AiChatContent from './ai-chat-content.component';
 
 vi.mock('../hooks/useChartSearchAi', () => ({
@@ -755,5 +756,64 @@ describe('reader position through asynchronous completion', () => {
     } finally {
       HTMLElement.prototype.getBoundingClientRect = original;
     }
+  });
+
+  describe('prompt-cache warmup', () => {
+    const mockOpenmrsFetch = openmrsFetch as Mock;
+    const warmupCalls = () => mockOpenmrsFetch.mock.calls.filter(([url]) => url === '/ws/rest/v1/chartsearchai/warmup');
+
+    it("warms the chart's patient when the chat opens", () => {
+      render(<AiChatContent mode="floating" />);
+      expect(warmupCalls()).toHaveLength(1);
+      expect(warmupCalls()[0][1]).toMatchObject({ method: 'POST', body: JSON.stringify({ patient: 'p1' }) });
+    });
+
+    it('warms the patient the workspace names', () => {
+      render(<AiChatContent mode="workspace" patientUuid="p2" />);
+      expect(warmupCalls()).toHaveLength(1);
+      expect(warmupCalls()[0][1]).toMatchObject({ body: JSON.stringify({ patient: 'p2' }) });
+    });
+
+    it('aborts an in-flight warmup when the chat closes', () => {
+      const { unmount } = render(<AiChatContent mode="floating" />);
+      const { signal } = warmupCalls()[0][1];
+      expect(signal.aborted).toBe(false);
+      unmount();
+      expect(signal.aborted).toBe(true);
+    });
+
+    it('aborts the old warmup and warms the new patient on a patient switch', () => {
+      const { rerender } = render(<AiChatContent mode="workspace" patientUuid="p1" />);
+      rerender(<AiChatContent mode="workspace" patientUuid="p2" />);
+      expect(warmupCalls()).toHaveLength(2);
+      expect(warmupCalls()[0][1].signal.aborted).toBe(true);
+      expect(warmupCalls()[1][1]).toMatchObject({ body: JSON.stringify({ patient: 'p2' }) });
+    });
+
+    it('sends no warmup without a patient', () => {
+      mockUsePatient.mockReturnValue({ patient: null, isLoading: false });
+      render(<AiChatContent mode="floating" />);
+      expect(warmupCalls()).toHaveLength(0);
+    });
+
+    describe('with a provider selected', () => {
+      afterEach(() => chatSessionStore.setState(initialChatSessionState()));
+
+      it('sends no warmup while Hub is selected, since only the bundled provider has a cache to warm', () => {
+        chatSessionStore.setState({ selectedProviderId: 'hub' });
+        render(<AiChatContent mode="floating" />);
+        expect(warmupCalls()).toHaveLength(0);
+      });
+
+      it('aborts the warmup when the provider switches to Hub, and warms again on the way back', () => {
+        render(<AiChatContent mode="floating" />);
+        expect(warmupCalls()).toHaveLength(1);
+        act(() => chatSessionStore.setState({ selectedProviderId: 'hub' }));
+        expect(warmupCalls()[0][1].signal.aborted).toBe(true);
+        expect(warmupCalls()).toHaveLength(1);
+        act(() => chatSessionStore.setState({ selectedProviderId: 'bundled' }));
+        expect(warmupCalls()).toHaveLength(2);
+      });
+    });
   });
 });
