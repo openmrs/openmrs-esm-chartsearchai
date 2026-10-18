@@ -1242,7 +1242,10 @@ export interface ChatHistoryMessage extends Partial<AiAnswerLimits> {
   problemCode?: string;
   references?: AiReference[];
   blocks?: AiBlock[];
-  /** Deterministic safety advisories emitted by the selected hub profile. */
+  /**
+   * Deterministic safety advisories persisted with the answer: the module's own drug-reference
+   * chips on a bundled turn, the selected Hub profile's on a Hub turn.
+   */
   safetyWarnings?: AiSafetyWarning[];
   /** checked/limited/unavailable — present alongside safetyWarnings, even when it's empty. */
   safetyStatus?: AiSafetyStatus;

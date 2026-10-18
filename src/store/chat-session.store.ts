@@ -4,10 +4,10 @@ import type { ChatMessage } from '../hooks/useChartSearchAi';
 export interface ChatSessionState {
   messagesByPatient: Record<string, ChatMessage[]>;
   /**
-   * Server-pinned conversation handle per patient. Captured from the
-   * X-ChartSearchAi-Session response header on the first chat POST, then
+   * Server-pinned conversation handle per patient. Captured from the stream's
+   * `turn_started` event and from the history and New chat responses, then
    * threaded into every subsequent post for the same patient. Cleared on
-   * logout (see {@link setupChatSessionLogoutCleanup}) and on "New chat".
+   * logout (see {@link setupChatSessionLogoutCleanup}).
    */
   sessionUuidByPatient: Record<string, string | null>;
   /** Hub product profile selected for this browser session. */
