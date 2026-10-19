@@ -568,9 +568,8 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           };
           return updated;
         });
-        // Belt-and-braces: the X-ChartSearchAi-Session header captures the
-        // session uuid first, but the `done` event also carries it for
-        // sync clients that can't read response headers.
+        // The `done` event is where the session uuid arrives: the conversation
+        // backend sends no session header.
         if (ownsSession && response.session) {
           setSessionUuid(patientUuid, response.session);
         }
