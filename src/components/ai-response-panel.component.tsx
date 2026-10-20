@@ -15,6 +15,11 @@ import {
   type AiSafetyStatus,
   type AiSafetyWarning,
   SESSION_EXPIRED_ERROR_CODE,
+  STREAM_CONNECTION_FAILED_ERROR_CODE,
+  STREAM_INCOMPLETE_ERROR_CODE,
+  STREAM_INVALID_ERROR_CODE,
+  STREAM_REQUEST_FAILED_ERROR_CODE,
+  STREAMING_UNSUPPORTED_ERROR_CODE,
 } from '../api/chartsearchai';
 import { compactChips, notInTheAnswer, rewordedInTheAnswer } from '../utils/compact-chips';
 import {
@@ -40,12 +45,14 @@ import {
 } from './citation-chip.component';
 import {
   ANSWER_CHECK_INTERRUPTED_SUMMARY_CODE,
+  ANSWER_NOT_SAVED_ERROR_CODE,
   IN_DEPTH_INTERRUPTED_ERROR_CODE,
   isAwaitingAnswer,
   isTerminal,
   PROFILE_REQUIRED_ERROR_CODE,
   PROFILES_LOADING_ERROR_CODE,
   PROFILES_UNAVAILABLE_ERROR_CODE,
+  SELECTED_PROFILE_UNAVAILABLE_ERROR_CODE,
   type TurnPhase,
 } from '../hooks/turn-phase';
 import styles from './ai-response-panel.scss';
@@ -69,6 +76,8 @@ interface AiResponsePanelProps extends AiAnswerLimits {
   blocks?: AiBlock[];
   auditLogId?: number;
   error: string | null;
+  /** The profile a {@code selected_profile_unavailable} error names. */
+  unavailableProfileLabel?: string;
   /** The turn's lifecycle phase — drives which parts of the answer render (see {@link TurnPhase}). */
   phase: TurnPhase;
   patientUuid: string;
@@ -443,14 +452,7 @@ const EvidenceCard: React.FC<{
           {t('sourceDataset', 'Source')}: {refItem.source}
         </div>
       )}
-      {(refItem.withheldInteractions ?? 0) > 0 && (
-        <div className={styles.evidenceUuid}>
-          {t(
-            'sourceSubset',
-            'This source shows a relevant subset; {{count}} additional interactions are not shown.',
-          ).replace('{{count}}', String(refItem.withheldInteractions))}
-        </div>
-      )}
+      {/* withheldInteractions is not drawn here either, for the reason given in Citation details. */}
       {refItem.resourceUuid && (
         <div className={styles.evidenceUuid}>
           {t('sourceUuid', 'UUID')}: {refItem.resourceUuid}
@@ -639,7 +641,9 @@ const ConfidenceSection: React.FC<{
         <div className={styles.ans}>{rendered}</div>
       )}
       {showOriginalAnswer && (
-        <details open className={`${styles.reviewDraft} ${originalWasEdited ? styles.reviewDraftEdited : ''}`.trim()}>
+        // Collapsed like the withheld In-Depth claims: the unchecked answer stays inspectable without
+        // sitting expanded, with live citations, under the checked one.
+        <details className={`${styles.reviewDraft} ${originalWasEdited ? styles.reviewDraftEdited : ''}`.trim()}>
           <summary>{t('originalModelAnswer', 'Original model answer')}</summary>
           <div
             className={`${styles.reviewDraftNotice} ${
@@ -699,10 +703,37 @@ const InDepthReviewDraft: React.FC<{
     </details>
   );
 };
-function translateTurnError(error: string, t: Translate): string {
+function translateTurnError(error: string, t: Translate, unavailableProfileLabel?: string): string {
   switch (error) {
     case SESSION_EXPIRED_ERROR_CODE:
       return t('sessionExpired', 'Your session has expired. Please log in again.');
+    case STREAM_INCOMPLETE_ERROR_CODE:
+      return t('streamIncompleteError', 'The response ended before it finished. Please try again.');
+    case STREAM_INVALID_ERROR_CODE:
+      return t(
+        'streamInvalidError',
+        'The AI service sent a response this panel could not read. Please try again or contact your administrator.',
+      );
+    case STREAMING_UNSUPPORTED_ERROR_CODE:
+      return t('streamingUnsupportedError', 'This browser cannot receive streamed answers. Use a current browser.');
+    case STREAM_REQUEST_FAILED_ERROR_CODE:
+      return t(
+        'requestFailedError',
+        'The server could not process the request. Please try again or contact your administrator.',
+      );
+    case STREAM_CONNECTION_FAILED_ERROR_CODE:
+      return t('connectionFailedError', 'Could not reach the server. Check the connection and try again.');
+    case SELECTED_PROFILE_UNAVAILABLE_ERROR_CODE:
+      return t(
+        'selectedProfileUnavailableError',
+        'The selected profile, {{profile}}, is no longer available. Pick another profile.',
+        { profile: unavailableProfileLabel ?? '', interpolation: { escapeValue: false } },
+      );
+    case ANSWER_NOT_SAVED_ERROR_CODE:
+      return t(
+        'answerNotSavedError',
+        'No answer was saved for this question. It may have been interrupted, or it may still be in progress.',
+      );
     case PROFILES_LOADING_ERROR_CODE:
       return t('profilesLoadingError', 'AI profiles are still loading. Try again in a moment.');
     case PROFILES_UNAVAILABLE_ERROR_CODE:
@@ -768,6 +799,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   findingsStatedByTheModule,
   asksWhetherSheHasTakenADrug,
   error,
+  unavailableProfileLabel,
   phase,
   patientUuid,
   resolvedModel,
@@ -1001,7 +1033,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   // The API, hook and stream layers emit stable codes for session expiry, profile discovery
   // and turn_error problem codes so the wording can be localized here; human-readable error
   // strings pass through unchanged.
-  const displayError = error ? translateTurnError(error, t) : null;
+  const displayError = error ? translateTurnError(error, t, unavailableProfileLabel) : null;
 
   const rawSafetyIssues = Array.from(new Set(safetyCheck?.issues ?? []));
   const actionableSafetyIssues = rawSafetyIssues.filter((issue) => !SUPPRESSED_SAFETY_ISSUES.has(issue));
@@ -1023,6 +1055,11 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     },
   ].filter(({ source }) => Boolean(source?.id?.trim()));
   const hasSafetyDetails = issues.length > 0 || sourceRows.length > 0;
+  // A bare `unavailable` with no reason, no rule source and no finding has nothing to report, so
+  // it draws no box; a status with a reason or a finding beside it is still tagged.
+  const statusNeedsBox = Boolean(
+    effectiveStatus && effectiveStatus !== 'checked' && !(effectiveStatus === 'unavailable' && !hasSafetyDetails),
+  );
 
   // One chip as the safety box draws it, in either of its two lists.
   const renderWarning = (warning: AiSafetyWarning, i: number) => {
@@ -1456,13 +1493,6 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
               const sourceOf = attachedForOf(ref, citedFindings);
               return (
                 <span key={ref.index} className={styles.referenceItem}>
-                  {(ref.sourceText ?? '').trim() && (
-                    <code className={styles.referenceTagInert}>
-                      {[`[${ref.index}]`, ref.sourceId, ref.resolutionStatus, ref.groundingStatus]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </code>
-                  )}
                   {link}
                   {/* When this cited prescription stopped: the answer can say an order ended
                       without saying when. Beside the record's own date, never in its place — the
@@ -1652,7 +1682,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
         </div>
       )}
 
-      {(shownSafetyWarnings.length > 0 || (effectiveStatus && effectiveStatus !== 'checked') || hasSafetyDetails) && (
+      {(shownSafetyWarnings.length > 0 || statusNeedsBox || hasSafetyDetails) && (
         // No live-region role: the panel already sits inside the chat history's
         // role="log" aria-live="polite", which announces this content in order. An
         // assertive role="alert" here would preempt the answer it annotates.
@@ -1773,7 +1803,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
         </div>
       )}
 
-      {answer && isTerminal(phase) && (
+      {answer && !isLoading && (
         <div className={styles.actionsRow}>
           <div className={styles.actionsLeft}>
             {auditLogId ? (

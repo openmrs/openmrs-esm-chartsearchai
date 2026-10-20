@@ -340,6 +340,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
                 safetyWarnings={msg.safetyWarnings}
                 {...answerLimitsOf(msg)}
                 error={msg.error}
+                unavailableProfileLabel={msg.unavailableProfileLabel}
                 phase={msg.phase}
                 safetyStatus={msg.safetyStatus}
                 safetyCheck={msg.safetyCheck}

@@ -5,19 +5,33 @@ import { useConfig } from '@openmrs/esm-framework';
 import { NO_ANSWER_LIMITS } from '../utils/answer-limits';
 import {
   ANSWER_CHECK_INTERRUPTED_SUMMARY_CODE,
+  ANSWER_NOT_SAVED_ERROR_CODE,
   IN_DEPTH_INTERRUPTED_ERROR_CODE,
   NEW_CHAT_ERROR_CODE,
   PROFILE_REQUIRED_ERROR_CODE,
   PROFILES_UNAVAILABLE_ERROR_CODE,
+  SELECTED_PROFILE_UNAVAILABLE_ERROR_CODE,
   useChartSearchAi,
 } from './useChartSearchAi';
-import { type AiSearchResponse, chatPatientChartStream, fetchChatHistory, startNewChat } from '../api/chartsearchai';
+import {
+  type AiSearchResponse,
+  type HubProfileMetadata,
+  chatPatientChartStream,
+  fetchChatHistory,
+  startNewChat,
+} from '../api/chartsearchai';
 import { chatSessionStore } from '../store/chat-session.store';
+import { refreshHubProfiles, useHubProfileDiscovery } from './hub-profile-discovery';
 
 vi.mock('../api/chartsearchai', () => ({
   chatPatientChartStream: vi.fn(),
   fetchChatHistory: vi.fn(),
   startNewChat: vi.fn(),
+}));
+// Discovery itself is covered in hub-profile-discovery.test.ts; here only the hook's use of it.
+vi.mock('./hub-profile-discovery', () => ({
+  useHubProfileDiscovery: vi.fn(),
+  refreshHubProfiles: vi.fn(),
 }));
 
 const mockChatStream = chatPatientChartStream as Mock;
@@ -220,6 +234,7 @@ describe('useChartSearchAi', () => {
       expect.any(AbortController),
       'single-e4b-checked',
       'hub',
+      undefined,
     );
   });
 
@@ -263,6 +278,7 @@ describe('useChartSearchAi', () => {
       expect.any(AbortController),
       undefined,
       'bundled',
+      undefined,
     );
     expect(result.current.messages[0].phase).toBe('answering');
   });
@@ -314,6 +330,7 @@ describe('useChartSearchAi', () => {
       expect.any(AbortController),
       'single-e4b-checked',
       'hub',
+      undefined,
     );
   });
 
@@ -840,6 +857,7 @@ describe('useChartSearchAi', () => {
       expect.any(AbortController),
       'single-e4b-checked',
       'hub',
+      undefined,
     );
   });
 
@@ -952,6 +970,7 @@ describe('useChartSearchAi', () => {
       expect.any(AbortController),
       'team-med-checked',
       'hub',
+      undefined,
     );
   });
 
@@ -973,6 +992,7 @@ describe('useChartSearchAi', () => {
       expect.any(AbortController),
       'single-e4b-checked',
       'hub',
+      undefined,
     );
   });
 
@@ -1992,6 +2012,7 @@ describe('conversation streaming preference and optional capabilities', () => {
       expect.any(AbortController),
       'single-e4b-checked',
       'hub',
+      undefined,
     );
   });
 });
@@ -2135,5 +2156,178 @@ describe('reviewed conversation lifecycle', () => {
     act(() => oldCallbacks.onSession('stale-session'));
     expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('new-session');
     expect(result.current.messages).toHaveLength(0);
+  });
+});
+
+describe('useChartSearchAi Hub profile availability', () => {
+  const hubProfile = (overrides: Partial<HubProfileMetadata>) =>
+    ({ id: 'p', label: 'P', available: true, ...overrides }) as HubProfileMetadata;
+
+  it('runs Hub profile discovery itself, so authorization never depends on the picker', () => {
+    renderHook(() => useChartSearchAi('patient-uuid'));
+    expect(useHubProfileDiscovery).toHaveBeenCalled();
+  });
+
+  it('asks for another profile, naming it, when the Hub no longer offers the selected one', () => {
+    chatSessionStore.setState({
+      profileDiscoveryStatus: 'selection-unavailable',
+      selectedProfileId: 'team-med-checked',
+      hubProfiles: [hubProfile({ id: 'team-med-checked', label: 'Checked medical team', available: false })],
+    });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => result.current.submitQuestion('patient-uuid', 'What meds?'));
+
+    expect(mockChatStream).not.toHaveBeenCalled();
+    expect(result.current.messages[0]).toEqual(
+      expect.objectContaining({
+        phase: 'error',
+        error: SELECTED_PROFILE_UNAVAILABLE_ERROR_CODE,
+        unavailableProfileLabel: 'Checked medical team',
+      }),
+    );
+  });
+
+  it('names the profile by its id when the Hub no longer lists it at all', () => {
+    chatSessionStore.setState({
+      profileDiscoveryStatus: 'selection-unavailable',
+      selectedProfileId: 'team-med-checked',
+      hubProfiles: [],
+    });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => result.current.submitQuestion('patient-uuid', 'What meds?'));
+
+    expect(result.current.messages[0].unavailableProfileLabel).toBe('team-med-checked');
+  });
+
+  it('reads the Hub profiles again when a question is refused because the Hub was unreachable', () => {
+    chatSessionStore.setState({ profileDiscoveryStatus: 'unavailable', selectedProfileId: null });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => result.current.submitQuestion('patient-uuid', 'What meds?'));
+
+    expect(result.current.messages[0].error).toBe(PROFILES_UNAVAILABLE_ERROR_CODE);
+    expect(refreshHubProfiles).toHaveBeenCalled();
+  });
+
+  it('reads the Hub profiles again when a Hub turn fails, and not for a bundled one', () => {
+    mockChatStream.mockImplementation(() => {});
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => result.current.submitQuestion('patient-uuid', 'Q1?'));
+    act(() => mockChatStream.mock.calls[0][3].onError('hub_rejected_request'));
+    expect(refreshHubProfiles).toHaveBeenCalledOnce();
+
+    chatSessionStore.setState({ selectedProviderId: 'bundled', sessionUuidByPatient: {} });
+    act(() => result.current.submitQuestion('patient-uuid', 'Q2?'));
+    act(() => mockChatStream.mock.calls[1][3].onError('provider_failure'));
+    expect(refreshHubProfiles).toHaveBeenCalledOnce();
+  });
+
+  it("passes the selected provider's advertised capabilities to the stream client", () => {
+    chatSessionStore.setState({ providerCapabilities: { hub: ['answer', 'answer_review'] } });
+    mockChatStream.mockImplementation(() => {});
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    act(() => result.current.submitQuestion('patient-uuid', 'Q?'));
+
+    expect(mockChatStream.mock.calls[0][7]).toEqual(['answer', 'answer_review']);
+  });
+});
+
+describe('useChartSearchAi in-flight turns across patients and panel instances', () => {
+  const checkingAnswer = {
+    answer: 'A on A.',
+    references: [],
+    answerValidation: { status: 'checking' as const, label: 'Checking answer' },
+  };
+
+  it("sends a question for another patient while the previous patient's answer is still being checked", async () => {
+    mockChatStream.mockImplementation(() => {});
+    const { result, rerender } = renderHook(({ patient }) => useChartSearchAi(patient), {
+      initialProps: { patient: 'patient-a' },
+    });
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalledTimes(1));
+    act(() => result.current.submitQuestion('patient-a', 'Q on A?'));
+    act(() => mockChatStream.mock.calls[0][3].onAnswerDone(checkingAnswer));
+    expect(chatSessionStore.getState().messagesByPatient['patient-a'][0].phase).toBe('checking');
+
+    rerender({ patient: 'patient-b' });
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalledTimes(2));
+    act(() => result.current.submitQuestion('patient-b', 'Q on B?'));
+
+    expect(mockChatStream).toHaveBeenCalledTimes(2);
+    expect(mockChatStream.mock.calls[1][0]).toBe('patient-b');
+    expect(result.current.messages.map((m) => m.question)).toEqual(['Q on B?']);
+    // Patient A's check keeps running.
+    expect((mockChatStream.mock.calls[0][4] as AbortController).signal.aborted).toBe(false);
+  });
+
+  it('lets a reopened panel stop a turn the closed panel left checking', async () => {
+    mockChatStream.mockImplementation(() => {});
+    const { result: firstPanel, unmount: closeFirstPanel } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+    act(() => firstPanel.current.submitQuestion('patient-uuid', 'Q?'));
+    const controller = mockChatStream.mock.calls[0][4] as AbortController;
+    act(() => mockChatStream.mock.calls[0][3].onAnswerDone(checkingAnswer));
+    closeFirstPanel();
+    expect(controller.signal.aborted).toBe(false);
+
+    const { result: reopenedPanel } = renderHook(() => useChartSearchAi('patient-uuid'));
+    expect(reopenedPanel.current.isAwaitingAnswer).toBe(true);
+    act(() => reopenedPanel.current.stopCurrent());
+
+    expect(controller.signal.aborted).toBe(true);
+    expect(reopenedPanel.current.messages[0].phase).toBe('complete');
+    expect(reopenedPanel.current.isAwaitingAnswer).toBe(false);
+  });
+
+  it("lets a reopened panel preempt the closed panel's trailing In-Depth without failing the earlier answer", async () => {
+    mockChatStream.mockImplementation(() => {});
+    const { result: firstPanel, unmount: closeFirstPanel } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+    act(() => firstPanel.current.submitQuestion('patient-uuid', 'Q1?'));
+    const controller = mockChatStream.mock.calls[0][4] as AbortController;
+    const cb1 = mockChatStream.mock.calls[0][3];
+    act(() => cb1.onAnswerDone(checkingAnswer));
+    closeFirstPanel();
+    act(() => {
+      cb1.onAnswerValidation({ ...checkingAnswer, answerValidation: { status: 'checked', label: 'Checked' } });
+      cb1.onInDepthPending({ inDepth: { status: 'pending', answer: '' } });
+    });
+
+    const { result: reopenedPanel } = renderHook(() => useChartSearchAi('patient-uuid'));
+    act(() => reopenedPanel.current.submitQuestion('patient-uuid', 'Q2?'));
+
+    expect(mockChatStream).toHaveBeenCalledTimes(2);
+    expect(controller.signal.aborted).toBe(true);
+    // The backend ends the preempted stream without a terminal event; that must not fail Q1.
+    act(() => cb1.onError('chartsearchai:stream-incomplete'));
+    const [q1, q2] = reopenedPanel.current.messages;
+    expect(q1.phase).toBe('complete');
+    expect(q1.error).toBeNull();
+    expect(q2.question).toBe('Q2?');
+  });
+});
+
+describe('useChartSearchAi history with an unanswered question', () => {
+  it('shows a question with no saved answer as such, not as a blank completed answer', async () => {
+    mockFetchHistory.mockResolvedValueOnce({
+      session: 'srv-session-1',
+      messages: [
+        { messageId: 'u-1', role: 'user', content: 'Interrupted Q', createdAt: 1 },
+        { messageId: 'u-2', role: 'user', content: 'Latest Q', createdAt: 2 },
+      ],
+    });
+
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    await waitFor(() => expect(result.current.messages).toHaveLength(2));
+    for (const message of result.current.messages) {
+      expect(message.phase).toBe('error');
+      expect(message.error).toBe(ANSWER_NOT_SAVED_ERROR_CODE);
+    }
+    expect(result.current.isAwaitingAnswer).toBe(false);
   });
 });

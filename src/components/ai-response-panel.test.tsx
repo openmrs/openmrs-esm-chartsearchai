@@ -8,12 +8,23 @@ import AiResponsePanel from './ai-response-panel.component';
 import { highlightReference } from '../utils/highlight-reference';
 import {
   ANSWER_CHECK_INTERRUPTED_SUMMARY_CODE,
+  ANSWER_NOT_SAVED_ERROR_CODE,
   IN_DEPTH_INTERRUPTED_ERROR_CODE,
   PROFILE_REQUIRED_ERROR_CODE,
   PROFILES_LOADING_ERROR_CODE,
   PROFILES_UNAVAILABLE_ERROR_CODE,
+  SELECTED_PROFILE_UNAVAILABLE_ERROR_CODE,
 } from '../hooks/useChartSearchAi';
-import { SESSION_EXPIRED_ERROR_CODE, type AiReference, type AiSafetyWarning } from '../api/chartsearchai';
+import {
+  SESSION_EXPIRED_ERROR_CODE,
+  STREAM_CONNECTION_FAILED_ERROR_CODE,
+  STREAM_INCOMPLETE_ERROR_CODE,
+  STREAM_INVALID_ERROR_CODE,
+  STREAM_REQUEST_FAILED_ERROR_CODE,
+  STREAMING_UNSUPPORTED_ERROR_CODE,
+  type AiReference,
+  type AiSafetyWarning,
+} from '../api/chartsearchai';
 import { ASPIRIN_CHIP_THE_ANSWER_CITES } from '../__fixtures__/aspirin-response';
 import { SCREEN_WITH_ATTACHED_ALLERGY_RECORDS } from '../__fixtures__/attached-records-response';
 import { IBUPROFEN_BESIDE_HER_OWN_ALLERGIES } from '../__fixtures__/other-medication-response';
@@ -151,10 +162,12 @@ describe('AiResponsePanel reference links', () => {
     expect(within(card as HTMLElement).getByText('Verified')).toBeVisible();
     expect(screen.getByText('Used in: answer')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Citation details'));
-    expect(screen.getByText('[4] · querystore:encounter:enc-4 · resolved · verified')).toBeInTheDocument();
+    // The ledger id and raw status enums are not drawn: the translated badges carry the status.
+    expect(screen.queryByText(/querystore:encounter:enc-4/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/· resolved ·/)).not.toBeInTheDocument();
   });
 
-  it('uses the server evidence group and discloses source subset metadata', () => {
+  it('uses the server evidence group and draws no withheld-interaction count', () => {
     render(
       <AiResponsePanel
         answer="A medication-safety finding was generated [8]."
@@ -180,7 +193,9 @@ describe('AiResponsePanel reference links', () => {
     );
 
     expect(screen.getByText('Source: WHO-ATC research package')).toBeInTheDocument();
-    expect(screen.getByText(/4 additional interactions are not shown/)).toBeInTheDocument();
+    // As in Citation details: the partners a reference record leaves out are read by the safety
+    // check regardless, so a count would read as an incomplete check that was not.
+    expect(screen.queryByText(/additional interactions|subset/)).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Potential class interaction.' })).not.toBeInTheDocument();
     expect(
       screen.getAllByTitle(
@@ -535,6 +550,21 @@ describe('AiResponsePanel reference links', () => {
     [PROFILES_LOADING_ERROR_CODE, 'AI profiles are still loading. Try again in a moment.'],
     [PROFILES_UNAVAILABLE_ERROR_CODE, 'AI profiles are unavailable. Check the med-agent-hub connection.'],
     [PROFILE_REQUIRED_ERROR_CODE, 'No AI profile is selected. Refresh the available profiles and try again.'],
+    [STREAM_INCOMPLETE_ERROR_CODE, 'The response ended before it finished. Please try again.'],
+    [
+      STREAM_INVALID_ERROR_CODE,
+      'The AI service sent a response this panel could not read. Please try again or contact your administrator.',
+    ],
+    [STREAMING_UNSUPPORTED_ERROR_CODE, 'This browser cannot receive streamed answers. Use a current browser.'],
+    [
+      STREAM_REQUEST_FAILED_ERROR_CODE,
+      'The server could not process the request. Please try again or contact your administrator.',
+    ],
+    [STREAM_CONNECTION_FAILED_ERROR_CODE, 'Could not reach the server. Check the connection and try again.'],
+    [
+      ANSWER_NOT_SAVED_ERROR_CODE,
+      'No answer was saved for this question. It may have been interrupted, or it may still be in progress.',
+    ],
   ])('translates problem code %s into a human-readable error message', (code, expectedMessage) => {
     render(
       <AiResponsePanel
@@ -549,6 +579,24 @@ describe('AiResponsePanel reference links', () => {
 
     expect(screen.getByText(expectedMessage)).toBeInTheDocument();
     expect(screen.queryByText(code)).not.toBeInTheDocument();
+  });
+
+  it('names the selected profile the Hub no longer offers and asks for another', () => {
+    render(
+      <AiResponsePanel
+        answer=""
+        references={[]}
+        error={SELECTED_PROFILE_UNAVAILABLE_ERROR_CODE}
+        unavailableProfileLabel="Checked medical team"
+        phase="error"
+        patientUuid={patientUuid}
+      />,
+    );
+
+    expect(
+      screen.getByText('The selected profile, Checked medical team, is no longer available. Pick another profile.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/med-agent-hub connection/)).not.toBeInTheDocument();
   });
 
   it('translates interrupted answer-check and in-depth codes into user-facing text', () => {
@@ -801,13 +849,32 @@ describe('AiResponsePanel safety warnings', () => {
     expect(screen.queryByText('Answer safety check:')).not.toBeInTheDocument();
   });
 
-  it('surfaces an unavailable safety status even with no warnings, so it is never mistaken for checked-clean', () => {
+  it('draws no safety box for a bare unavailable status with nothing to report', () => {
     render(
       <AiResponsePanel
         answer="Ibuprofen could be considered [1]."
         references={[]}
         safetyWarnings={[]}
         safetyStatus="unavailable"
+        auditLogId={42}
+        error={null}
+        phase="complete"
+        patientUuid={patientUuid}
+      />,
+    );
+
+    expect(screen.queryByText('Answer safety check:')).not.toBeInTheDocument();
+    expect(screen.queryByText('Safety check unavailable')).not.toBeInTheDocument();
+  });
+
+  it('still tags an unavailable status when the safety check has something to report', () => {
+    render(
+      <AiResponsePanel
+        answer="Ibuprofen could be considered [1]."
+        references={[]}
+        safetyWarnings={[]}
+        safetyStatus="unavailable"
+        safetyCheck={{ status: 'unavailable', issues: ['patient_context_unavailable'] }}
         auditLogId={42}
         error={null}
         phase="complete"
@@ -1728,6 +1795,24 @@ describe('AiResponsePanel staged in-depth status', () => {
     answerValidation: { status: 'checked' as const, label: 'Checked' },
   };
 
+  it('offers feedback and Copy once the answer settles, while In-Depth still runs', () => {
+    render(<AiResponsePanel {...stagedBase} phase="in-depth" inDepth={{ status: 'pending', answer: '' }} />);
+    expect(screen.getByRole('button', { name: 'Helpful' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument();
+  });
+
+  it('withholds feedback and Copy while the answer is still being checked', () => {
+    render(
+      <AiResponsePanel
+        {...stagedBase}
+        phase="checking"
+        answerValidation={{ status: 'checking' as const, label: 'Checking answer' }}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Helpful' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Copy' })).not.toBeInTheDocument();
+  });
+
   it('exposes phase="in-depth" and data-indepth-status="pending" while the in-depth generates', () => {
     const { container } = render(
       <AiResponsePanel {...stagedBase} phase="in-depth" inDepth={{ status: 'pending', answer: 'generating…' }} />,
@@ -1886,7 +1971,7 @@ describe('AiResponsePanel answer-validation lifecycle', () => {
     const disclosure = screen.getByText('Original model answer').closest('details');
     expect(disclosure).not.toBeNull();
     expect(disclosure).toHaveTextContent('The original answer.');
-    expect(disclosure).toHaveAttribute('open');
+    expect(disclosure).not.toHaveAttribute('open');
     expect(disclosure).toHaveTextContent(/changed by the answer check/i);
   });
 
@@ -1927,7 +2012,7 @@ describe('AiResponsePanel answer-validation lifecycle', () => {
     );
 
     const disclosure = screen.getByText('Original model answer').closest('details');
-    expect(disclosure).toHaveAttribute('open');
+    expect(disclosure).not.toHaveAttribute('open');
     expect(disclosure).toHaveTextContent(/answer or its supporting citations was changed/i);
     expect(disclosure?.querySelector('a')).toHaveAttribute('href', `/openmrs/spa/patient/${patientUuid}/chart/Orders`);
   });
@@ -1955,7 +2040,7 @@ describe('AiResponsePanel answer-validation lifecycle', () => {
     );
 
     const disclosure = screen.getByText('Original model answer').closest('details');
-    expect(disclosure).toHaveAttribute('open');
+    expect(disclosure).not.toHaveAttribute('open');
     expect(disclosure).toHaveTextContent('Pre-check weight table');
     expect(disclosure).toHaveTextContent('6.2 kg');
     expect(screen.getAllByText('Pre-check weight table')).toHaveLength(1);
@@ -1976,7 +2061,7 @@ describe('AiResponsePanel answer-validation lifecycle', () => {
 
     const disclosure = screen.getByText('Original model answer').closest('details');
     expect(disclosure).not.toBeNull();
-    expect(disclosure).toHaveAttribute('open');
+    expect(disclosure).not.toHaveAttribute('open');
     expect(disclosure).toHaveTextContent('The model answer before checking.');
     expect(disclosure).toHaveTextContent(/current answer above remains flagged for review/i);
   });

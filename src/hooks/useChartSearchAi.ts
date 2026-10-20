@@ -17,8 +17,10 @@ import {
 } from '../api/chartsearchai';
 import { type ChartSearchAiConfig } from '../config-schema';
 import { chatSessionStore } from '../store/chat-session.store';
+import { refreshHubProfiles, useHubProfileDiscovery } from './hub-profile-discovery';
 import {
   ANSWER_CHECK_INTERRUPTED_SUMMARY_CODE,
+  ANSWER_NOT_SAVED_ERROR_CODE,
   IN_DEPTH_INTERRUPTED_ERROR_CODE,
   isAnswerSettled,
   isAwaitingAnswer as phaseIsAwaitingAnswer,
@@ -27,6 +29,7 @@ import {
   PROFILE_REQUIRED_ERROR_CODE,
   PROFILES_LOADING_ERROR_CODE,
   PROFILES_UNAVAILABLE_ERROR_CODE,
+  SELECTED_PROFILE_UNAVAILABLE_ERROR_CODE,
   type TurnPhase,
 } from './turn-phase';
 import { type MessageAnswerLimits, mergeDisclosure, NO_ANSWER_LIMITS } from '../utils/answer-limits';
@@ -34,11 +37,13 @@ import { citationStripPattern } from '../utils/safety-disclosure';
 
 export {
   ANSWER_CHECK_INTERRUPTED_SUMMARY_CODE,
+  ANSWER_NOT_SAVED_ERROR_CODE,
   IN_DEPTH_INTERRUPTED_ERROR_CODE,
   NEW_CHAT_ERROR_CODE,
   PROFILE_REQUIRED_ERROR_CODE,
   PROFILES_LOADING_ERROR_CODE,
   PROFILES_UNAVAILABLE_ERROR_CODE,
+  SELECTED_PROFILE_UNAVAILABLE_ERROR_CODE,
 };
 
 export interface ChatMessage extends MessageAnswerLimits {
@@ -59,6 +64,8 @@ export interface ChatMessage extends MessageAnswerLimits {
    */
   phase: TurnPhase;
   error: string | null;
+  /** The profile named by a {@link SELECTED_PROFILE_UNAVAILABLE_ERROR_CODE} error: its label, or its id. */
+  unavailableProfileLabel?: string;
   /** Model reasoning, streamed before the answer. KEPT once the answer completes — the chat
    *  bubble offers it behind a collapsed disclosure, so a reader who wants to know how the model
    *  got there has somewhere to go. Still never the answer: nothing in it was checked against the
@@ -112,6 +119,27 @@ function generateId(): string {
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
 
+/**
+ * The turn still receiving events for each patient, kept at module scope rather than per hook
+ * instance. A turn left `checking` when the panel closes keeps running into the shared store, so a
+ * reopened panel must be able to stop it or preempt its trailing In-Depth; and a turn for one
+ * patient must never block a question about another.
+ */
+interface InFlightTurn {
+  controller: AbortController;
+  messageId: string;
+}
+const inFlightByPatient = new Map<string, InFlightTurn>();
+
+/** Abort and forget the patient's in-flight turn; returns the message id it was producing. */
+function releaseInFlight(patientUuid: string): string | null {
+  const turn = inFlightByPatient.get(patientUuid);
+  if (!turn) return null;
+  turn.controller.abort();
+  inFlightByPatient.delete(patientUuid);
+  return turn.messageId;
+}
+
 function updateMessages(patientUuid: string, updater: (prev: ChatMessage[]) => ChatMessage[]): void {
   const current = chatSessionStore.getState().messagesByPatient;
   const prev = current[patientUuid] ?? EMPTY_MESSAGES;
@@ -148,9 +176,8 @@ function hydrateMessages(history: ChatHistoryMessage[]): ChatMessage[] {
   for (const m of history) {
     if (m.role === 'user') {
       if (pending) {
-        // Two consecutive user messages — push the prior with empty answer.
-        // This is unusual (LLM call failed) but the UI must remain coherent.
-        out.push(pending);
+        // Two consecutive user messages: the earlier question has no saved answer.
+        out.push(unanswered(pending));
       }
       pending = {
         id: m.messageId,
@@ -195,9 +222,15 @@ function hydrateMessages(history: ChatHistoryMessage[]): ChatMessage[] {
     // 'system' rows are dropped — they belong to the LLM-prompt layer.
   }
   if (pending) {
-    out.push(pending);
+    // The last question has no saved answer: it was interrupted, or the server is still on it and
+    // this panel has no way back into that stream. Either way it is not a blank completed answer.
+    out.push(unanswered(pending));
   }
   return out;
+}
+
+function unanswered(message: ChatMessage): ChatMessage {
+  return { ...message, phase: 'error', error: ANSWER_NOT_SAVED_ERROR_CODE };
 }
 
 function stripInDepthHeader(text: string): string {
@@ -283,8 +316,6 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
   const config = useConfig<ChartSearchAiConfig>();
   const { messagesByPatient, sessionUuidByPatient } = useStore(chatSessionStore);
   const messages: ChatMessage[] = patientUuid ? (messagesByPatient[patientUuid] ?? EMPTY_MESSAGES) : EMPTY_MESSAGES;
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const inFlightMessageIdRef = useRef<string | null>(null);
   const sessionStartRef = useRef<Promise<void> | null>(null);
   const isMountedRef = useRef(true);
   const showReasoningRef = useRef(config.showReasoning);
@@ -292,6 +323,8 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
   const completedReasoningRef = useRef('');
   const [isStartingSession, setIsStartingSession] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  // Whether a Hub question may be sent must not depend on the profile picker being mounted.
+  useHubProfileDiscovery();
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -370,21 +403,12 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
   const clearMessages = useCallback(() => {
     if (patientUuid) {
       updateMessages(patientUuid, () => []);
+      releaseInFlight(patientUuid);
     }
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-    inFlightMessageIdRef.current = null;
   }, [patientUuid]);
 
   const stopCurrent = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-    const stoppedId = inFlightMessageIdRef.current;
-    inFlightMessageIdRef.current = null;
+    const stoppedId = patientUuid ? releaseInFlight(patientUuid) : null;
     if (stoppedId && patientUuid) {
       updateMessages(patientUuid, (prev) => {
         const idx = prev.findIndex((m) => m.id === stoppedId);
@@ -417,11 +441,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
     const pending = startNewChat(patientUuid, providerId)
       .then((response) => {
         if (!isMountedRef.current) return;
-        if (abortControllerRef.current) {
-          abortControllerRef.current.abort();
-          abortControllerRef.current = null;
-        }
-        inFlightMessageIdRef.current = null;
+        releaseInFlight(patientUuid);
         updateMessages(patientUuid, () => []);
         const resolvedProvider = response.provider ?? providerId ?? null;
         setSessionUuid(patientUuid, response.session ?? null);
@@ -456,7 +476,6 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         (existingSession ? patientProvider : undefined) ?? state.selectedProviderId ?? undefined;
       const discoveryStatus = state.profileDiscoveryStatus;
       if (selectedProviderId === 'hub' && discoveryStatus !== 'ready') {
-        const error = discoveryStatus === 'loading' ? PROFILES_LOADING_ERROR_CODE : PROFILES_UNAVAILABLE_ERROR_CODE;
         const failedMessage: ChatMessage = {
           id: generateId(),
           question,
@@ -465,8 +484,21 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           ...NO_ANSWER_LIMITS,
           auditLogId: undefined,
           phase: 'error',
-          error,
+          error: PROFILES_UNAVAILABLE_ERROR_CODE,
         };
+        if (discoveryStatus === 'loading') {
+          failedMessage.error = PROFILES_LOADING_ERROR_CODE;
+        } else if (discoveryStatus === 'selection-unavailable') {
+          // The Hub answered and no longer offers this pick: ask for another one, by name.
+          failedMessage.error = SELECTED_PROFILE_UNAVAILABLE_ERROR_CODE;
+          failedMessage.unavailableProfileLabel =
+            state.hubProfiles?.find((profile) => profile.id === state.selectedProfileId)?.label ??
+            state.selectedProfileId ??
+            undefined;
+        } else {
+          // The Hub was unreachable: read it again so the next question can go through.
+          refreshHubProfiles();
+        }
         updateMessages(patientUuid, (prev) => [...prev, failedMessage]);
         return;
       }
@@ -485,21 +517,21 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         updateMessages(patientUuid, (prev) => [...prev, failedMessage]);
         return;
       }
-      if (abortControllerRef.current) {
-        // A turn is still in flight. If its answer has NOT settled yet, don't start a second
-        // answer generation (one at a time — this is what keeps the server's getLastOrdinal()
-        // path single-flight and race-free). If the answer HAS settled and only the background
-        // in-depth is trailing, PREEMPT it so this new question starts immediately. The turn's
-        // phase is the single source of truth: isAnswerSettled once validation has landed.
-        const preemptedId = inFlightMessageIdRef.current;
-        const inFlight = preemptedId
-          ? (chatSessionStore.getState().messagesByPatient[patientUuid] ?? []).find((m) => m.id === preemptedId)
-          : undefined;
-        if (!inFlight || !isAnswerSettled(inFlight.phase)) return;
-        abortControllerRef.current.abort();
-        abortControllerRef.current = null;
-        inFlightMessageIdRef.current = null;
-        if (preemptedId) {
+      const inFlightTurn = inFlightByPatient.get(patientUuid);
+      if (inFlightTurn) {
+        // A turn is still in flight for this patient. If its answer has NOT settled yet, don't
+        // start a second answer generation: one at a time is what keeps the server's
+        // getLastOrdinal() path single-flight and race-free. If the answer HAS settled and only
+        // the background in-depth is trailing, PREEMPT it so this new question starts immediately.
+        // The turn's phase is the single source of truth: isAnswerSettled once validation landed.
+        // A turn whose message is gone (the transcript was cleared) blocks nothing.
+        const preemptedId = inFlightTurn.messageId;
+        const inFlight = (chatSessionStore.getState().messagesByPatient[patientUuid] ?? []).find(
+          (m) => m.id === preemptedId,
+        );
+        if (inFlight && !isAnswerSettled(inFlight.phase)) return;
+        releaseInFlight(patientUuid);
+        if (inFlight) {
           updateMessages(patientUuid, (prev) => {
             const idx = prev.findIndex((m) => m.id === preemptedId);
             if (idx === -1) return prev;
@@ -519,7 +551,6 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       }
 
       const abortController = new AbortController();
-      abortControllerRef.current = abortController;
 
       const newMessage: ChatMessage = {
         id: generateId(),
@@ -536,22 +567,21 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
 
       updateMessages(patientUuid, (prev) => [...prev, newMessage]);
       const messageId = newMessage.id;
-      inFlightMessageIdRef.current = messageId;
+      inFlightByPatient.set(patientUuid, { controller: abortController, messageId });
 
       completedReasoningRef.current = '';
-      const isCurrentRequest = () => abortControllerRef.current === abortController && !abortController.signal.aborted;
+      const ownsInFlight = () => inFlightByPatient.get(patientUuid)?.controller === abortController;
+      const isCurrentRequest = () => ownsInFlight() && !abortController.signal.aborted;
+      const finishInFlight = () => {
+        if (ownsInFlight()) inFlightByPatient.delete(patientUuid);
+      };
 
       const done = (response: AiSearchResponse) => {
         const ownsSession = isCurrentRequest();
         // This writes to the shared store, so it does not depend on component-mounted state.
         // The terminal-phase guard below still prevents a decoded late event from replacing a
         // turn that the user stopped or that panel cleanup already settled.
-        if (abortControllerRef.current === abortController) {
-          abortControllerRef.current = null;
-        }
-        if (inFlightMessageIdRef.current === messageId) {
-          inFlightMessageIdRef.current = null;
-        }
+        finishInFlight();
         updateMessages(patientUuid, (prev) => {
           const idx = prev.findIndex((m) => m.id === messageId);
           if (idx === -1) return prev;
@@ -582,11 +612,12 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         }
         // Not gated on isMountedRef: a genuine terminal error must still settle the shared store.
         // A turn already stopped by the user is terminal, though, and must not be changed afterwards.
-        if (abortControllerRef.current === abortController) {
-          abortControllerRef.current = null;
-        }
-        if (inFlightMessageIdRef.current === messageId) {
-          inFlightMessageIdRef.current = null;
+        const failedCurrentTurn = isCurrentRequest();
+        finishInFlight();
+        if (failedCurrentTurn && selectedProviderId === 'hub') {
+          // A Hub failure may mean the profile or the Hub went away: read `/models` again so the
+          // next question is refused with the right reason instead of failing at the Hub.
+          refreshHubProfiles();
         }
         console.error('[useChartSearchAi] Request failed:', errMessage);
         updateMessages(patientUuid, (prev) => {
@@ -808,11 +839,13 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           abortController,
           selectedProfileId,
           selectedProviderId,
+          selectedProviderId ? state.providerCapabilities?.[selectedProviderId] : undefined,
         );
-      } catch (err) {
-        abortControllerRef.current = null;
-        inFlightMessageIdRef.current = null;
-        fail(err instanceof Error ? err.message : 'An unknown error occurred');
+      } catch {
+        // The client throws only for a Hub request without a profile, which the guard above
+        // already refuses; report it with the same code rather than an untranslated message.
+        finishInFlight();
+        fail(PROFILE_REQUIRED_ERROR_CODE);
       }
     },
     [sessionUuidByPatient, config.useStreaming, stopCurrent],
@@ -823,7 +856,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
     // closing the panel cannot leave an empty `answering` message that disables the next panel instance,
     // while letting a turn whose answer is already on screen (`checking`) finish its safety/grounding pass.
     return () => {
-      const inFlightId = inFlightMessageIdRef.current;
+      const inFlightId = patientUuid ? inFlightByPatient.get(patientUuid)?.messageId : undefined;
       if (inFlightId && patientUuid) {
         const inFlight = (chatSessionStore.getState().messagesByPatient[patientUuid] ?? []).find(
           (m) => m.id === inFlightId,

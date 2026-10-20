@@ -20,14 +20,17 @@ vi.mock('./ai-response-panel.component', () => ({
     error,
     safetyWarnings,
     safetyStatus,
+    unavailableProfileLabel,
   }: {
     answer: string;
     error: string | null;
     safetyWarnings?: Array<{ type: string; drug: string; detail: string }>;
     safetyStatus?: string;
+    unavailableProfileLabel?: string;
   }) => (
     <div data-testid="ai-response">
       {error ?? answer}
+      {unavailableProfileLabel ? <span data-testid="ai-response-profile">{unavailableProfileLabel}</span> : null}
       {safetyWarnings && safetyWarnings.length > 0 ? (
         <span data-testid="ai-response-safety">{safetyWarnings.map((w) => `${w.type}:${w.drug}`).join('|')}</span>
       ) : null}
@@ -100,6 +103,21 @@ describe('AiChatContent', () => {
     render(<AiChatContent mode="workspace" />);
 
     expect(screen.getByText('Thinking...')).toBeInTheDocument();
+  });
+
+  it('passes the name of a profile the Hub no longer offers to the answer panel', () => {
+    mockUseChartSearchAi.mockReturnValue({
+      messages: [
+        message({ phase: 'error', error: 'selected_profile_unavailable', unavailableProfileLabel: 'Checked team' }),
+      ],
+      isAwaitingAnswer: false,
+      submitQuestion: mockSubmitQuestion,
+      stopCurrent: mockStopCurrent,
+      clearMessages: vi.fn(),
+      startNewChatSession: mockStartNewChatSession,
+    });
+    render(<AiChatContent mode="workspace" />);
+    expect(screen.getByTestId('ai-response-profile')).toHaveTextContent('Checked team');
   });
 
   it('drops the "Thinking..." indicator once answer text arrives', () => {

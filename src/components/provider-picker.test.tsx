@@ -15,6 +15,7 @@ import ProviderPicker from './provider-picker.component';
 
 vi.mock('../api/chartsearchai', () => ({
   fetchProviders: vi.fn(),
+  fetchProfiles: vi.fn(() => new Promise(() => {})),
   fetchChatHistory: vi.fn(),
   chatPatientChartStream: vi.fn(),
   startNewChat: vi.fn(),
@@ -95,6 +96,24 @@ describe('ProviderPicker', () => {
     await waitFor(() => expect(chatSessionStore.getState().selectedProviderId).toBe('bundled'));
     expect(mockFetch).toHaveBeenCalledOnce();
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("records each provider's advertised capabilities for the stream client", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ...DUAL,
+      providers: [
+        provider({ capabilities: ['answer', 'token_streaming'] }),
+        provider({ id: 'hub', label: 'Med-Agent Hub', default: false, capabilities: ['answer', 'indepth'] }),
+      ],
+    });
+    render(<ProviderPicker />);
+
+    await waitFor(() =>
+      expect(chatSessionStore.getState().providerCapabilities).toEqual({
+        bundled: ['answer', 'token_streaming'],
+        hub: ['answer', 'indepth'],
+      }),
+    );
   });
 
   it('shows the provider menu with the default marked when multiple providers exist', async () => {

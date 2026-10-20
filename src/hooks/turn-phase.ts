@@ -22,6 +22,10 @@ export const PROFILE_REQUIRED_ERROR_CODE = 'profile_required';
 export const IN_DEPTH_INTERRUPTED_ERROR_CODE = 'in_depth_interrupted';
 export const ANSWER_CHECK_INTERRUPTED_SUMMARY_CODE = 'answer_check_interrupted';
 export const NEW_CHAT_ERROR_CODE = 'new_chat_failed';
+/** The Hub answered `/models` but no longer offers the user's explicit profile pick. */
+export const SELECTED_PROFILE_UNAVAILABLE_ERROR_CODE = 'selected_profile_unavailable';
+/** A restored question has no assistant row: the turn was interrupted or is still running. */
+export const ANSWER_NOT_SAVED_ERROR_CODE = 'answer_not_saved';
 
 /**
  * The direct answer itself is still being produced, so the composer must stay locked — starting a

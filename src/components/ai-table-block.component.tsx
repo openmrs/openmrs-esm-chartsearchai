@@ -66,9 +66,7 @@ const AiTableBlockView: React.FC<AiTableBlockProps> = ({ block, references, pati
         <TableHead>
           <TableRow>
             {columns.map((col) => (
-              <TableHeader key={col.key} id={`col-${col.key}`}>
-                {col.label}
-              </TableHeader>
+              <TableHeader key={col.key}>{col.label}</TableHeader>
             ))}
           </TableRow>
         </TableHead>

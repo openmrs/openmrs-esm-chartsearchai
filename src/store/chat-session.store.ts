@@ -42,6 +42,12 @@ export interface ChatSessionState {
    */
   selectedProviderId: string | null;
   /**
+   * The capabilities each provider advertises on `/providers`, recorded by the provider picker.
+   * Passed with each turn so the stream client can reject events the provider never declared;
+   * absent until `/providers` has been read, in which case only the event order is checked.
+   */
+  providerCapabilities?: Record<string, string[]>;
+  /**
    * Whether the reader wants an answer's reasoning disclosure open, remembered for the session so
    * the choice costs one click rather than one per answer.
    *

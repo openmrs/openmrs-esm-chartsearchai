@@ -41,6 +41,8 @@ The optional progressive-reasoning preview (backend GP `chartsearchai.progressiv
 
 When the backend's optional [drug-reference feature](https://github.com/openmrs/openmrs-module-chartsearchai#drug-reference-injection--safety-validation) is enabled, the panel also shows non-blocking **safety-check** chips below the answer (overdose / interaction / contraindication), renders module-supplied reference citations (drug references, safety findings, drug-class notes) as distinct non-navigating reference chips, and states what the safety check did and did not cover — see [Fields that state the answer's limits](#fields-that-state-the-answers-limits). A chip about a medication the patient already takes is marked as such — see [API endpoints used](#api-endpoints-used).
 
+Whatever the drug-reference setting, an answer whose safety check is `limited`, or `unavailable` with a reason, a rule source or a finding beside it, carries an **Answer safety check** box with a `Limited safety check` or `Safety check unavailable` tag, the reasons as an issue list and the rule sources as rows. A bare `unavailable` with nothing else to report draws no box, and neither does a status whose only reasons are ones the panel does not draw (a disabled or inapplicable check). A `checked` answer with no findings stays quiet.
+
 ## Backend
 
 This frontend requires the [Chart Search AI backend module](https://github.com/openmrs/openmrs-module-chartsearchai). The backend uses QueryStore to retrieve patient-chart evidence and routes the conversation to the explicitly selected provider. Bundled inference supports its configured local or remote model; Med-Agent Hub exposes configured product profiles. The frontend uses the same conversation interface for both and displays the capabilities and output they actually provide.
@@ -101,6 +103,13 @@ change only after that request succeeds. If it fails, the existing provider, con
 and active answer remain available. An unavailable explicit
 selection remains visible until the user chooses a supported replacement.
 
+The conversation hook runs Hub profile discovery itself and checks it before sending a Hub
+question. If the Hub no longer offers the selected profile, the question is not sent and the
+panel says so by name: "The selected profile, Checked medical team, is no longer available.
+Pick another profile." If `/models` could not be read, it reports the Hub as unavailable and
+reads `/models` again. A failed Hub turn also reads `/models` again, so a profile or Hub that
+went away while the panel was open is noticed before the next question.
+
 ## API endpoints used
 
 All endpoints are served by the backend module under `/ws/rest/v1/chartsearchai/`:
@@ -115,7 +124,6 @@ All endpoints are served by the backend module under `/ws/rest/v1/chartsearchai/
 | POST | `/feedback` | Audit feedback under `questionId`, with rating and optional comment |
 
 Chat request: `{ "patient": "<uuid>", "question": "<text>", "session": "<optional uuid>", "provider": "<optional id>", "profile": "<Hub profile>" }`. Hub requests require a profile.
-The existing `/search` and `/search/stream` clients remain available for their backend contracts; the visible conversation panel uses `/chat/stream`.
 
 Response:
 
@@ -192,7 +200,7 @@ The third is a cost rather than a wrong reading, and it is the one most likely t
 - `unfaithfullyRenderedCitations` — citations whose rendering _in the answer_ the module found unfaithful to the record they point at. A partial, with `unfoundedFindingSeverities`, `cautionLedOverWithholding` and `interactionClaimPairs`: the panel **reads** all four, only to decide whether a chip may be drawn on one line (above), and displays none of them.
 - `safetyWarnings[].chartOrderBridges` — `{ substance, orderDisplay }`, saying _this chip's `Ibuprofen` is your `Advil 400mg` order_. This one is a partial: the panel **reads** it, as one of the three ORDER-FREE kinds of evidence the severity join weighs — they corroborate or contradict and none outranks another, which is why a disagreement refuses rather than being settled by precedence — but does not **display** it. The backend asks for it beside the chip, and until that is done a clinician reading a chip list next to the answer still has to work out whether `Advil` and `Ibuprofen` are one prescription or two.
 
-Under `chartsearchai.grounding.async=true` the SSE `done` event is emitted before validation runs, so `safetyWarnings` and every measurement taken _after_ the answer — `interactionPairs`, `misattributedOrderCitations`, `unstatedFindingSeverities` — arrive on the trailing `grounded` event instead. That is why the stream's `onGrounded` callback hands over the whole payload rather than the references alone. Two exceptions not to gate on that event: `conditionRuleCoverage` is read off the dataset load before the model is called and so is already final on `done` (as is `orderStopDates`, a projection over the answer's own citations that owes the grounding pass nothing), and on an answer-cache hit no early `done` is emitted at all.
+On `/chat/stream` the `answer_done` event can arrive before validation runs, so `safetyWarnings` and every measurement taken _after_ the answer (`interactionPairs`, `misattributedOrderCitations`, `unstatedFindingSeverities`) may arrive on the trailing `evidence_updated` event or the terminal `turn_done` instead. The hook merges each event's full payload, and a null or absent measurement never erases one an earlier event stated. `conditionRuleCoverage` is read off the dataset load before the model is called and so is already final on `answer_done`, as is `orderStopDates`, a projection over the answer's own citations that owes the grounding pass nothing.
 
 The required privilege is **AI Query Patient Data**.
 
@@ -370,9 +378,15 @@ model is selected to obtain a missing feature.
 
 Stop retains displayed answer or enabled reasoning, drops temporary previews and
 marks unfinished checks and In-Depth as interrupted. Once the direct answer settles,
-a new question may preempt trailing In-Depth. Completed responses do not pull a
-reader away from earlier transcript content. Feedback uses the numeric audit id
-internally and sends the existing backend `questionId` field.
+a new question may preempt trailing In-Depth. A turn whose answer is still being
+checked keeps running when the panel closes; the in-flight turn is tracked per
+patient rather than per panel, so a reopened panel can stop or preempt it, and it
+never blocks a question about another patient. Completed responses do not pull a
+reader away from earlier transcript content. Feedback and Copy appear once the
+direct answer settles, without waiting for In-Depth. Feedback uses the numeric audit
+id internally and sends the existing backend `questionId` field. A pre-check
+"Original model answer" stays collapsed under the checked one. A restored question
+with no saved answer says so instead of showing an empty answer.
 
 This source requires a backend build that includes the conversation endpoints and
 provider contracts of

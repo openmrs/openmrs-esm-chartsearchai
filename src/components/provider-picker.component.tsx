@@ -30,7 +30,17 @@ const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSelect, disabled = fa
     const controller = new AbortController();
     fetchProviders(controller)
       .then((result) => {
-        if (!controller.signal.aborted) setData(result);
+        if (controller.signal.aborted) return;
+        setData(result);
+        // Configuration, not a user's state, so it outlives logout like the list itself.
+        chatSessionStore.setState({
+          providerCapabilities: Object.fromEntries(
+            (Array.isArray(result?.providers) ? result.providers : []).map((provider) => [
+              provider.id,
+              Array.isArray(provider.capabilities) ? provider.capabilities : [],
+            ]),
+          ),
+        });
       })
       .catch((error) => {
         if (!controller.signal.aborted && error?.name !== 'AbortError') {

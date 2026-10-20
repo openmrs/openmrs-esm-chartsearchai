@@ -95,6 +95,18 @@ describe('AiTableBlockView', () => {
     expect(link1s).toHaveLength(1);
   });
 
+  it('gives two tables with the same column keys no duplicate element ids', () => {
+    const { container } = render(
+      <>
+        <AiTableBlockView block={block} references={references} patientUuid={patientUuid} />
+        <AiTableBlockView block={block} references={references} patientUuid={patientUuid} />
+      </>,
+    );
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const ids = Array.from(container.querySelectorAll('[id]')).map((element) => element.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
   it('returns null when the block has no rows', () => {
     const empty: AiTableBlock = {
       kind: 'table',
