@@ -103,8 +103,8 @@ export function misattributedTitle(t: Translate): string {
 
 /**
  * What each kind of module-supplied citation IS, shown on both surfaces that carry it — the
- * chip's badge and the inline marker — so a clinician hovering the same citation in two places
- * is never told two different things.
+ * inline marker's tooltip and an opened reference panel — so a clinician reading the same
+ * citation in two places is never told two different things.
  *
  * Split per kind like the panel's reference-label map. One wording used to serve
  * all of them, and it was written when the predicate above matched `drug_reference` alone:
@@ -117,7 +117,7 @@ export function misattributedTitle(t: Translate): string {
  * about this patient.
  *
  * This is a difference in WORDING only. Every kind still gets the same treatment the backend
- * requires of the group: no grounding verdict, no navigation target, the same neutral tag. The
+ * requires of the group: no grounding verdict, no navigation target, no badge. The
  * README's "must not treat the `reference`-group types differently" is aimed at a client that
  * keys the badge, the label or the navigation on `resourceType` and drops a type into a default
  * branch — which is why this, like the label map, is a total `Record` with an explicit `other`.
