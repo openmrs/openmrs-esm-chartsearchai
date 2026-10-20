@@ -1262,6 +1262,8 @@ export interface ChatHistoryResponse {
   /** The provider that produced this conversation (bundled/hub). Null or absent when there is no
    *  conversation yet (empty history). */
   provider?: string | null;
+  /** The provider's chart mode for this conversation. Null or absent when there is no conversation. */
+  mode?: string | null;
   messages: ChatHistoryMessage[];
 }
 
