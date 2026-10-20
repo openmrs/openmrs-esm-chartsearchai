@@ -10,12 +10,6 @@ const BASE_PATH = `${restBaseUrl}/chartsearchai`;
  * message.
  */
 export const SESSION_EXPIRED_ERROR_CODE = 'chartsearchai:session-expired';
-export const PROFILES_LOADING_ERROR_CODE = 'profiles_loading';
-export const PROFILES_UNAVAILABLE_ERROR_CODE = 'profiles_unavailable';
-export const PROFILE_REQUIRED_ERROR_CODE = 'profile_required';
-export const IN_DEPTH_INTERRUPTED_ERROR_CODE = 'in_depth_interrupted';
-export const ANSWER_CHECK_INTERRUPTED_SUMMARY_CODE = 'answer_check_interrupted';
-export const NEW_CHAT_ERROR_CODE = 'new_chat_failed';
 
 // Stable codes chatPatientChartStream emits via onError for its own transport failures, for the
 // same reason as SESSION_EXPIRED_ERROR_CODE: the conversation panel translates them. Problem codes
