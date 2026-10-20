@@ -26,13 +26,36 @@ const REMARK_PLUGINS: React.ComponentProps<typeof ReactMarkdown>['remarkPlugins'
   } as never,
 ];
 
+/** The few hast shapes the citation walk reads; other node types pass through untouched. */
+interface HastNode {
+  type: string;
+  value?: string;
+  tagName?: string;
+  properties?: Record<string, unknown>;
+  children?: HastNode[];
+}
+
+/** Stands in for a decorated text run; the component below renders the decoration it carries. */
+const CITED_TEXT = 'chartsearchai-cited-text';
+
+function hastText(node: HastNode): string {
+  if (node.type === 'text') return node.value ?? '';
+  return (node.children ?? []).map(hastText).join('');
+}
+
+function hasCitation(text: string): boolean {
+  return citationGroupPattern().test(text);
+}
+
 /**
  * Render the assistant answer as markdown (the synthesizer emits `**Answer**` / `**In
  * Depth**` headers, bold, lists) WHILE keeping inline `[N]` citation chips. react-markdown
- * builds the element tree; for every text leaf we run `renderTextWithCitations`, so a `[N]`
- * inside any element (paragraph, list item, bold span, heading) still becomes a clickable
- * chip. No hand-rolled markdown parsing — markdown structure is react-markdown's job, and
- * the citation logic is reused unchanged from the existing renderer.
+ * builds the tree; a rehype step then walks it once in document order and replaces every text
+ * run that carries a `[N]` marker with that run already decorated by `renderTextWithCitations`,
+ * so a marker inside any element (paragraph, list item, bold span, heading, table cell) is a
+ * clickable chip. The walk, not React's render order, decides which marker carries a finding's
+ * once-per-answer rating and caveat: React renders a paragraph's own text before descending into
+ * a bold span inside it, which would move the badge to a later repeat of the marker.
  */
 const MarkdownAnswer: React.FC<MarkdownAnswerProps> = ({ answer, references, patientUuid, decorations }) => {
   const { t } = useTranslation();
@@ -40,71 +63,79 @@ const MarkdownAnswer: React.FC<MarkdownAnswerProps> = ({ answer, references, pat
   const severities = decorations?.severities;
   const qualified = decorations?.qualified;
   const rendered = useMemo(() => {
-    const applied: CitationContext = {
-      references,
-      patientUuid,
-      t,
-      misattributed: misattributed ?? new Set<number>(),
-      severities: severities ?? new Map<number, string>(),
-      qualified: qualified ?? new Set<number>(),
-      badged: new Set<number>(),
-      noted: new Set<number>(),
-    };
-    // React may render a Markdown element more than once. Reuse its already decorated
-    // children so the answer-wide deduplication sets do not erase clinical disclosures.
-    const renderedNodes = new WeakMap<object, React.ReactNode>();
-    const cite = (children: React.ReactNode, node?: object): React.ReactNode => {
-      if (node && renderedNodes.has(node)) return renderedNodes.get(node);
-      const decorated = React.Children.map(children, (child) =>
-        typeof child === 'string' ? renderTextWithCitations(child, applied) : child,
-      );
-      if (node) renderedNodes.set(node, decorated);
-      return decorated;
+    const decorated = new WeakMap<object, React.ReactNode>();
+
+    // Runs on every parse. React may render the Markdown component more than once (StrictMode
+    // does), and each parse is a fresh tree, so the answer-wide deduplication sets start empty
+    // on each walk rather than carrying over and erasing the disclosures from the second tree.
+    const decorateInDocumentOrder = () => (tree: HastNode) => {
+      const applied: CitationContext = {
+        references,
+        patientUuid,
+        t,
+        misattributed: misattributed ?? new Set<number>(),
+        severities: severities ?? new Map<number, string>(),
+        qualified: qualified ?? new Set<number>(),
+        badged: new Set<number>(),
+        noted: new Set<number>(),
+      };
+      const placeholder = (text: string): HastNode => {
+        const node: HastNode = { type: 'element', tagName: CITED_TEXT, properties: {}, children: [] };
+        decorated.set(node, renderTextWithCitations(text, applied));
+        return node;
+      };
+      const visit = (parent: HastNode) => {
+        parent.children = (parent.children ?? []).flatMap((child): HastNode[] => {
+          if (child.type === 'text') {
+            return hasCitation(child.value ?? '') ? [placeholder(child.value ?? '')] : [child];
+          }
+          if (child.type !== 'element') return [child];
+          if (child.tagName === 'a') {
+            const label = hastText(child);
+            const citation = `[${label}]`;
+            // A numeric link is a citation: it goes through the chart citation contract, never
+            // to the model-supplied URL.
+            if (citationGroupPattern().exec(citation)?.[0] === citation) return [placeholder(citation)];
+            // A marker inside link text keeps its chip and disclosures; the model-supplied URL is dropped.
+            if (hasCitation(label)) {
+              visit(child);
+              return child.children ?? [];
+            }
+          }
+          visit(child);
+          return [child];
+        });
+      };
+      visit(tree);
     };
 
-    const linkText = (children: React.ReactNode): string =>
-      React.Children.toArray(children)
-        .map((child) => {
-          if (typeof child === 'string' || typeof child === 'number') return String(child);
-          return React.isValidElement<{ children?: React.ReactNode }>(child) ? linkText(child.props.children) : '';
-        })
-        .join('');
-
-    // Map every text-bearing element through the citation renderer; headings collapse to a
-    // single subtle heading level (the answer's bold **Answer** / **In Depth** become <strong>).
-    const components: Components = {
+    // Headings collapse to a single subtle heading level (the answer's bold **Answer** /
+    // **In Depth** become <strong>).
+    const components = {
+      [CITED_TEXT]: ({ node }: { node?: object }) => <>{node ? decorated.get(node) : null}</>,
       // Model output must not load images, including URLs that disclose patient context.
       img: () => null,
-      a: ({ children, href, node }) => {
-        const label = linkText(children);
-        const citation = `[${label}]`;
-        if (citationGroupPattern().exec(citation)?.[0] === citation) {
-          return <>{cite(citation, node)}</>;
-        }
-        // A marker inside link text keeps its chip and disclosures; the model-supplied URL is dropped.
-        if (citationGroupPattern().test(label)) {
-          return <>{cite(children, node)}</>;
-        }
-        return <a href={href}>{children}</a>;
-      },
-      code: ({ children, node }) => <code>{cite(children, node)}</code>,
-      p: ({ children, node }) => <p className={styles.answerParagraph}>{cite(children, node)}</p>,
-      strong: ({ children, node }) => <strong>{cite(children, node)}</strong>,
-      em: ({ children, node }) => <em>{cite(children, node)}</em>,
-      li: ({ children, node }) => <li>{cite(children, node)}</li>,
-      td: ({ children, node }) => <td>{cite(children, node)}</td>,
-      th: ({ children, node }) => <th>{cite(children, node)}</th>,
-      del: ({ children, node }) => <del>{cite(children, node)}</del>,
-      h1: ({ children, node }) => <h4 className={styles.answerHeading}>{cite(children, node)}</h4>,
-      h2: ({ children, node }) => <h4 className={styles.answerHeading}>{cite(children, node)}</h4>,
-      h3: ({ children, node }) => <h4 className={styles.answerHeading}>{cite(children, node)}</h4>,
-      h4: ({ children, node }) => <h4 className={styles.answerHeading}>{cite(children, node)}</h4>,
-      h5: ({ children, node }) => <h4 className={styles.answerHeading}>{cite(children, node)}</h4>,
-      h6: ({ children, node }) => <h4 className={styles.answerHeading}>{cite(children, node)}</h4>,
-    };
+      // A model-supplied link leaves the chart in a new tab and does not send the chart URL along.
+      a: ({ children, href }) => (
+        <a href={href} target="_blank" rel="noopener noreferrer">
+          {children}
+        </a>
+      ),
+      p: ({ children }) => <p className={styles.answerParagraph}>{children}</p>,
+      h1: ({ children }) => <h4 className={styles.answerHeading}>{children}</h4>,
+      h2: ({ children }) => <h4 className={styles.answerHeading}>{children}</h4>,
+      h3: ({ children }) => <h4 className={styles.answerHeading}>{children}</h4>,
+      h4: ({ children }) => <h4 className={styles.answerHeading}>{children}</h4>,
+      h5: ({ children }) => <h4 className={styles.answerHeading}>{children}</h4>,
+      h6: ({ children }) => <h4 className={styles.answerHeading}>{children}</h4>,
+    } as Components;
 
     return (
-      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components}>
+      <ReactMarkdown
+        remarkPlugins={REMARK_PLUGINS}
+        rehypePlugins={[decorateInDocumentOrder as never]}
+        components={components}
+      >
         {answer}
       </ReactMarkdown>
     );

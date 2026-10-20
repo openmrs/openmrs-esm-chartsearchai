@@ -141,6 +141,36 @@ describe('MarkdownAnswer', () => {
     expect(screen.getAllByText('Major')).toHaveLength(1);
     expect(screen.getAllByText('Clinical significance unknown')).toHaveLength(1);
   });
+  it('puts a once-per-finding badge on the first marker in document order, even inside formatting', () => {
+    const { container } = render(
+      <MarkdownAnswer
+        answer="Warfarin **interacts [4]** with aspirin, see again [4]."
+        references={references}
+        patientUuid={patientUuid}
+        decorations={{ misattributed: new Set(), severities: new Map([[4, 'Major']]), qualified: new Set([4]) }}
+      />,
+    );
+    expect(screen.getAllByText('Major')).toHaveLength(1);
+    expect(screen.getByText('Major').closest('strong')).not.toBeNull();
+    expect(screen.getByText('Clinical significance unknown').closest('strong')).not.toBeNull();
+    expect(container.querySelector('p')?.textContent).toBe(
+      'Warfarin interacts [4] Major Clinical significance unknown with aspirin, see again [4].',
+    );
+  });
+
+  it('puts the badge on the first marker when a later list item renders before a nested one', () => {
+    render(
+      <MarkdownAnswer
+        answer={'- **First [4]** then [4]\n- Again [4]'}
+        references={references}
+        patientUuid={patientUuid}
+        decorations={{ misattributed: new Set(), severities: new Map([[4, 'Major']]), qualified: new Set() }}
+      />,
+    );
+    expect(screen.getAllByText('Major')).toHaveLength(1);
+    expect(screen.getByText('Major').closest('strong')).not.toBeNull();
+  });
+
   it('keeps clinical disclosures visible under React StrictMode', () => {
     render(
       <React.StrictMode>
@@ -215,5 +245,18 @@ describe('MarkdownAnswer', () => {
       />,
     );
     expect(screen.getByRole('link', { name: 'Source website' })).toHaveAttribute('href', 'https://example.test/source');
+  });
+
+  it('opens a model-supplied link away from the chart, without passing the chart as referrer', () => {
+    render(
+      <MarkdownAnswer
+        answer="[Source website](https://example.test/source)"
+        references={references}
+        patientUuid={patientUuid}
+      />,
+    );
+    const link = screen.getByRole('link', { name: 'Source website' });
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
   });
 });
