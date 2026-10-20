@@ -53,8 +53,9 @@ function resolveSelection(
 /**
  * Read the Hub's product profiles through `/models` and record which one a chat request may use.
  * Concurrent calls share one request. The current list and status stay in place while a refresh
- * is in flight; a failed read reports the Hub as unreachable and, while discovery is in use,
- * retries after {@link PROFILE_DISCOVERY_RETRY_MS}.
+ * is in flight, including an earlier failure's `unavailable` during a retry. A failed read reports
+ * the Hub as unreachable and, while discovery is in use, retries after
+ * {@link PROFILE_DISCOVERY_RETRY_MS}.
  *
  * @param preserveExplicit keep an explicit pick the Hub no longer offers (the picker is shown)
  */
@@ -63,9 +64,6 @@ export function refreshHubProfiles(preserveExplicit: boolean = lastPreserveExpli
   if (inFlight) return inFlight.promise;
   clearRetry();
   const controller = new AbortController();
-  if (!chatSessionStore.getState().hubProfiles) {
-    chatSessionStore.setState({ profileDiscoveryStatus: 'loading' });
-  }
   const promise = fetchProfiles(controller)
     .then((result) => {
       if (controller.signal.aborted) return;

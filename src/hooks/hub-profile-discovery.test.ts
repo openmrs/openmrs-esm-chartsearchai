@@ -85,6 +85,16 @@ describe('Hub profile discovery', () => {
     expect(chatSessionStore.getState().hubProfiles).toHaveLength(1);
   });
 
+  it('keeps reporting the Hub as unreachable while a retry is in flight', async () => {
+    mockFetch.mockRejectedValueOnce(new Error('hub down'));
+    await refreshHubProfiles(true);
+    mockFetch.mockReturnValueOnce(new Promise(() => {}));
+
+    refreshHubProfiles(true);
+
+    expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('unavailable');
+  });
+
   it('shares one request between concurrent refreshes', async () => {
     mockFetch.mockResolvedValueOnce(list(profile({})));
     await Promise.all([refreshHubProfiles(true), refreshHubProfiles(true)]);
