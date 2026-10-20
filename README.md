@@ -49,7 +49,7 @@ See the [backend README](https://github.com/openmrs/openmrs-module-chartsearchai
 
 ## Prerequisites
 
-- OpenMRS 3.x with the [Chart Search AI module](https://github.com/openmrs/openmrs-module-chartsearchai) `1.0.0-SNAPSHOT` (`openmrs-module-chartsearchai#590`) installed and configured
+- OpenMRS 3.x with a build of the [Chart Search AI module](https://github.com/openmrs/openmrs-module-chartsearchai) that includes [openmrs-module-chartsearchai#590](https://github.com/openmrs/openmrs-module-chartsearchai/pull/590), installed and configured
 - Node.js 18+
 - Yarn 4.x
 
@@ -374,8 +374,9 @@ a new question may preempt trailing In-Depth. Completed responses do not pull a
 reader away from earlier transcript content. Feedback uses the numeric audit id
 internally and sends the existing backend `questionId` field.
 
-This source requires the corresponding backend conversation endpoints and provider
-contracts (`openmrs-module-chartsearchai#590`, module version `1.0.0-SNAPSHOT`).
+This source requires a backend build that includes the conversation endpoints and
+provider contracts of
+[openmrs-module-chartsearchai#590](https://github.com/openmrs/openmrs-module-chartsearchai/pull/590).
 Local component checks do not establish combined runtime acceptance.
 
 The client checks the lifecycle rules it can see event by event: the preview may not
