@@ -1,10 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MenuButton, MenuItem, MenuItemDivider, MenuItemRadioGroup } from '@carbon/react';
+import { MenuButton, MenuItemDivider, MenuItemRadioGroup } from '@carbon/react';
 import { useConfig, useStore } from '@openmrs/esm-framework';
 import { type ChartSearchAiConfig } from '../config-schema';
-import { fetchProfiles, type HubProfileListResponse, type HubProfileMetadata } from '../api/chartsearchai';
+import { type HubProfileMetadata } from '../api/chartsearchai';
+import { selectHubProfile, useHubProfileDiscovery } from '../hooks/hub-profile-discovery';
 import { chatSessionStore } from '../store/chat-session.store';
+import { useMenuTriggerName } from './menu-trigger-name';
 import styles from './model-picker.scss';
 
 interface ProfileSection {
@@ -13,73 +15,24 @@ interface ProfileSection {
   profiles: HubProfileMetadata[];
 }
 
-/** Product-profile picker backed entirely by med-agent-hub metadata. */
+/**
+ * Product-profile picker backed entirely by med-agent-hub metadata. It lists only the profiles the
+ * Hub currently advertises as available; discovery and the decision whether a question may be sent
+ * live in {@link useHubProfileDiscovery}, which the conversation hook also runs.
+ */
 const ModelPicker: React.FC = () => {
   const { t } = useTranslation();
   const { showModelPicker } = useConfig<ChartSearchAiConfig>();
-  const { selectedProfileId, profileExplicitlySelected, selectedProviderId } = useStore(chatSessionStore);
-  const [data, setData] = useState<HubProfileListResponse | null>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
+  const { selectedProfileId, selectedProviderId, hubProfiles, profileDiscoveryStatus } = useStore(chatSessionStore);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  useHubProfileDiscovery();
 
-  useEffect(() => {
-    if (selectedProviderId !== 'hub') {
-      return;
-    }
-    const controller = new AbortController();
-    setData(null);
-    setLoadFailed(false);
-    chatSessionStore.setState({ profileDiscoveryStatus: 'loading' });
-    fetchProfiles(controller)
-      .then((result) => {
-        if (controller.signal.aborted) return;
-        setData(result);
-        setLoadFailed(false);
-      })
-      .catch((error) => {
-        if (!controller.signal.aborted && error?.name !== 'AbortError') {
-          setData(null);
-          setLoadFailed(true);
-          chatSessionStore.setState({ profileDiscoveryStatus: 'unavailable' });
-        }
-      });
-    return () => controller.abort();
-  }, [selectedProviderId]);
-
-  const productProfiles = useMemo(
-    () => (Array.isArray(data?.data) ? data.data : []).filter((profile) => profile.visibility === 'product'),
-    [data],
+  const availableProfiles = useMemo(() => (hubProfiles ?? []).filter((profile) => profile.available), [hubProfiles]);
+  const selectedProfile = useMemo(
+    () => (hubProfiles ?? []).find((profile) => profile.id === selectedProfileId) ?? null,
+    [hubProfiles, selectedProfileId],
   );
-  const availableProfiles = useMemo(() => productProfiles.filter((profile) => profile.available), [productProfiles]);
-  const defaultProfile = useMemo(
-    () => availableProfiles.find((profile) => profile.default) ?? null,
-    [availableProfiles],
-  );
-  const preserveExplicitSelection = Boolean(
-    profileExplicitlySelected && selectedProfileId && showModelPicker !== false,
-  );
-  const availableSelectedProfile = useMemo(
-    () => availableProfiles.find((profile) => profile.id === selectedProfileId) ?? null,
-    [availableProfiles, selectedProfileId],
-  );
-  const effectiveProfile = useMemo(
-    () => availableSelectedProfile ?? (preserveExplicitSelection ? null : defaultProfile),
-    [availableSelectedProfile, preserveExplicitSelection, defaultProfile],
-  );
-  const selectedProductProfile = useMemo(
-    () => productProfiles.find((profile) => profile.id === selectedProfileId) ?? null,
-    [productProfiles, selectedProfileId],
-  );
-
-  useEffect(() => {
-    if (!data) {
-      return;
-    }
-    const nextId = effectiveProfile?.id ?? (preserveExplicitSelection ? selectedProfileId : null);
-    const profileDiscoveryStatus = effectiveProfile ? 'ready' : 'unavailable';
-    if (nextId !== selectedProfileId || chatSessionStore.getState().profileDiscoveryStatus !== profileDiscoveryStatus) {
-      chatSessionStore.setState({ selectedProfileId: nextId, profileDiscoveryStatus });
-    }
-  }, [data, effectiveProfile, preserveExplicitSelection, selectedProfileId]);
+  const effectiveProfile = profileDiscoveryStatus === 'ready' && selectedProfile?.available ? selectedProfile : null;
 
   const sections = useMemo<ProfileSection[]>(() => {
     const definitions = [
@@ -99,42 +52,25 @@ const ModelPicker: React.FC = () => {
       : known;
   }, [availableProfiles, t]);
 
-  const handleSelect = useCallback((profileId: string) => {
-    chatSessionStore.setState({
-      selectedProfileId: profileId,
-      profileExplicitlySelected: true,
-      profileDiscoveryStatus: 'ready',
-    });
-  }, []);
+  const unavailableSelectionLabel =
+    profileDiscoveryStatus === 'selection-unavailable'
+      ? `${selectedProfile?.label ?? selectedProfileId} (${t('unavailable', 'unavailable')})`
+      : null;
+  const triggerLabel =
+    effectiveProfile?.label ?? unavailableSelectionLabel ?? t('chooseAiProfile', 'Choose AI profile');
+  useMenuTriggerName(triggerRef, `${t('aiProfile', 'AI profile')}: ${triggerLabel}`);
 
-  if (showModelPicker === false || selectedProviderId !== 'hub') {
+  if (showModelPicker === false || selectedProviderId !== 'hub' || profileDiscoveryStatus === 'loading') {
     return null;
   }
 
-  if (!data) {
-    if (loadFailed) {
-      return (
-        <div className={styles.root} role="status">
-          {t('profilesUnavailable', 'AI profiles unavailable')}
-        </div>
-      );
-    }
-    return null;
-  }
-
-  if (availableProfiles.length === 0 && !preserveExplicitSelection) {
+  if (!hubProfiles || (availableProfiles.length === 0 && !unavailableSelectionLabel)) {
     return (
       <div className={styles.root} role="status">
         {t('profilesUnavailable', 'AI profiles unavailable')}
       </div>
     );
   }
-
-  const unavailableProfiles = productProfiles.filter((profile) => !profile.available);
-  const unavailableExplicitLabel = preserveExplicitSelection
-    ? `${selectedProductProfile?.label ?? selectedProfileId} (${t('unavailable', 'unavailable')})`
-    : null;
-  const triggerLabel = effectiveProfile?.label ?? unavailableExplicitLabel ?? t('chooseAiProfile', 'Choose AI profile');
 
   if (availableProfiles.length === 0) {
     return (
@@ -148,6 +84,7 @@ const ModelPicker: React.FC = () => {
     <div className={styles.root}>
       <div className={styles.triggerRow}>
         <MenuButton
+          ref={triggerRef}
           data-testid="chartsearchai-profile-picker"
           label={triggerLabel}
           kind="ghost"
@@ -157,7 +94,10 @@ const ModelPicker: React.FC = () => {
           {sections.map((section, index) => (
             <React.Fragment key={section.key}>
               {index > 0 ? <MenuItemDivider /> : null}
-              <MenuItem label={section.label} disabled className={styles.sectionHeader} />
+              {/* A visible heading only: the radio group below carries the same label for assistive technology. */}
+              <li role="presentation" aria-hidden="true" className={styles.sectionHeader}>
+                {section.label}
+              </li>
               <MenuItemRadioGroup
                 label={section.label}
                 items={section.profiles.map((profile) => profile.id)}
@@ -169,16 +109,9 @@ const ModelPicker: React.FC = () => {
                 selectedItem={
                   section.profiles.some((profile) => profile.id === effectiveProfile?.id) ? effectiveProfile?.id : ''
                 }
-                onChange={(profileId) => handleSelect(profileId as string)}
+                onChange={(profileId) => selectHubProfile(profileId as string)}
               />
             </React.Fragment>
-          ))}
-          {unavailableProfiles.length > 0 ? <MenuItemDivider /> : null}
-          {unavailableProfiles.length > 0 ? (
-            <MenuItem label={t('unavailableProfiles', 'Unavailable')} disabled className={styles.sectionHeader} />
-          ) : null}
-          {unavailableProfiles.map((profile) => (
-            <MenuItem key={profile.id} label={`${profile.label} (${t('unavailable', 'unavailable')})`} disabled />
           ))}
         </MenuButton>
       </div>

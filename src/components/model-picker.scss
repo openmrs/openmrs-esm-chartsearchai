@@ -15,19 +15,13 @@
   gap: layout.$spacing-02;
 }
 
-// A disabled MenuItem used as a VISIBLE section header above each group of
-// profiles (Carbon group labels are aria-only). Restyle it from a greyed-out
-// option into a small, non-interactive heading.
+// A VISIBLE section header above each group of profiles. Carbon group labels are aria-only, and
+// the header is hidden from assistive technology because the group already carries its label.
 .sectionHeader {
-  pointer-events: none;
-  min-height: auto;
-  opacity: 1;
-
-  :global(.cds--menu-item__label) {
-    font-size: 0.75rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    opacity: 1;
-  }
+  list-style: none;
+  padding: layout.$spacing-03 layout.$spacing-05 layout.$spacing-02;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }

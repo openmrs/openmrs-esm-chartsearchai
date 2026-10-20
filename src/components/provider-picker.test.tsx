@@ -34,7 +34,7 @@ const DUAL = {
 };
 
 const openMenu = async () => {
-  const trigger = await screen.findByRole('button', { name: /Bundled \(local\)/i });
+  const trigger = await screen.findByRole('button', { name: /^AI provider: Bundled \(local\)$/i });
   fireEvent.click(trigger);
   return screen.findByRole('menu');
 };
@@ -154,7 +154,7 @@ describe('ProviderPicker', () => {
       const onSwitched = vi.fn();
       render(<ProviderPicker onSwitched={onSwitched} />);
 
-      fireEvent.click(await screen.findByRole('button', { name: `${label} (unavailable)` }));
+      fireEvent.click(await screen.findByRole('button', { name: `AI provider: ${label} (unavailable)` }));
       expect(chatSessionStore.getState().selectedProviderId).toBe(id);
       expect(onSwitched).not.toHaveBeenCalled();
       fireEvent.click(screen.getByRole('menuitemradio', { name: /Bundled \(local\)/i }));

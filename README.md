@@ -65,21 +65,33 @@ yarn start
 
 The following options can be set via the OpenMRS 3.x config system:
 
-| Property              | Type      | Default                          | Description                                                          |
-| --------------------- | --------- | -------------------------------- | -------------------------------------------------------------------- |
-| `aiSearchPlaceholder` | `string`  | `"Ask AI about this patient..."` | Placeholder text for the search input                                |
-| `maxQuestionLength`   | `number`  | `1000`                           | Maximum characters allowed in a question                             |
-| `useStreaming`        | `boolean` | `true`                           | Use the SSE streaming endpoint for token-by-token responses          |
-| `showReasoning`       | `boolean` | `true`                           | Show the model's reasoning — see [Model reasoning](#model-reasoning) |
+| Property              | Type      | Default                          | Description                                                            |
+| --------------------- | --------- | -------------------------------- | ---------------------------------------------------------------------- |
+| `aiSearchPlaceholder` | `string`  | `"Ask AI about this patient..."` | Placeholder text for the search input                                  |
+| `maxQuestionLength`   | `number`  | `1000`                           | Maximum characters allowed in a question                               |
+| `useStreaming`        | `boolean` | `true`                           | Use the SSE streaming endpoint for token-by-token responses            |
+| `showReasoning`       | `boolean` | `true`                           | Show the model's reasoning — see [Model reasoning](#model-reasoning)   |
+| `showModelPicker`     | `boolean` | `true`                           | Show the med-agent-hub product-profile picker in the chat panel footer |
 
 ### Provider and profile selection components
 
 The extracted provider selector reads `/providers`, uses the backend's advertised
 default, and keeps an unavailable explicit selection until the user chooses a
-replacement. The Hub profile selector reads `/models`, shows product profiles and
-their availability, and selects the Hub-advertised default. It does not query Hub
-profiles for bundled inference. `showModelPicker` defaults to `true`; hiding the
-control still permits discovery of the required default profile.
+replacement.
+
+Hub profile discovery (`src/hooks/hub-profile-discovery.ts`) reads `/models`, which
+relays med-agent-hub's own profile list, and records which product profile a chat
+request may use. It runs whenever the Hub is the selected provider and something
+uses it, so authorizing a question does not depend on the profile selector being
+mounted. A failed read reports the Hub as unreachable and is retried every 15
+seconds while discovery is in use. A profile the user picked that the Hub no longer
+offers stays selected and is reported as needing a replacement rather than being
+swapped silently. When `showModelPicker` is `false` the user cannot pick, so the
+Hub-advertised default is used instead. Bundled inference never queries Hub profiles.
+
+The Hub profile selector lists only the profiles the Hub currently advertises as
+available, grouped by topology. Both selectors' triggers are named for what they
+select, for example "AI provider: Bundled (local)".
 
 These components and discovery calls are prepared for the conversation workflow.
 The current search view does not mount them. Their integration with history,

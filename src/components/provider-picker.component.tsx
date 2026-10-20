@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MenuButton, MenuItem, MenuItemDivider, MenuItemRadioGroup } from '@carbon/react';
 import { useStore } from '@openmrs/esm-framework';
 import { fetchProviders, type ProviderListResponse } from '../api/chartsearchai';
 import { chatSessionStore } from '../store/chat-session.store';
+import { useMenuTriggerName } from './menu-trigger-name';
 import styles from './provider-picker.scss';
 
 interface ProviderPickerProps {
@@ -22,6 +23,7 @@ const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSwitched }) => {
   const { t } = useTranslation();
   const { selectedProviderId } = useStore(chatSessionStore);
   const [data, setData] = useState<ProviderListResponse | null>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -57,6 +59,7 @@ const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSwitched }) => {
   const providerReady = Boolean(effectiveProvider?.enabled && effectiveProvider.ready);
   const providerLabel = effectiveProvider?.label ?? effectiveProviderId ?? t('providers', 'Providers');
   const triggerLabel = providerReady ? providerLabel : `${providerLabel} (${t('unavailable', 'unavailable')})`;
+  useMenuTriggerName(triggerRef, `${t('aiProvider', 'AI provider')}: ${triggerLabel}`);
 
   // Make the backend-advertised default explicit in shared state so provider-specific controls
   // know which contract applies. This does not start a new conversation: it records the provider
@@ -86,6 +89,7 @@ const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSwitched }) => {
     <div className={styles.root}>
       <div className={styles.triggerRow}>
         <MenuButton
+          ref={triggerRef}
           data-testid="chartsearchai-provider-picker"
           label={triggerLabel}
           kind="ghost"

@@ -27,6 +27,7 @@ const seedSession = () =>
     selectedProfileId: 'single-e4b-checked',
     selectedProviderId: 'hub',
     profileDiscoveryStatus: 'ready',
+    hubProfiles: [],
     reasoningExpanded: true,
   });
 
@@ -63,6 +64,7 @@ describe('chatSessionStore logout cleanup', () => {
     expect(state.selectedProfileId).toBeNull();
     expect(state.selectedProviderId).toBeNull();
     expect(state.profileDiscoveryStatus).toBe('loading');
+    expect(state.hubProfiles).toBeNull();
     expect(state.reasoningExpanded).toBeUndefined();
     unsubscribe();
   });

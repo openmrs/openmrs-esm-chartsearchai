@@ -5,6 +5,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useConfig } from '@openmrs/esm-framework';
 import { fetchProfiles, type HubProfileMetadata } from '../api/chartsearchai';
 import { chatSessionStore } from '../store/chat-session.store';
+import { PROFILE_DISCOVERY_RETRY_MS, stopHubProfileDiscovery } from '../hooks/hub-profile-discovery';
 import ModelPicker from './model-picker.component';
 
 vi.mock('../api/chartsearchai', () => ({ fetchProfiles: vi.fn() }));
@@ -49,12 +50,13 @@ const PROFILE_DATA = {
 };
 
 const openMenu = async () => {
-  const trigger = await screen.findByRole('button', { name: /Fast checked answer \(E4B\)/i });
+  const trigger = await screen.findByRole('button', { name: /^AI profile: Fast checked answer \(E4B\)$/i });
   fireEvent.click(trigger);
   return screen.findByRole('menu');
 };
 
 beforeEach(() => {
+  stopHubProfileDiscovery();
   vi.clearAllMocks();
   mockUseConfig.mockReturnValue({ showModelPicker: true });
   chatSessionStore.setState({
@@ -63,6 +65,7 @@ beforeEach(() => {
     selectedProfileId: null,
     profileExplicitlySelected: false,
     profileDiscoveryStatus: 'loading',
+    hubProfiles: null,
     selectedProviderId: 'hub',
   });
   mockFetch.mockReturnValue(new Promise(() => {}));
@@ -102,8 +105,11 @@ describe('ModelPicker', () => {
     await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('single-e4b-checked'));
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
     await openMenu();
-    expect(screen.getByRole('menuitem', { name: /Single profiles/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /Team profiles/i })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Single profiles' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Team profiles' })).toBeInTheDocument();
+    // The visible section headings are not announced as disabled menu choices.
+    expect(screen.queryByRole('menuitem')).not.toBeInTheDocument();
+    expect(screen.getByText('Single profiles')).toHaveAttribute('aria-hidden', 'true');
     expect(screen.getByRole('menuitemradio', { name: /Fast checked answer \(E4B\).*default/i })).toBeChecked();
     expect(screen.getByRole('menuitemradio', { name: /Checked answer \(12B\)/i })).toBeInTheDocument();
     expect(screen.getByRole('menuitemradio', { name: /Checked medical team/i })).toBeInTheDocument();
@@ -142,16 +148,14 @@ describe('ModelPicker', () => {
     expect(chatSessionStore.getState().selectedProviderId).toBe('hub');
   });
 
-  it('shows unavailable product profiles as disabled metadata, not selectable models', async () => {
+  it('lists only the profiles the Hub currently advertises as available', async () => {
     mockFetch.mockResolvedValueOnce(PROFILE_DATA);
     render(<ModelPicker />);
-    await openMenu();
+    const menu = await openMenu();
 
-    expect(screen.getByRole('menuitem', { name: /High checked team.*unavailable/i })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
-    expect(screen.queryByRole('menuitemradio', { name: /High checked team/i })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('menuitemradio')).toHaveLength(3);
+    expect(menu).not.toHaveTextContent(/High checked team/i);
+    expect(menu).not.toHaveTextContent(/unavailable/i);
   });
 
   it('replaces a non-explicit unavailable selection with the advertised default', async () => {
@@ -179,14 +183,16 @@ describe('ModelPicker', () => {
       ],
     });
     const { unmount: unmountUnavailable } = render(<ModelPicker />);
-    expect(await screen.findByRole('button', { name: /Checked medical team \(unavailable\)/i })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: /^AI profile: Checked medical team \(unavailable\)$/i }),
+    ).toBeInTheDocument();
     expect(chatSessionStore.getState().selectedProfileId).toBe('team-med-checked');
-    expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('unavailable');
+    expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('selection-unavailable');
     unmountUnavailable();
 
     mockFetch.mockResolvedValueOnce(PROFILE_DATA);
     render(<ModelPicker />);
-    expect(await screen.findByRole('button', { name: /^Checked medical team$/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /^AI profile: Checked medical team$/i })).toBeInTheDocument();
     expect(chatSessionStore.getState().selectedProfileId).toBe('team-med-checked');
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
   });
@@ -204,7 +210,7 @@ describe('ModelPicker', () => {
     await waitFor(() => expect(mockFetch).toHaveBeenCalled());
     expect(chatSessionStore.getState().selectedProfileId).toBeNull();
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('unavailable');
-    fireEvent.click(await screen.findByRole('button', { name: /Choose AI profile/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /^AI profile: Choose AI profile$/i }));
     fireEvent.click(screen.getByRole('menuitemradio', { name: /Checked answer \(12B\)/i }));
     await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('single-12b-checked'));
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
@@ -234,6 +240,51 @@ describe('ModelPicker', () => {
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
     expect(chatSessionStore.getState().selectedProfileId).toBe('single-e4b-checked');
     expect(screen.getByRole('button', { name: /Fast checked answer/ })).toBeInTheDocument();
+  });
+  it('replaces an explicit pick that became unavailable with the default when the picker is hidden', async () => {
+    mockUseConfig.mockReturnValue({ showModelPicker: false });
+    chatSessionStore.setState({ selectedProfileId: 'team-high-unavailable', profileExplicitlySelected: true });
+    mockFetch.mockResolvedValueOnce(PROFILE_DATA);
+    render(<ModelPicker />);
+
+    await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('single-e4b-checked'));
+    expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
+  });
+  it('retries discovery after a failed fetch and recovers while the panel stays open', async () => {
+    vi.useFakeTimers();
+    try {
+      mockFetch.mockRejectedValueOnce(new Error('hub down'));
+      mockFetch.mockResolvedValueOnce(PROFILE_DATA);
+      render(<ModelPicker />);
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('unavailable');
+      expect(screen.getByRole('status')).toHaveTextContent(/AI profiles unavailable/i);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(PROFILE_DISCOVERY_RETRY_MS);
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
+      expect(chatSessionStore.getState().selectedProfileId).toBe('single-e4b-checked');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('stops retrying once the picker is gone', async () => {
+    vi.useFakeTimers();
+    try {
+      mockFetch.mockRejectedValueOnce(new Error('hub down'));
+      const { unmount } = render(<ModelPicker />);
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('unavailable');
+      unmount();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(PROFILE_DISCOVERY_RETRY_MS * 3);
+      });
+      expect(mockFetch).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it('keeps the unavailable state when no product profile can be selected', async () => {
     mockFetch.mockResolvedValueOnce({ object: 'list', data: [profile({ available: false, default: true })] });
