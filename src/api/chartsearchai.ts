@@ -11,6 +11,20 @@ const BASE_PATH = `${restBaseUrl}/chartsearchai`;
  */
 export const SESSION_EXPIRED_ERROR_CODE = 'chartsearchai:session-expired';
 
+// Stable codes chatPatientChartStream emits via onError for its own transport failures, for the
+// same reason as SESSION_EXPIRED_ERROR_CODE: the conversation panel translates them. Problem codes
+// from a turn_error event and JSON error bodies from the controller pass through unchanged.
+/** The stream closed before {@code turn_done} or {@code turn_error}. */
+export const STREAM_INCOMPLETE_ERROR_CODE = 'chartsearchai:stream-incomplete';
+/** An event could not be parsed, or broke the canonical lifecycle order or capability gating. */
+export const STREAM_INVALID_ERROR_CODE = 'chartsearchai:stream-invalid';
+/** The response has no readable body stream. */
+export const STREAMING_UNSUPPORTED_ERROR_CODE = 'chartsearchai:streaming-unsupported';
+/** The server refused the request with a non-auth status and no JSON error body. */
+export const STREAM_REQUEST_FAILED_ERROR_CODE = 'chartsearchai:request-failed';
+/** The request could not be sent, or the connection broke while the stream was open. */
+export const STREAM_CONNECTION_FAILED_ERROR_CODE = 'chartsearchai:connection-failed';
+
 export interface AiReference {
   index: number;
   resourceType: string;
@@ -689,7 +703,10 @@ export async function searchPatientChart(
   return response.data as AiSearchResponse;
 }
 
-async function streamRequestError(response: Response): Promise<string> {
+async function streamRequestError(
+  response: Response,
+  otherStatus: (status: number) => string = (status) => `Server error: ${status}`,
+): Promise<string> {
   let bodyError: string | null = null;
   try {
     const body = await response.json();
@@ -712,8 +729,12 @@ async function streamRequestError(response: Response): Promise<string> {
     // actionable cause as the 302 handled above — rather than a cryptic "Server error: 500".
     return SESSION_EXPIRED_ERROR_CODE;
   }
-  return `Server error: ${response.status}`;
+  return otherStatus(response.status);
 }
+
+/** Canonical order of the delta streams; anything after them (answer_done onwards) ranks last. */
+const DELTA_STAGE: Record<string, number> = { preliminary_delta: 1, reasoning_delta: 2, answer_delta: 3 };
+const POST_DELTA_STAGE = 4;
 
 /**
  * Opens an SSE (Server-Sent Events) stream for AI search.
@@ -954,6 +975,12 @@ export function chatPatientChartStream(
   abortController: AbortController | undefined,
   profileId?: string,
   providerId?: string,
+  /**
+   * The capabilities the selected provider advertises. When supplied, a delta event from a
+   * provider without {@code token_streaming} is rejected; when omitted, only the event order is
+   * checked.
+   */
+  providerCapabilities?: readonly string[],
 ): void {
   if (providerId === 'hub' && !profileId?.trim()) {
     throw new Error('A product profile is required');
@@ -993,14 +1020,14 @@ export function chatPatientChartStream(
       }
 
       if (!response.ok) {
-        callbacks.onError(await streamRequestError(response));
+        callbacks.onError(await streamRequestError(response, () => STREAM_REQUEST_FAILED_ERROR_CODE));
         return;
       }
 
       const reader = response.body;
 
       if (!reader || typeof reader.getReader !== 'function') {
-        callbacks.onError('Streaming not supported by this browser.');
+        callbacks.onError(STREAMING_UNSUPPORTED_ERROR_CODE);
         return;
       }
 
@@ -1010,10 +1037,28 @@ export function chatPatientChartStream(
       let eventType = '';
       let dataLines: string[] = [];
       let streamFinalized = false;
+      let highestStage = 0;
 
       const failStream = (message: string) => {
         streamFinalized = true;
         callbacks.onError(message);
+      };
+
+      // The lifecycle rules a client can check event by event: the preview may not resume once
+      // committed reasoning began, reasoning ends once answer tokens begin, no delta follows the
+      // answer, and deltas require token_streaming when the caller supplied the capabilities.
+      const violatesLifecycle = (event: string): boolean => {
+        const deltaStage = DELTA_STAGE[event];
+        if (deltaStage === undefined) {
+          if (event !== 'turn_started' && event !== 'heartbeat' && event !== '') {
+            highestStage = POST_DELTA_STAGE;
+          }
+          return false;
+        }
+        if (deltaStage < highestStage) return true;
+        if (providerCapabilities && !providerCapabilities.includes('token_streaming')) return true;
+        highestStage = deltaStage;
+        return false;
       };
 
       function dispatchEvent() {
@@ -1023,6 +1068,12 @@ export function chatPatientChartStream(
         }
         const data = dataLines.join('\n');
         if (streamFinalized) {
+          eventType = '';
+          dataLines = [];
+          return;
+        }
+        if (violatesLifecycle(eventType)) {
+          failStream(STREAM_INVALID_ERROR_CODE);
           eventType = '';
           dataLines = [];
           return;
@@ -1039,21 +1090,21 @@ export function chatPatientChartStream(
             const raw = JSON.parse(data) as AiSearchResponse & { model?: string };
             callbacks.onAnswerDone?.({ ...raw, resolvedModel: raw.resolvedModel ?? raw.model });
           } catch {
-            failStream('Failed to parse staged answer response');
+            failStream(STREAM_INVALID_ERROR_CODE);
           }
         } else if (eventType === 'answer_validation') {
           try {
             const raw = JSON.parse(data) as AiSearchResponse & { model?: string };
             callbacks.onAnswerValidation?.({ ...raw, resolvedModel: raw.resolvedModel ?? raw.model });
           } catch {
-            failStream('Failed to parse answer validation response');
+            failStream(STREAM_INVALID_ERROR_CODE);
           }
         } else if (eventType === 'evidence_updated') {
           try {
             const raw = JSON.parse(data) as AiSearchResponse & { model?: string };
             callbacks.onEvidenceUpdated?.({ ...raw, resolvedModel: raw.resolvedModel ?? raw.model });
           } catch {
-            failStream('Failed to parse evidence update');
+            failStream(STREAM_INVALID_ERROR_CODE);
           }
         } else if (eventType === 'indepth_pending') {
           try {
@@ -1061,7 +1112,7 @@ export function chatPatientChartStream(
             if (!raw.inDepth || typeof raw.inDepth !== 'object') throw new Error('missing inDepth');
             callbacks.onInDepthPending?.(raw);
           } catch {
-            failStream('Failed to parse in-depth pending response');
+            failStream(STREAM_INVALID_ERROR_CODE);
           }
         } else if (eventType === 'indepth_done') {
           try {
@@ -1069,7 +1120,7 @@ export function chatPatientChartStream(
             if (!raw.inDepth || typeof raw.inDepth !== 'object') throw new Error('missing inDepth');
             callbacks.onInDepthDone?.(raw);
           } catch {
-            failStream('Failed to parse in-depth response');
+            failStream(STREAM_INVALID_ERROR_CODE);
           }
         } else if (eventType === 'indepth_error') {
           try {
@@ -1077,7 +1128,7 @@ export function chatPatientChartStream(
             if (!raw.inDepth || typeof raw.inDepth !== 'object') throw new Error('missing inDepth');
             callbacks.onInDepthError?.(raw);
           } catch {
-            failStream('Failed to parse in-depth error response');
+            failStream(STREAM_INVALID_ERROR_CODE);
           }
         } else if (eventType === 'turn_started') {
           // Lifecycle marker carrying {session, messageId, provider}. The
@@ -1101,7 +1152,7 @@ export function chatPatientChartStream(
             if (typeof raw.answer !== 'string') throw new Error('missing final answer');
             callbacks.onDone({ ...raw, resolvedModel: raw.resolvedModel ?? raw.model });
           } catch {
-            failStream('Failed to parse final response');
+            failStream(STREAM_INVALID_ERROR_CODE);
           }
         } else if (eventType === 'turn_error') {
           streamFinalized = true;
@@ -1157,7 +1208,7 @@ export function chatPatientChartStream(
         dispatchEvent();
 
         if (!streamFinalized) {
-          callbacks.onError('Stream ended unexpectedly without a response');
+          callbacks.onError(STREAM_INCOMPLETE_ERROR_CODE);
         }
       } finally {
         try {
@@ -1170,8 +1221,9 @@ export function chatPatientChartStream(
       }
     })
     .catch((err) => {
-      if (err.name !== 'AbortError') {
-        callbacks.onError(err?.message ?? 'An unknown error occurred');
+      // A failed send or a broken connection; the browser's own message is not shown to clinicians.
+      if (err?.name !== 'AbortError') {
+        callbacks.onError(STREAM_CONNECTION_FAILED_ERROR_CODE);
       }
     });
 }

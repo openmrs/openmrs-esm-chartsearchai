@@ -317,5 +317,14 @@ provider selection; Hub requests require a product profile.
 
 This transport is available for the conversation integration. The current chat
 panel continues to use `/search/stream`; this contribution does not change its
-rendering or session behavior. The existing stream tests and shared conformance
-fixture cover the extracted client contract.
+rendering or session behavior.
+
+The client checks the lifecycle rules it can see event by event: the preview may not
+resume once committed reasoning began, reasoning ends once answer tokens begin, and,
+when the caller passes the provider's advertised capabilities, delta events require
+`token_streaming`. A violation, an unparseable event, a stream that closes without
+`turn_done` or `turn_error`, a failed connection and a refused request each end the
+turn with a stable `chartsearchai:*` error code for the panel to translate, as the
+session-expiry code already does. The provider-lifecycle cases in
+`src/conformance/dual-provider-conformance.v1.json` run against the client in
+`src/api/chat-stream.test.ts`.

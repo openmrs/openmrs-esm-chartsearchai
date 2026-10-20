@@ -1,10 +1,18 @@
 import { TextEncoder, TextDecoder } from 'util';
 import { ReadableStream } from 'node:stream/web';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi, type MockInstance } from 'vitest';
-// Byte-for-byte mirror of datasets/validation/conformance/dual-provider-conformance.v1.json in
-// pmanko/clinical-ai-validation-harness. Ignored by Prettier so the umbrella byte-identity check holds.
+// The provider-lifecycle cases of the shared dual-provider conformance fixture: each names the
+// provider's advertised capabilities, an event sequence, and whether a client must accept it.
 import conformance from '../conformance/dual-provider-conformance.v1.json';
-import { chatPatientChartStream, SESSION_EXPIRED_ERROR_CODE } from './chartsearchai';
+import {
+  chatPatientChartStream,
+  SESSION_EXPIRED_ERROR_CODE,
+  STREAM_CONNECTION_FAILED_ERROR_CODE,
+  STREAM_INCOMPLETE_ERROR_CODE,
+  STREAM_INVALID_ERROR_CODE,
+  STREAM_REQUEST_FAILED_ERROR_CODE,
+  STREAMING_UNSUPPORTED_ERROR_CODE,
+} from './chartsearchai';
 
 // Polyfill for jsdom
 (globalThis as unknown as Record<string, unknown>).TextEncoder = TextEncoder;
@@ -90,8 +98,8 @@ describe('chatPatientChartStream', () => {
     return JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
   }
 
-  it.each(conformance.provider_lifecycle.filter((testCase) => testCase.expected === 'accept'))(
-    'consumes the canonical lifecycle fixture $id',
+  it.each(conformance.provider_lifecycle)(
+    'treats the lifecycle conformance case $id as $expected',
     async (testCase) => {
       const cb = makeCallbacks();
       const payload: Record<string, string> = {
@@ -111,9 +119,17 @@ describe('chatPatientChartStream', () => {
       const chunks = testCase.events.map((event) => `event:${event}\ndata: ${payload[event]}\n\n`);
       fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(mockStreamResponse(chunks));
 
-      chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, 'single-e4b-checked', 'hub');
+      chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, 'single-e4b-checked', 'hub', testCase.capabilities);
       await flushPromises();
 
+      if (testCase.expected === 'reject') {
+        // The violating event ends the turn: nothing after it reaches the caller.
+        expect(cb.onError).toHaveBeenCalledExactlyOnceWith(STREAM_INVALID_ERROR_CODE);
+        expect(cb.onPreliminary).not.toHaveBeenCalled();
+        expect(cb.onAnswerDone).not.toHaveBeenCalled();
+        expect(cb.onDone).not.toHaveBeenCalled();
+        return;
+      }
       if (testCase.events.includes('turn_error')) {
         expect(cb.onError).toHaveBeenCalledWith('provider_unavailable');
         expect(cb.onDone).not.toHaveBeenCalled();
@@ -162,7 +178,7 @@ describe('chatPatientChartStream', () => {
     await flushPromises();
 
     expect(cb.onDone).not.toHaveBeenCalled();
-    expect(cb.onError).toHaveBeenCalledWith('Failed to parse final response');
+    expect(cb.onError).toHaveBeenCalledWith(STREAM_INVALID_ERROR_CODE);
   });
 
   it('sends only the selected product profile as the inference override', async () => {
@@ -301,7 +317,7 @@ describe('chatPatientChartStream', () => {
     expect(cb.onError).toHaveBeenCalledWith(SESSION_EXPIRED_ERROR_CODE);
   });
 
-  it('still reports a generic server error for a non-auth status with no JSON body', async () => {
+  it('reports a request-failed code for a non-auth status with no JSON body', async () => {
     const cb = makeCallbacks();
     const resp = {
       ok: false,
@@ -314,7 +330,7 @@ describe('chatPatientChartStream', () => {
     chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled');
     await flushPromises();
 
-    expect(cb.onError).toHaveBeenCalledWith('Server error: 400');
+    expect(cb.onError).toHaveBeenCalledWith(STREAM_REQUEST_FAILED_ERROR_CODE);
   });
 
   it("maps the answer_done event's `model` field onto resolvedModel", async () => {
@@ -371,7 +387,7 @@ describe('chatPatientChartStream', () => {
   });
 
   it.each([
-    ['answer_validation', '{not-json}', 'Failed to parse answer validation response'],
+    ['answer_validation', '{not-json}', STREAM_INVALID_ERROR_CODE],
     ['turn_error', '{"problemCode":"provider_failure"}', 'provider_failure'],
     ['turn_done', '{"answer":"A","references":[]}', null],
   ])('cancels an open response after terminal %s', async (event, data, error) => {
@@ -521,7 +537,7 @@ describe('chatPatientChartStream', () => {
     await flushPromises();
 
     expect(cb.onInDepthDone).not.toHaveBeenCalled();
-    expect(cb.onError).toHaveBeenCalledWith('Failed to parse in-depth response');
+    expect(cb.onError).toHaveBeenCalledWith(STREAM_INVALID_ERROR_CODE);
   });
 
   it('treats a malformed clinical event as terminal even if turn_done follows', async () => {
@@ -539,7 +555,7 @@ describe('chatPatientChartStream', () => {
     await flushPromises();
 
     expect(cb.onError).toHaveBeenCalledOnce();
-    expect(cb.onError).toHaveBeenCalledWith('Failed to parse answer validation response');
+    expect(cb.onError).toHaveBeenCalledWith(STREAM_INVALID_ERROR_CODE);
     expect(cb.onDone).not.toHaveBeenCalled();
   });
 
@@ -593,6 +609,115 @@ describe('chatPatientChartStream', () => {
     await flushPromises();
 
     expect(cb.onSession).toHaveBeenCalledWith('sess-42');
+    expect(cb.onError).not.toHaveBeenCalled();
+  });
+  // ── transport failures are reported as codes the panel translates ──
+
+  it('reports an incomplete stream when the response ends without a terminal event', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse(['event:answer_done\ndata: {"answer":"A","references":[],"messageId":"m1"}\n\n']),
+      );
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled');
+    await flushPromises();
+
+    expect(cb.onError).toHaveBeenCalledExactlyOnceWith(STREAM_INCOMPLETE_ERROR_CODE);
+    expect(cb.onDone).not.toHaveBeenCalled();
+  });
+
+  it('reports a streaming-unsupported code when the response has no readable body', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce({ ok: true, status: 200, body: null } as Response);
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled');
+    await flushPromises();
+
+    expect(cb.onError).toHaveBeenCalledExactlyOnceWith(STREAMING_UNSUPPORTED_ERROR_CODE);
+  });
+
+  it('reports a connection-failed code instead of the browser message when the request cannot be sent', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi.spyOn(window, 'fetch').mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled');
+    await flushPromises();
+
+    expect(cb.onError).toHaveBeenCalledExactlyOnceWith(STREAM_CONNECTION_FAILED_ERROR_CODE);
+  });
+
+  it('reports a connection-failed code when the stream breaks mid-response', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      body: {
+        getReader: () => ({
+          read: () => Promise.reject(new TypeError('network error')),
+          cancel: vi.fn(),
+          releaseLock: vi.fn(),
+        }),
+      },
+    } as unknown as Response);
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled');
+    await flushPromises();
+
+    expect(cb.onError).toHaveBeenCalledExactlyOnceWith(STREAM_CONNECTION_FAILED_ERROR_CODE);
+  });
+
+  it('stays silent when the caller aborts the request', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi.spyOn(window, 'fetch').mockRejectedValueOnce(new DOMException('aborted', 'AbortError'));
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, new AbortController(), undefined, 'bundled');
+    await flushPromises();
+
+    expect(cb.onError).not.toHaveBeenCalled();
+  });
+
+  // ── delta ordering and capability gating (the fixture's reject cases, beyond the fixture) ──
+
+  it('rejects committed reasoning that resumes after answer tokens began', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:answer_delta\ndata: Answer\n\n',
+          'event:reasoning_delta\ndata: more thinking\n\n',
+          'event:answer_done\ndata: {"answer":"Answer","references":[]}\n\n',
+          'event:turn_done\ndata: {"answer":"Answer","references":[]}\n\n',
+        ]),
+      );
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled', ['answer', 'token_streaming']);
+    await flushPromises();
+
+    expect(cb.onReasoning).not.toHaveBeenCalled();
+    expect(cb.onError).toHaveBeenCalledExactlyOnceWith(STREAM_INVALID_ERROR_CODE);
+    expect(cb.onDone).not.toHaveBeenCalled();
+  });
+
+  it('accepts token deltas when the caller does not supply provider capabilities', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:answer_delta\ndata: Answer\n\n',
+          'event:answer_done\ndata: {"answer":"Answer","references":[]}\n\n',
+          'event:turn_done\ndata: {"answer":"Answer","references":[]}\n\n',
+        ]),
+      );
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled');
+    await flushPromises();
+
+    expect(cb.onToken).toHaveBeenCalledExactlyOnceWith('Answer');
+    expect(cb.onDone).toHaveBeenCalledOnce();
     expect(cb.onError).not.toHaveBeenCalled();
   });
 });
