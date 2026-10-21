@@ -1,8 +1,10 @@
 import { TextEncoder, TextDecoder } from 'util';
 import { ReadableStream } from 'node:stream/web';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi, type MockInstance } from 'vitest';
-// The provider-lifecycle cases of the shared dual-provider conformance fixture: each names the
-// provider's advertised capabilities, an event sequence, and whether a client must accept it.
+// The provider-lifecycle cases of the shared dual-provider conformance fixture, copied unchanged
+// from datasets/validation/conformance/dual-provider-conformance.v1.json in
+// pmanko/clinical-ai-validation-harness: each names the provider's advertised capabilities, an
+// event sequence, and whether a client must accept it.
 import conformance from '../conformance/dual-provider-conformance.v1.json';
 import {
   chatPatientChartStream,
@@ -479,6 +481,26 @@ describe('chatPatientChartStream', () => {
     });
     expect(cb.onDone).toHaveBeenCalledWith(expect.objectContaining({ session: 'sess-1' }));
     expect(cb.onError).not.toHaveBeenCalled();
+  });
+
+  it('delivers an interrupted In-Depth to onInDepthError', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:indepth_error\ndata: {"answer":"A","references":[],"inDepth":{"status":"failed","error":"In-Depth was interrupted."}}\n\n',
+          'event:turn_done\ndata: {"answer":"A","references":[]}\n\n',
+        ]),
+      );
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, 'team-med-checked', 'hub');
+    await flushPromises();
+
+    expect(cb.onInDepthError).toHaveBeenCalledWith(
+      expect.objectContaining({ inDepth: expect.objectContaining({ status: 'failed' }) }),
+    );
+    expect(cb.onInDepthDone).not.toHaveBeenCalled();
   });
 
   it('delivers final bundled evidence updates before the terminal marker', async () => {
