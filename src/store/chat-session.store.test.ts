@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { NO_ANSWER_LIMITS } from '../utils/answer-limits';
 import { getSessionStore } from '@openmrs/esm-framework';
-import { chatSessionStore, setupChatSessionLogoutCleanup } from './chat-session.store';
+import { chatSessionStore, initialChatSessionState, setupChatSessionLogoutCleanup } from './chat-session.store';
 
 const sessionStore = getSessionStore();
 
@@ -31,14 +31,7 @@ const seedSession = () =>
   });
 
 beforeEach(() => {
-  chatSessionStore.setState({
-    messagesByPatient: {},
-    sessionUuidByPatient: {},
-    selectedProfileId: null,
-    profileDiscoveryStatus: 'loading',
-    selectedProviderId: null,
-    reasoningExpanded: undefined,
-  });
+  chatSessionStore.setState(initialChatSessionState(), true);
   sessionStore.setState({ loaded: false, session: null });
 });
 
@@ -57,13 +50,8 @@ describe('chatSessionStore logout cleanup', () => {
       session: { sessionId: '', authenticated: false } as never,
     });
 
-    const state = chatSessionStore.getState();
-    expect(state.messagesByPatient).toEqual({});
-    expect(state.sessionUuidByPatient).toEqual({});
-    expect(state.selectedProfileId).toBeNull();
-    expect(state.selectedProviderId).toBeNull();
-    expect(state.profileDiscoveryStatus).toBe('loading');
-    expect(state.reasoningExpanded).toBeUndefined();
+    // Strictly the fresh state: a field the reset did not name would survive a merge.
+    expect(chatSessionStore.getState()).toStrictEqual(initialChatSessionState());
     unsubscribe();
   });
 
@@ -81,15 +69,9 @@ describe('chatSessionStore logout cleanup', () => {
       session: { sessionId: 's2', authenticated: true, user: { uuid: 'user-2' } } as never,
     });
 
-    const state = chatSessionStore.getState();
     // Cross-user leak vectors: server session handle and picked profile must not
-    // bleed from user-1 into user-2's session.
-    expect(state.messagesByPatient).toEqual({});
-    expect(state.sessionUuidByPatient).toEqual({});
-    expect(state.selectedProfileId).toBeNull();
-    expect(state.selectedProviderId).toBeNull();
-    expect(state.profileDiscoveryStatus).toBe('loading');
-    expect(state.reasoningExpanded).toBeUndefined();
+    // bleed from user-1 into user-2's session, nor any field the reset did not name.
+    expect(chatSessionStore.getState()).toStrictEqual(initialChatSessionState());
     unsubscribe();
   });
 

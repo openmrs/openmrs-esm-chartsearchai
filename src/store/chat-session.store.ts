@@ -35,13 +35,19 @@ export interface ChatSessionState {
   reasoningExpanded?: boolean;
 }
 
-export const chatSessionStore = createGlobalStore<ChatSessionState>('chartsearchai-chat-session', {
+/** A fresh session's state: the store starts from it, and a user change replaces the state with it. */
+export const initialChatSessionState = (): ChatSessionState => ({
   messagesByPatient: {},
   sessionUuidByPatient: {},
   selectedProfileId: null,
   profileDiscoveryStatus: 'loading',
   selectedProviderId: null,
 });
+
+export const chatSessionStore = createGlobalStore<ChatSessionState>(
+  'chartsearchai-chat-session',
+  initialChatSessionState(),
+);
 
 export function setupChatSessionLogoutCleanup(): () => void {
   const sessionStore = getSessionStore();
@@ -50,16 +56,10 @@ export function setupChatSessionLogoutCleanup(): () => void {
   return sessionStore.subscribe((state) => {
     const currentUserUuid = readUserUuid(state);
     if (currentUserUuid !== previousUserUuid) {
-      // The preference goes with the history: an O3 workstation is shared, and the next user has
-      // expressed no view on whether the model's working notes should be open.
-      chatSessionStore.setState({
-        messagesByPatient: {},
-        sessionUuidByPatient: {},
-        selectedProfileId: null,
-        profileDiscoveryStatus: 'loading',
-        selectedProviderId: null,
-        reasoningExpanded: undefined,
-      });
+      // Replaced, not merged, so no field outlives the user who set it. The reasoning preference
+      // goes with the history: an O3 workstation is shared, and the next user has expressed no view
+      // on whether the model's working notes should be open.
+      chatSessionStore.setState(initialChatSessionState(), true);
       previousUserUuid = currentUserUuid;
     }
   });
