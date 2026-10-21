@@ -131,6 +131,9 @@ interface InFlightTurn {
 }
 const inFlightByPatient = new Map<string, InFlightTurn>();
 
+/** How many panels are open on each patient: only closing the last one may stop that patient's turn. */
+const openPanelsByPatient = new Map<string, number>();
+
 /** Abort and forget the patient's in-flight turn; returns the message id it was producing. */
 function releaseInFlight(patientUuid: string): string | null {
   const turn = inFlightByPatient.get(patientUuid);
@@ -868,9 +871,14 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
     // The message store outlives this panel. Use the same terminal transition as the Stop action so
     // closing the panel cannot leave an empty `answering` message that disables the next panel instance,
     // while letting a turn whose answer is already on screen (`checking`) finish its safety/grounding pass.
+    if (!patientUuid) return;
+    openPanelsByPatient.set(patientUuid, (openPanelsByPatient.get(patientUuid) ?? 0) + 1);
     return () => {
-      const inFlightId = patientUuid ? inFlightByPatient.get(patientUuid)?.messageId : undefined;
-      if (inFlightId && patientUuid) {
+      const stillOpen = (openPanelsByPatient.get(patientUuid) ?? 1) - 1;
+      openPanelsByPatient.set(patientUuid, stillOpen);
+      if (stillOpen > 0) return;
+      const inFlightId = inFlightByPatient.get(patientUuid)?.messageId;
+      if (inFlightId) {
         const inFlight = (chatSessionStore.getState().messagesByPatient[patientUuid] ?? []).find(
           (m) => m.id === inFlightId,
         );

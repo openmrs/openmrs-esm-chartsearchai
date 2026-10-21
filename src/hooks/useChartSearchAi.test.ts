@@ -1959,6 +1959,25 @@ describe('conversation streaming preference and optional capabilities', () => {
     expect(stopped.safetyCheck?.issues).toEqual(['execution_failed']);
   });
 
+  it('lets a turn run on while another panel on the same patient is still open', async () => {
+    chatSessionStore.setState({ selectedProviderId: 'bundled' });
+    mockChatStream.mockImplementation(() => {});
+    const { result: asking, unmount: closeAsking } = renderHook(() => useChartSearchAi('patient-uuid'));
+    const { unmount: closeOther } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+
+    act(() => asking.current.submitQuestion('patient-uuid', 'What medications?'));
+    const controller = mockChatStream.mock.calls[0][4] as AbortController;
+
+    // The floating panel and the workspace can both be open on one patient; closing the one that did
+    // not ask must not cut off the answer the other is showing.
+    closeOther();
+    expect(controller.signal.aborted).toBe(false);
+
+    closeAsking();
+    expect(controller.signal.aborted).toBe(true);
+  });
+
   it('keeps a bundled turn in checking until its safety result settles on evidence_updated', async () => {
     chatSessionStore.setState({ selectedProviderId: 'bundled' });
     mockChatStream.mockImplementation(() => {});
