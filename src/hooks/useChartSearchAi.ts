@@ -134,6 +134,9 @@ const inFlightByPatient = new Map<string, InFlightTurn>();
 /** How many panels are open on each patient: only closing the last one may stop that patient's turn. */
 const openPanelsByPatient = new Map<string, number>();
 
+/** A New chat in flight for a patient, shared by every panel on that patient. */
+const pendingSessionByPatient = new Map<string, Promise<void>>();
+
 /** Abort and forget the patient's in-flight turn; returns the message id it was producing. */
 function releaseInFlight(patientUuid: string): string | null {
   const turn = inFlightByPatient.get(patientUuid);
@@ -446,7 +449,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
   }, [patientUuid]);
 
   const startNewChatSession = useCallback((patientUuid: string, requestedProviderId?: string) => {
-    if (sessionStartRef.current) return;
+    if (sessionStartRef.current || pendingSessionByPatient.has(patientUuid)) return;
     const state = chatSessionStore.getState();
     const providerId =
       requestedProviderId ?? state.providerByPatient?.[patientUuid] ?? state.selectedProviderId ?? undefined;
@@ -454,7 +457,8 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
     setSessionError(null);
     const pending = startNewChat(patientUuid, providerId)
       .then((response) => {
-        if (!isMountedRef.current) return;
+        // The session and messages are shared state: a panel that closed while waiting still gets
+        // the new session, or the next panel would reopen the old conversation.
         releaseInFlight(patientUuid);
         updateMessages(patientUuid, () => []);
         const resolvedProvider = response.provider ?? providerId ?? null;
@@ -469,6 +473,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         }
       })
       .finally(() => {
+        if (pendingSessionByPatient.get(patientUuid) === pending) pendingSessionByPatient.delete(patientUuid);
         if (sessionStartRef.current === pending) {
           sessionStartRef.current = null;
         }
@@ -477,11 +482,12 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         }
       });
     sessionStartRef.current = pending;
+    pendingSessionByPatient.set(patientUuid, pending);
   }, []);
 
   const submitQuestion = useCallback(
     (patientUuid: string, question: string) => {
-      if (sessionStartRef.current) return;
+      if (sessionStartRef.current || pendingSessionByPatient.has(patientUuid)) return;
       setSessionError(null);
       const state = chatSessionStore.getState();
       const existingSession = state.sessionUuidByPatient[patientUuid] ?? null;

@@ -1700,6 +1700,38 @@ describe('AiResponsePanel copy-to-clipboard', () => {
     expect(screen.queryByRole('button', { name: /copy/i })).not.toBeInTheDocument();
   });
 
+  it('copies the cells of a structured table with the answer', () => {
+    render(
+      <AiResponsePanel
+        answer="See table for medications."
+        references={references}
+        blocks={[
+          {
+            kind: 'table',
+            title: 'Current medications',
+            columns: [
+              { key: 'drug', label: 'Drug' },
+              { key: 'dose', label: 'Dose' },
+            ],
+            rows: [{ cells: { drug: { text: 'Lisinopril', refs: [2] }, dose: { text: '10 mg daily' } } }],
+          },
+        ]}
+        auditLogId={42}
+        error={null}
+        phase="complete"
+        patientUuid={patientUuid}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /copy/i }));
+
+    const copied = writeText.mock.calls[0][0] as string;
+    expect(copied).toContain('See table for medications.');
+    expect(copied).toContain('Current medications');
+    expect(copied).toContain('Drug\tDose');
+    expect(copied).toContain('Lisinopril\t10 mg daily');
+  });
+
   it('renders a copy button once the answer is fully received', () => {
     render(
       <AiResponsePanel
