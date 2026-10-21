@@ -191,6 +191,11 @@ function hydrateMessages(history: ChatHistoryMessage[]): ChatMessage[] {
         error: null,
       };
     } else if (m.role === 'assistant') {
+      if (pending && m.terminalState === 'turn_error' && m.problemCode === 'cancelled' && !m.content) {
+        // Stopped before any answer: nothing to restore, so drop it as stopping it live does.
+        pending = null;
+        continue;
+      }
       if (pending) {
         pending.answer = m.content;
         pending.blocks = m.blocks;

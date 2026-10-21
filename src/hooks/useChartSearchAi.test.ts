@@ -126,6 +126,30 @@ describe('useChartSearchAi', () => {
     expect(result.current.messages[0].error).toBeNull();
   });
 
+  it('drops a turn cancelled before any answer, as stopping it live does', async () => {
+    mockFetchHistory.mockResolvedValueOnce({
+      session: 'srv-session-1',
+      messages: [
+        { messageId: 'request-1', role: 'user', content: 'Stopped Q', createdAt: 1 },
+        {
+          messageId: 'turn-1',
+          role: 'assistant',
+          content: '',
+          terminalState: 'turn_error',
+          problemCode: 'cancelled',
+          createdAt: 2,
+        },
+        { messageId: 'request-2', role: 'user', content: 'Second Q', createdAt: 3 },
+        { messageId: 'turn-2', role: 'assistant', content: 'Second answer.', terminalState: 'turn_done', createdAt: 4 },
+      ],
+    });
+
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    await waitFor(() => expect(result.current.messages.length).toBeGreaterThan(0));
+    expect(result.current.messages.map((m) => m.id)).toEqual(['request-2']);
+  });
+
   it("syncs selectedProviderId to the restored conversation's real provider on hydration", async () => {
     // Hydration must synchronize the picker with the provider bound to the restored conversation.
     chatSessionStore.setState({ selectedProviderId: 'hub' });
