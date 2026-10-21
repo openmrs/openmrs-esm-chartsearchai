@@ -60,6 +60,21 @@ export interface ChatSessionState {
    * ever written to browser storage — it reasons over chart records.
    */
   reasoningExpanded?: boolean;
+  /**
+   * Patients with a New chat request in flight. Shared, so every panel open on that patient locks
+   * its composer until the new conversation is in place, not only the panel that asked for it.
+   */
+  newChatPendingByPatient?: Record<string, boolean>;
+}
+
+let userGeneration = 0;
+
+/**
+ * Counts user changes. A request records it when it starts and drops its response if it has moved,
+ * so a reply meant for the previous user never lands in the next user's cleared state.
+ */
+export function chatSessionUserGeneration(): number {
+  return userGeneration;
 }
 
 /** A fresh session's state: the store starts from it, and a user change replaces the state with it. */
@@ -91,6 +106,7 @@ export function setupChatSessionLogoutCleanup(): () => void {
     }
     const currentUserUuid = readUserUuid(state);
     if (currentUserUuid !== previousUserUuid) {
+      userGeneration += 1;
       // Replaced, not merged, so no field outlives the user who set it. The reasoning preference
       // goes with the history: an O3 workstation is shared, and the next user has expressed no view
       // on whether the model's working notes should be open. The provider capabilities are

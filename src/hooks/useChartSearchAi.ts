@@ -16,7 +16,7 @@ import {
   startNewChat,
 } from '../api/chartsearchai';
 import { type ChartSearchAiConfig } from '../config-schema';
-import { chatSessionStore } from '../store/chat-session.store';
+import { chatSessionStore, chatSessionUserGeneration } from '../store/chat-session.store';
 import { refreshHubProfiles, useHubProfileDiscovery } from './hub-profile-discovery';
 import {
   ANSWER_CHECK_INTERRUPTED_SUMMARY_CODE,
@@ -162,6 +162,13 @@ function setSessionUuid(patientUuid: string, uuid: string | null): void {
   });
 }
 
+function setNewChatPending(patientUuid: string, pending: boolean): void {
+  const state = chatSessionStore.getState();
+  chatSessionStore.setState({
+    newChatPendingByPatient: { ...(state.newChatPendingByPatient ?? {}), [patientUuid]: pending },
+  });
+}
+
 function setPatientProvider(patientUuid: string, providerId: string | null): void {
   const state = chatSessionStore.getState();
   chatSessionStore.setState({
@@ -208,6 +215,18 @@ function hydrateMessages(history: ChatHistoryMessage[]): ChatMessage[] {
         pending.safetyWarnings = m.safetyWarnings;
         pending.safetyStatus = m.safetyStatus;
         pending.safetyCheck = m.safetyCheck;
+        // A stopped bundled turn keeps the answer it had while its checks ran. A check still pending
+        // in the stored row, beside a bare `unavailable` safety result, means the safety check did
+        // not complete: say so, as stopping it live does, rather than restore a result the panel
+        // reads as nothing to report.
+        if (
+          isUnsettledBundledSafetyCheck(m) &&
+          (m.answerValidation?.status === 'checking' ||
+            m.references?.some((ref) => ref.groundingStatus === 'checking') === true)
+        ) {
+          pending.safetyStatus = 'unavailable';
+          pending.safetyCheck = { status: 'unavailable', issues: ['execution_failed'] };
+        }
         pending.confidence = m.confidence;
         pending.answerValidation = interruptAnswerValidation(m.answerValidation);
         pending.inDepth = interruptInDepth(m.inDepth);
@@ -265,7 +284,9 @@ function interruptAnswerValidation(
   };
 }
 
-function isUnsettledBundledSafetyCheck(response: AiSearchResponse): boolean {
+function isUnsettledBundledSafetyCheck(
+  response: Pick<AiSearchResponse, 'safetyCheck' | 'safetyStatus' | 'safetyWarnings'>,
+): boolean {
   const status = response.safetyCheck?.status ?? response.safetyStatus;
   const issues = response.safetyCheck?.issues;
   const warnings = response.safetyCheck?.warnings ?? response.safetyWarnings;
@@ -325,13 +346,13 @@ function applyTurnEnvelope(message: ChatMessage, payload: TurnEnvelope, phase: T
 
 export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
   const config = useConfig<ChartSearchAiConfig>();
-  const { messagesByPatient, sessionUuidByPatient } = useStore(chatSessionStore);
+  const { messagesByPatient, sessionUuidByPatient, newChatPendingByPatient } = useStore(chatSessionStore);
   const messages: ChatMessage[] = patientUuid ? (messagesByPatient[patientUuid] ?? EMPTY_MESSAGES) : EMPTY_MESSAGES;
   const sessionStartRef = useRef<Promise<void> | null>(null);
   const isMountedRef = useRef(true);
   const showReasoningRef = useRef(config.showReasoning);
   showReasoningRef.current = config.showReasoning;
-  const [isStartingSession, setIsStartingSession] = useState(false);
+  const isStartingSession = Boolean(patientUuid && newChatPendingByPatient?.[patientUuid]);
   const [sessionError, setSessionError] = useState<string | null>(null);
   // Whether a Hub question may be sent must not depend on the profile picker being mounted.
   useHubProfileDiscovery();
@@ -375,9 +396,12 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
     }
     const controller = new AbortController();
     const sessionBeforeFetch = chatSessionStore.getState().sessionUuidByPatient[patientUuid];
+    const generation = chatSessionUserGeneration();
     fetchChatHistory(patientUuid, controller)
       .then((response) => {
         if (!isMountedRef.current || controller.signal.aborted) return;
+        // Read for the user signed in when it started; another user's history is not theirs.
+        if (chatSessionUserGeneration() !== generation) return;
         // A submitted turn owns the transcript even before onSession arrives or when it reuses
         // the existing session. A late mount-time snapshot must not replace that live message
         // or change its provider; also reject snapshots from a superseded conversation.
@@ -453,10 +477,13 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
     const state = chatSessionStore.getState();
     const providerId =
       requestedProviderId ?? state.providerByPatient?.[patientUuid] ?? state.selectedProviderId ?? undefined;
-    setIsStartingSession(true);
+    const generation = chatSessionUserGeneration();
+    setNewChatPending(patientUuid, true);
     setSessionError(null);
     const pending = startNewChat(patientUuid, providerId)
       .then((response) => {
+        // A conversation started for the previous user is not the next user's to continue.
+        if (chatSessionUserGeneration() !== generation) return;
         // The session and messages are shared state: a panel that closed while waiting still gets
         // the new session, or the next panel would reopen the old conversation.
         releaseInFlight(patientUuid);
@@ -477,9 +504,8 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         if (sessionStartRef.current === pending) {
           sessionStartRef.current = null;
         }
-        if (isMountedRef.current) {
-          setIsStartingSession(false);
-        }
+        // Cleared whether or not this panel is still open: the flag locks every panel on the patient.
+        if (chatSessionUserGeneration() === generation) setNewChatPending(patientUuid, false);
       });
     sessionStartRef.current = pending;
     pendingSessionByPatient.set(patientUuid, pending);
