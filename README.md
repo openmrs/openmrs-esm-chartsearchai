@@ -52,7 +52,7 @@ See the [backend README](https://github.com/openmrs/openmrs-module-chartsearchai
 
 ## Prerequisites
 
-- OpenMRS 3.x with a build of the [Chart Search AI module](https://github.com/openmrs/openmrs-module-chartsearchai) that includes [openmrs-module-chartsearchai#590](https://github.com/openmrs/openmrs-module-chartsearchai/pull/590), installed and configured
+- OpenMRS 3.x with a build of the [Chart Search AI module](https://github.com/openmrs/openmrs-module-chartsearchai) that includes [openmrs-module-chartsearchai#622](https://github.com/openmrs/openmrs-module-chartsearchai/pull/622), installed and configured
 - Node.js 18+
 - Yarn 4.x
 
@@ -391,7 +391,7 @@ with no saved answer says so instead of showing an empty answer.
 
 This source requires a backend build that includes the conversation endpoints and
 provider contracts of
-[openmrs-module-chartsearchai#590](https://github.com/openmrs/openmrs-module-chartsearchai/pull/590).
+[openmrs-module-chartsearchai#622](https://github.com/openmrs/openmrs-module-chartsearchai/pull/622).
 Local component checks do not establish combined runtime acceptance.
 
 The client checks the lifecycle rules it can see event by event: the preview may not

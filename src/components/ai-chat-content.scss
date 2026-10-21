@@ -46,11 +46,6 @@
   flex-shrink: 0;
 }
 
-.newChatLabel {
-  margin-left: layout.$spacing-02;
-  @include type.type-style('body-compact-01');
-}
-
 .panelTitle {
   @include type.type-style('heading-compact-01');
   display: flex;
