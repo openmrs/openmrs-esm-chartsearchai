@@ -529,6 +529,29 @@ describe('chatPatientChartStream', () => {
     expect(cb.onDone).toHaveBeenCalledOnce();
   });
 
+  it('drops reasoning and answer deltas that arrive after the answer is done', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:turn_started\ndata: {"session":"sess-1","messageId":"m1","provider":"bundled"}\n\n',
+          'event:answer_done\ndata: {"answer":"Answer.","references":[],"messageId":"m1"}\n\n',
+          'event:reasoning_delta\ndata: Late reasoning\n\n',
+          'event:answer_delta\ndata: Late answer\n\n',
+          'event:turn_done\ndata: {"answer":"Answer.","references":[],"session":"sess-1","messageId":"m1","provider":"bundled"}\n\n',
+        ]),
+      );
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled', ['answer', 'token_streaming']);
+    await flushPromises();
+
+    expect(cb.onReasoning).not.toHaveBeenCalled();
+    expect(cb.onToken).not.toHaveBeenCalled();
+    expect(cb.onError).not.toHaveBeenCalled();
+    expect(cb.onDone).toHaveBeenCalledOnce();
+  });
+
   it('ignores lifecycle events after a terminal marker', async () => {
     const cb = makeCallbacks();
     fetchSpy = vi
