@@ -90,6 +90,7 @@ describe('MarkdownAnswer', () => {
     ['strikethrough', '~~Order [4]~~'],
     ['inline code', 'The finding `interaction [4]` applies.'],
     ['ordinary link text', 'See [the order [4]](https://example.test/x)'],
+    ['raw HTML block', 'Intro.\n\n<br>\nOrder [4]'],
   ])('keeps citations navigable in a %s', (_kind, answer) => {
     render(<MarkdownAnswer answer={answer} references={references} patientUuid={patientUuid} />);
     expect(screen.getByRole('link', { name: '4' })).toHaveAttribute(
@@ -111,6 +112,29 @@ describe('MarkdownAnswer', () => {
     expect(screen.getAllByTitle(/module reports that this citation/)).toHaveLength(2);
     expect(screen.getAllByText('Major')).toHaveLength(1);
     expect(screen.getAllByText('Clinical significance unknown')).toHaveLength(1);
+  });
+
+  it('keeps a * between letters or digits as notation, not emphasis', () => {
+    const { container } = render(
+      <MarkdownAnswer answer={'Genotype UGT1A1*28 and an AUC in pg*h/mL.'} references={[]} patientUuid={patientUuid} />,
+    );
+    expect(container.querySelector('em')).toBeNull();
+    expect(container).toHaveTextContent('Genotype UGT1A1*28 and an AUC in pg*h/mL.');
+  });
+
+  it('still renders *emphasis* set off by spaces', () => {
+    const { container } = render(
+      <MarkdownAnswer answer={'This is *recent* data.'} references={[]} patientUuid={patientUuid} />,
+    );
+    expect(container.querySelector('em')?.textContent).toBe('recent');
+  });
+
+  it('does not read a footnote reference as a chart citation', () => {
+    const refs = [...references, { index: 1, resourceType: 'obs', resourceUuid: 'uuid-101', date: '2006-01-03' }];
+    const { container } = render(
+      <MarkdownAnswer answer={'Finding [^note].\n\n[^note]: A note.'} references={refs} patientUuid={patientUuid} />,
+    );
+    expect(container.querySelector(`a[href*="/patient/${patientUuid}/chart"]`)).toBeNull();
   });
 
   it('keeps single-tilde dose ranges and leading greater-than thresholds literal', () => {

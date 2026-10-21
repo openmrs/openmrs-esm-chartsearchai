@@ -95,10 +95,14 @@ const MarkdownAnswer: React.FC<MarkdownAnswerProps> = ({ answer, references, pat
       };
       const visit = (parent: HastNode) => {
         parent.children = (parent.children ?? []).flatMap((child): HastNode[] => {
-          if (child.type === 'text') {
+          // Raw HTML is printed as text, so a marker inside an HTML block is decorated like any other.
+          if (child.type === 'text' || child.type === 'raw') {
             return hasCitation(child.value ?? '') ? [placeholder(child.value ?? '')] : [child];
           }
           if (child.type !== 'element') return [child];
+          // A footnote reference is numbered by the parser, not cited by the model: its number names
+          // no chart record.
+          if (child.tagName === 'a' && child.properties?.dataFootnoteRef) return [child];
           if (child.tagName === 'a') {
             const label = hastText(child);
             const citation = `[${label}]`;
@@ -118,12 +122,25 @@ const MarkdownAnswer: React.FC<MarkdownAnswerProps> = ({ answer, references, pat
       visit(tree);
     };
 
+    const source = joinWrappedCitationGroups(answer);
+
     // Headings collapse to a single subtle heading level (the answer's bold **Answer** /
     // **In Depth** become <strong>).
     const components = {
       [CITED_TEXT]: ({ node }: { node?: object }) => <>{node ? decorated.get(node) : null}</>,
       // Model output must not load images, including URLs that disclose patient context.
       img: () => null,
+      em: ({ children, node }) => {
+        const start = node?.position?.start.offset ?? 0;
+        const end = node?.position?.end.offset ?? 0;
+        // A `*` between two letters or digits is notation (UGT1A1*28, pg*h/mL), not emphasis. The
+        // offsets index the string ReactMarkdown parsed, which joining wrapped groups can shorten.
+        const notation =
+          source[start] === '*' &&
+          /[\p{L}\p{N}]/u.test(source[start - 1] ?? '') &&
+          /[\p{L}\p{N}]/u.test(source[end] ?? '');
+        return notation ? <>*{children}*</> : <em>{children}</em>;
+      },
       // A model-supplied link leaves the chart in a new tab and does not send the chart URL along.
       a: ({ children, href }) => (
         <a href={href} target="_blank" rel="noopener noreferrer">
@@ -152,7 +169,7 @@ const MarkdownAnswer: React.FC<MarkdownAnswerProps> = ({ answer, references, pat
         rehypePlugins={[decorateInDocumentOrder as never]}
         components={components}
       >
-        {joinWrappedCitationGroups(answer)}
+        {source}
       </ReactMarkdown>
     );
   }, [answer, references, patientUuid, misattributed, severities, qualified, t]);
