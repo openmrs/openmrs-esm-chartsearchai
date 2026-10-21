@@ -30,7 +30,8 @@ export function stopHubProfileDiscovery(): void {
  * Which profile a chat request may use, from the Hub's own list. An available selection stays.
  * An explicit pick the Hub no longer offers stays selected and is reported as
  * `selection-unavailable`, so the user is asked to choose again rather than silently switched,
- * unless the picker is hidden: then the user cannot choose, and the Hub default takes over.
+ * unless the picker is hidden: then the user cannot choose, and the Hub default takes over. When no
+ * profile is available at all the pick stays and the status is `unavailable`, an outage.
  */
 function resolveSelection(
   profiles: HubProfileMetadata[],
@@ -42,7 +43,12 @@ function resolveSelection(
     return { selectedProfileId, profileDiscoveryStatus: 'ready' };
   }
   if (preserveExplicit && profileExplicitlySelected && selectedProfileId) {
-    return { selectedProfileId, profileDiscoveryStatus: 'selection-unavailable' };
+    // With nothing available the Hub is down, not the pick gone: report it as an outage, which the
+    // panel re-reads `/models` for, and keep the pick for when the Hub recovers.
+    return {
+      selectedProfileId,
+      profileDiscoveryStatus: available.length > 0 ? 'selection-unavailable' : 'unavailable',
+    };
   }
   const fallback = available.find((profile) => profile.default);
   return fallback

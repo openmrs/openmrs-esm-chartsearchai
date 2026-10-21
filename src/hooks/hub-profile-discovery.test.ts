@@ -74,6 +74,20 @@ describe('Hub profile discovery', () => {
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('selection-unavailable');
   });
 
+  it('keeps an explicit pick through an outage that leaves every profile unavailable, reported as unavailable', async () => {
+    mockFetch.mockResolvedValueOnce(list(profile({}), profile({ id: 'team', label: 'Team', default: false })));
+    await refreshHubProfiles(true);
+    selectHubProfile('team');
+
+    mockFetch.mockResolvedValueOnce(
+      list(profile({ available: false }), profile({ id: 'team', label: 'Team', available: false })),
+    );
+    await refreshHubProfiles(true);
+
+    expect(chatSessionStore.getState().selectedProfileId).toBe('team');
+    expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('unavailable');
+  });
+
   it('keeps the current profiles and status while a refresh is in flight', async () => {
     mockFetch.mockResolvedValueOnce(list(profile({})));
     await refreshHubProfiles(true);
