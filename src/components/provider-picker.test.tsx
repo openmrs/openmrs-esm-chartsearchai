@@ -2,6 +2,7 @@ import React from 'react';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { fetchProviders, type ClinicalProviderDescriptor } from '../api/chartsearchai';
+import { PROFILE_DISCOVERY_RETRY_MS } from '../hooks/hub-profile-discovery';
 import { chatSessionStore } from '../store/chat-session.store';
 import ProviderPicker from './provider-picker.component';
 
@@ -64,6 +65,28 @@ describe('ProviderPicker', () => {
     await waitFor(() => expect(chatSessionStore.getState().selectedProviderId).toBe('bundled'));
     expect(mockFetch).toHaveBeenCalledOnce();
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('shows the providers once a failed discovery request recovers, without a remount', async () => {
+    vi.useFakeTimers();
+    try {
+      mockFetch.mockRejectedValueOnce(new Error('gateway down'));
+      mockFetch.mockResolvedValueOnce(DUAL);
+      render(<ProviderPicker />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(mockFetch).toHaveBeenCalledOnce();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(PROFILE_DISCOVERY_RETRY_MS);
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole('button', { name: /^AI provider: Bundled \(local\)$/i })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('shows the provider menu with the default marked when multiple providers exist', async () => {
