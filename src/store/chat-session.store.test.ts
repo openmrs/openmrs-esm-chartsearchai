@@ -27,6 +27,7 @@ const seedSession = () =>
     selectedProfileId: 'single-e4b-checked',
     selectedProviderId: 'hub',
     profileDiscoveryStatus: 'ready',
+    hubProfiles: [],
     reasoningExpanded: true,
   });
 
@@ -41,7 +42,9 @@ describe('chatSessionStore initial state', () => {
       messagesByPatient: {},
       sessionUuidByPatient: {},
       selectedProfileId: null,
+      profileExplicitlySelected: false,
       profileDiscoveryStatus: 'loading',
+      hubProfiles: null,
       selectedProviderId: null,
     });
   });

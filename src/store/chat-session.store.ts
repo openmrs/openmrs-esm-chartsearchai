@@ -1,4 +1,5 @@
 import { createGlobalStore, getSessionStore } from '@openmrs/esm-framework';
+import type { HubProfileMetadata } from '../api/chartsearchai';
 import type { ChatMessage } from '../hooks/useChartSearchAi';
 
 export interface ChatSessionState {
@@ -12,8 +13,20 @@ export interface ChatSessionState {
   sessionUuidByPatient: Record<string, string | null>;
   /** Hub product profile selected for this browser session. */
   selectedProfileId: string | null;
-  /** Whether product-profile discovery can safely authorize a chat request. */
-  profileDiscoveryStatus: 'loading' | 'ready' | 'unavailable';
+  /** Whether selectedProfileId was chosen explicitly by the user through the profile menu. */
+  profileExplicitlySelected?: boolean;
+  /**
+   * Whether product-profile discovery can safely authorize a chat request: `ready` when the
+   * selected profile is one the Hub currently offers; `unavailable` when `/models` could not be
+   * read or the Hub offers no profile to fall back to; `selection-unavailable` when the Hub
+   * answered but no longer offers the user's explicit pick, which the user must replace.
+   */
+  profileDiscoveryStatus: 'loading' | 'ready' | 'unavailable' | 'selection-unavailable';
+  /**
+   * The Hub's product profiles from the last successful `/models` read; null before the first
+   * read and after a failed one.
+   */
+  hubProfiles?: HubProfileMetadata[] | null;
   /**
    * Clinical-answer provider selected for this browser session. Null means the
    * backend applies its configured default (bundled on a fresh install); it is
@@ -40,7 +53,9 @@ export const initialChatSessionState = (): ChatSessionState => ({
   messagesByPatient: {},
   sessionUuidByPatient: {},
   selectedProfileId: null,
+  profileExplicitlySelected: false,
   profileDiscoveryStatus: 'loading',
+  hubProfiles: null,
   selectedProviderId: null,
 });
 
