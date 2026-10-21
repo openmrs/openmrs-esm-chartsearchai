@@ -504,6 +504,31 @@ describe('chatPatientChartStream', () => {
     expect(cb.onError).not.toHaveBeenCalled();
   });
 
+  it('drops reasoning that arrives after the answer tokens instead of ending the turn', async () => {
+    // The bundled finding-enumeration repair pass streams its reasoning after the first pass's
+    // answer tokens; answer_done still carries the answer.
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        mockStreamResponse([
+          'event:turn_started\ndata: {"session":"sess-1","messageId":"m1","provider":"bundled"}\n\n',
+          'event:answer_delta\ndata: Answer\n\n',
+          'event:reasoning_delta\ndata: Repairing the findings list\n\n',
+          'event:answer_done\ndata: {"answer":"Answer.","references":[],"messageId":"m1"}\n\n',
+          'event:turn_done\ndata: {"answer":"Answer.","references":[],"session":"sess-1","messageId":"m1","provider":"bundled"}\n\n',
+        ]),
+      );
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled', ['answer', 'token_streaming']);
+    await flushPromises();
+
+    expect(cb.onError).not.toHaveBeenCalled();
+    expect(cb.onReasoning).not.toHaveBeenCalled();
+    expect(cb.onAnswerDone).toHaveBeenCalledWith(expect.objectContaining({ answer: 'Answer.' }));
+    expect(cb.onDone).toHaveBeenCalledOnce();
+  });
+
   it('ignores lifecycle events after a terminal marker', async () => {
     const cb = makeCallbacks();
     fetchSpy = vi
@@ -679,27 +704,6 @@ describe('chatPatientChartStream', () => {
   });
 
   // ── delta ordering and capability gating (the fixture's reject cases, beyond the fixture) ──
-
-  it('rejects committed reasoning that resumes after answer tokens began', async () => {
-    const cb = makeCallbacks();
-    fetchSpy = vi
-      .spyOn(window, 'fetch')
-      .mockResolvedValueOnce(
-        mockStreamResponse([
-          'event:answer_delta\ndata: Answer\n\n',
-          'event:reasoning_delta\ndata: more thinking\n\n',
-          'event:answer_done\ndata: {"answer":"Answer","references":[]}\n\n',
-          'event:turn_done\ndata: {"answer":"Answer","references":[]}\n\n',
-        ]),
-      );
-
-    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled', ['answer', 'token_streaming']);
-    await flushPromises();
-
-    expect(cb.onReasoning).not.toHaveBeenCalled();
-    expect(cb.onError).toHaveBeenCalledExactlyOnceWith(STREAM_INVALID_ERROR_CODE);
-    expect(cb.onDone).not.toHaveBeenCalled();
-  });
 
   it('accepts token deltas when the caller does not supply provider capabilities', async () => {
     const cb = makeCallbacks();

@@ -1046,19 +1046,23 @@ export function chatPatientChartStream(
 
       // The lifecycle rules a client can check event by event: the preview may not resume once
       // committed reasoning began, reasoning ends once answer tokens begin, no delta follows the
-      // answer, and deltas require token_streaming when the caller supplied the capabilities.
-      const violatesLifecycle = (event: string): boolean => {
+      // answer, and deltas require token_streaming when the caller supplied the capabilities. A
+      // preview out of order or a delta from a provider without token_streaming ends the turn, as
+      // the conformance fixture requires; a late reasoning or answer delta is dropped instead, since
+      // answer_done and turn_done still carry the answer (the bundled repair pass streams its
+      // reasoning after the first pass's answer tokens).
+      const lifecycleVerdict = (event: string): 'accept' | 'drop' | 'reject' => {
         const deltaStage = DELTA_STAGE[event];
         if (deltaStage === undefined) {
           if (event !== 'turn_started' && event !== 'heartbeat' && event !== '') {
             highestStage = POST_DELTA_STAGE;
           }
-          return false;
+          return 'accept';
         }
-        if (deltaStage < highestStage) return true;
-        if (providerCapabilities && !providerCapabilities.includes('token_streaming')) return true;
+        if (providerCapabilities && !providerCapabilities.includes('token_streaming')) return 'reject';
+        if (deltaStage < highestStage) return event === 'preliminary_delta' ? 'reject' : 'drop';
         highestStage = deltaStage;
-        return false;
+        return 'accept';
       };
 
       function dispatchEvent() {
@@ -1072,8 +1076,9 @@ export function chatPatientChartStream(
           dataLines = [];
           return;
         }
-        if (violatesLifecycle(eventType)) {
-          failStream(STREAM_INVALID_ERROR_CODE);
+        const verdict = lifecycleVerdict(eventType);
+        if (verdict !== 'accept') {
+          if (verdict === 'reject') failStream(STREAM_INVALID_ERROR_CODE);
           eventType = '';
           dataLines = [];
           return;
