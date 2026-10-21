@@ -425,6 +425,14 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           preliminaryReasoning: '',
           answerValidation: interruptAnswerValidation(msg.answerValidation),
           inDepth: interruptInDepth(msg.inDepth),
+          // Stopped while the medication-safety check ran: say it did not complete, which the panel
+          // draws, rather than leave no result, which reads like a check that found nothing.
+          ...(msg.phase === 'checking' && !msg.safetyStatus
+            ? {
+                safetyStatus: 'unavailable' as const,
+                safetyCheck: { status: 'unavailable' as const, issues: ['execution_failed'] },
+              }
+            : {}),
         };
         return updated;
       });

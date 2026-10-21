@@ -886,6 +886,24 @@ describe('AiResponsePanel safety warnings', () => {
     expect(screen.getByText('Safety check unavailable')).toBeInTheDocument();
   });
 
+  it('says the safety check did not complete for an answer stopped while it ran', () => {
+    render(
+      <AiResponsePanel
+        answer="Ibuprofen may interact with warfarin [1]."
+        references={[]}
+        safetyWarnings={[]}
+        safetyStatus="unavailable"
+        safetyCheck={{ status: 'unavailable', issues: ['execution_failed'] }}
+        auditLogId={42}
+        error={null}
+        phase="complete"
+        patientUuid={patientUuid}
+      />,
+    );
+
+    expect(screen.getByText('The medication-safety check did not complete.')).toBeInTheDocument();
+  });
+
   it('surfaces a limited safety status even with no warnings', () => {
     render(
       <AiResponsePanel

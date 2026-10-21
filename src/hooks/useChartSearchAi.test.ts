@@ -1905,6 +1905,36 @@ describe('conversation streaming preference and optional capabilities', () => {
     expect(result.current.isAwaitingAnswer).toBe(false);
   });
 
+  it('marks a bundled answer stopped during its safety check as a check that did not complete', async () => {
+    chatSessionStore.setState({ selectedProviderId: 'bundled' });
+    mockChatStream.mockImplementation(() => {});
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+
+    act(() => result.current.submitQuestion('patient-uuid', 'Is ibuprofen safe?'));
+    const cb = mockChatStream.mock.calls[0][3];
+    act(() => {
+      cb.onAnswerDone({
+        answer: 'Ibuprofen may interact with warfarin [1].',
+        references: [{ index: 1, resourceType: 'order', resourceUuid: 'ord-1', date: '2026-01-01', grounded: null }],
+        safetyWarnings: [],
+        safetyStatus: 'unavailable',
+        safetyCheck: { schema_version: 'drug_safety.v1', status: 'unavailable', issues: [], warnings: [] },
+        messageId: 'm-bundled',
+      });
+    });
+    expect(result.current.messages[0].phase).toBe('checking');
+
+    // Stop is the composer's only button while the check runs; a stopped answer must not read as
+    // checked clean.
+    act(() => result.current.stopCurrent());
+
+    const stopped = result.current.messages[0];
+    expect(stopped.phase).toBe('complete');
+    expect(stopped.safetyStatus).toBe('unavailable');
+    expect(stopped.safetyCheck?.issues).toEqual(['execution_failed']);
+  });
+
   it('keeps a bundled turn in checking until its safety result settles on evidence_updated', async () => {
     chatSessionStore.setState({ selectedProviderId: 'bundled' });
     mockChatStream.mockImplementation(() => {});
