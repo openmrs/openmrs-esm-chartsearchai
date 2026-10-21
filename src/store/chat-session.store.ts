@@ -11,6 +11,14 @@ export interface ChatSessionState {
    * logout (see {@link setupChatSessionLogoutCleanup}).
    */
   sessionUuidByPatient: Record<string, string | null>;
+  /**
+   * Provider bound to each patient's active conversation, populated from
+   * history hydration, `/chat/new` and `turn_started`. Follow-up turns on an
+   * existing conversation send this provider rather than the global selection,
+   * so switching provider on another patient cannot silently close an earlier
+   * patient's conversation.
+   */
+  providerByPatient?: Record<string, string | null>;
   /** Hub product profile selected for this browser session. */
   selectedProfileId: string | null;
   /** Whether selectedProfileId was chosen explicitly by the user through the profile menu. */
@@ -34,6 +42,12 @@ export interface ChatSessionState {
    */
   selectedProviderId: string | null;
   /**
+   * The capabilities each provider advertises on `/providers`, recorded by the provider picker.
+   * Passed with each turn so the stream client can reject events the provider never declared;
+   * absent until `/providers` has been read, in which case only the event order is checked.
+   */
+  providerCapabilities?: Record<string, string[]>;
+  /**
    * Whether the reader wants an answer's reasoning disclosure open, remembered for the session so
    * the choice costs one click rather than one per answer.
    *
@@ -52,6 +66,7 @@ export interface ChatSessionState {
 export const initialChatSessionState = (): ChatSessionState => ({
   messagesByPatient: {},
   sessionUuidByPatient: {},
+  providerByPatient: {},
   selectedProfileId: null,
   profileExplicitlySelected: false,
   profileDiscoveryStatus: 'loading',
@@ -78,8 +93,13 @@ export function setupChatSessionLogoutCleanup(): () => void {
     if (currentUserUuid !== previousUserUuid) {
       // Replaced, not merged, so no field outlives the user who set it. The reasoning preference
       // goes with the history: an O3 workstation is shared, and the next user has expressed no view
-      // on whether the model's working notes should be open.
-      chatSessionStore.setState(initialChatSessionState(), true);
+      // on whether the model's working notes should be open. The provider capabilities are
+      // configuration read from /providers, not a user's state, so they stay.
+      const { providerCapabilities } = chatSessionStore.getState();
+      chatSessionStore.setState(
+        { ...initialChatSessionState(), ...(providerCapabilities ? { providerCapabilities } : {}) },
+        true,
+      );
       previousUserUuid = currentUserUuid;
     }
   });

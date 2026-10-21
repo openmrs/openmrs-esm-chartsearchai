@@ -1,0 +1,50 @@
+/**
+ * One explicit lifecycle phase per assistant turn — the single source of truth the UI derives all
+ * behavior, rendering, and DOM signals from. It mirrors the canonical provider SSE lifecycle:
+ *
+ *   created           → 'answering'
+ *   answer_done       → 'checking' or 'settled' (depending on answerValidation)
+ *   answer_validation → 'settled'      (answer available + checked; composer unlocks)
+ *   indepth_pending   → 'in-depth'     (in-depth generating in the background; delivered whole on
+ *                                       indepth_done — the hub does not token-stream in-depth)
+ *   indepth_done | indepth_error → 'settled' (payload complete; terminal marker still pending)
+ *   done | stop | preempt → 'complete'
+ *   onError           → 'error'        (the answer generation itself failed)
+ *
+ * Validation and In-Depth details (checked/edited/… and pending/complete/failed) remain on the
+ * message payload; `phase` is the single lifecycle position used for UI behavior.
+ */
+export type TurnPhase = 'answering' | 'checking' | 'settled' | 'in-depth' | 'complete' | 'error';
+
+export const PROFILES_LOADING_ERROR_CODE = 'profiles_loading';
+export const PROFILES_UNAVAILABLE_ERROR_CODE = 'profiles_unavailable';
+export const PROFILE_REQUIRED_ERROR_CODE = 'profile_required';
+export const IN_DEPTH_INTERRUPTED_ERROR_CODE = 'in_depth_interrupted';
+export const ANSWER_CHECK_INTERRUPTED_SUMMARY_CODE = 'answer_check_interrupted';
+export const NEW_CHAT_ERROR_CODE = 'new_chat_failed';
+/** The Hub answered `/models` but no longer offers the user's explicit profile pick. */
+export const SELECTED_PROFILE_UNAVAILABLE_ERROR_CODE = 'selected_profile_unavailable';
+/** A restored question has no assistant row: the turn was interrupted or is still running. */
+export const ANSWER_NOT_SAVED_ERROR_CODE = 'answer_not_saved';
+
+/**
+ * The direct answer itself is still being produced, so the composer must stay locked — starting a
+ * second answer generation now would race the server's getLastOrdinal() ordinal assignment. Once
+ * the answer settles this is false even while the background in-depth is still streaming.
+ */
+export function isAwaitingAnswer(phase: TurnPhase): boolean {
+  return phase === 'answering' || phase === 'checking';
+}
+
+/**
+ * The answer + its self-check have landed, so the answer is on screen and a new question may be
+ * asked — which preempts any trailing in-depth. True for the terminal states too.
+ */
+export function isAnswerSettled(phase: TurnPhase): boolean {
+  return phase === 'settled' || phase === 'in-depth' || phase === 'complete';
+}
+
+/** No server work remains for this turn (fully done, stopped, preempted, or failed). */
+export function isTerminal(phase: TurnPhase): boolean {
+  return phase === 'complete' || phase === 'error';
+}

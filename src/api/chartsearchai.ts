@@ -27,6 +27,8 @@ export const STREAM_CONNECTION_FAILED_ERROR_CODE = 'chartsearchai:connection-fai
 
 export interface AiReference {
   index: number;
+  /** Stable evidence-ledger id supplied by med-agent-hub. */
+  sourceId?: string;
   resourceType: string;
   /**
    * OpenMRS UUID of the cited record (the backend serializes this field as `resourceUuid`).
@@ -34,6 +36,15 @@ export interface AiReference {
    */
   resourceUuid: string;
   date: string;
+  /** Resolved source record text, when supplied by the hub staged path. */
+  sourceText?: string;
+  /** Human-readable source title supplied by the evidence ledger. */
+  title?: string;
+  /** Whether the citation index resolved to a record in this turn's evidence ledger. */
+  resolutionStatus?: 'resolved' | 'unresolved';
+  /** Answer, In-Depth, or table locations that used this source. */
+  usage?: Array<{ location: string; text: string; path?: string }>;
+
   /**
    * Citation grounding verdict from the backend: true = the cited record
    * supports the claim, false = it does not, null/absent = unverified.
@@ -62,6 +73,24 @@ export interface AiReference {
    * certifiable. So do not render any null as evidence that the module tried.
    */
   grounded?: boolean | null;
+  /**
+   * Lifecycle/status for citation grounding. `checking` means the backend has resolved
+   * the source record but final support verification is still running.
+   */
+  groundingStatus?: 'checking' | 'verified' | 'unsupported' | 'unchecked' | 'mixed';
+  /** Whether support was evaluated from this record alone or a cited source set. */
+  groundingScope?: 'record' | 'source_set';
+  /** Citation indices evaluated together when groundingScope is source_set. */
+  groundingGroup?: number[];
+  /** Claim/path-level verdicts retained when one record is used more than once. */
+  groundingChecks?: Array<{
+    status: 'verified' | 'unsupported' | 'unchecked';
+    claim: string;
+    location: string;
+    path?: string;
+    source_indices: number[];
+  }>;
+
   /**
    * Which corpus the cited record came from: `chart` = the patient's own record,
    * `reference` = module-supplied reference material (a drug-reference entry, a
@@ -439,7 +468,7 @@ export type AiAnswerValidationStatus = 'checking' | 'checked' | 'edited' | 'need
 
 export interface AiAnswerValidation {
   status: AiAnswerValidationStatus;
-  label: string;
+  label?: string;
   summary?: string;
   issues?: unknown[];
   completedAt?: string;
@@ -547,7 +576,7 @@ export interface AiSearchResponse {
    *
    * An absent entry is never a claim that a cited order is still in force — an order can be out of
    * force with no end date anywhere — so `[]` is not a certificate of anything. `null` is no
-   * measurement. Final on the early `done` under async grounding; the `grounded` event re-sends it.
+   * measurement. Final on `answer_done`; later events of the turn re-send it.
    */
   orderStopDates?: AiOrderStopDate[] | null;
   /**
@@ -623,30 +652,12 @@ export type AiAnswerLimits = Pick<
   | 'asksWhetherSheHasTakenADrug'
 >;
 
-/**
- * What the trailing `grounded` SSE event re-sends. Under `chartsearchai.grounding.async=true`
- * the `done` event is emitted before validation runs, so it carries `safetyWarnings: []` and a
- * null for each measurement taken AFTER the answer — `interactionPairs`,
- * `misattributedOrderCitations`, `unstatedFindingSeverities` — and those arrive only here.
- *
- * Two exceptions to that, both of which a client must not gate on this event.
- * `conditionRuleCoverage` is read off the dataset load before the model is called, so it is
- * already final on the early `done` and is merely re-sent here. And on an answer-cache hit no
- * early `done` is emitted at all: the single `done` carries the replayed final answer, so every
- * field reads as the original request measured it and no `grounded` event follows.
- */
-export type AiGroundedUpdate = Pick<AiSearchResponse, 'references' | 'safetyWarnings'> & AiAnswerLimits;
-
 export type FeedbackRating = 'positive' | 'negative';
 
 export interface AiFeedback {
   questionId: string;
   rating: FeedbackRating;
   comment?: string;
-}
-
-export interface AiSearchError {
-  error: string;
 }
 
 /**
@@ -683,30 +694,7 @@ export async function submitFeedback(feedback: AiFeedback): Promise<void> {
   }
 }
 
-/**
- * Sends a synchronous AI search request.
- */
-export async function searchPatientChart(
-  patientUuid: string,
-  question: string,
-  abortController?: AbortController,
-): Promise<AiSearchResponse> {
-  const response = await openmrsFetch(`${BASE_PATH}/search`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ patient: patientUuid, question }),
-    signal: abortController?.signal,
-  });
-  if (!response.data?.answer) {
-    throw new Error('Unexpected response from server');
-  }
-  return response.data as AiSearchResponse;
-}
-
-async function streamRequestError(
-  response: Response,
-  otherStatus: (status: number) => string = (status) => `Server error: ${status}`,
-): Promise<string> {
+async function streamRequestError(response: Response): Promise<string> {
   let bodyError: string | null = null;
   try {
     const body = await response.json();
@@ -726,207 +714,15 @@ async function streamRequestError(
     // a 401/403, or a 500 that is really "sendRedirect() after the response was committed"
     // (the SSE stream commits the response, so the expired-session login redirect can't fire
     // and surfaces as a bare HTML 500). Treat all of these as session expiry — the same
-    // actionable cause as the 302 handled above — rather than a cryptic "Server error: 500".
+    // actionable cause as the opaque redirect the caller handles, rather than a cryptic 500.
     return SESSION_EXPIRED_ERROR_CODE;
   }
-  return otherStatus(response.status);
+  return STREAM_REQUEST_FAILED_ERROR_CODE;
 }
 
 /** Canonical order of the delta streams; anything after them (answer_done onwards) ranks last. */
 const DELTA_STAGE: Record<string, number> = { preliminary_delta: 1, reasoning_delta: 2, answer_delta: 3 };
 const POST_DELTA_STAGE = 4;
-
-/**
- * Opens an SSE (Server-Sent Events) stream for AI search.
- *
- * Uses raw fetch instead of openmrsFetch because openmrsFetch consumes
- * the response body to parse it as JSON, which prevents streaming.
- * We need direct access to response.body (the ReadableStream).
- */
-export function searchPatientChartStream(
-  patientUuid: string,
-  question: string,
-  callbacks: {
-    onToken: (token: string) => void;
-    onDone: (response: AiSearchResponse) => void;
-    onError: (error: string) => void;
-    /**
-     * Early citations, emitted by the server the moment the answer's references are
-     * known — before the (slower) grounding pass attaches verdicts. Lets the UI show
-     * the citations immediately as unverified; the {@code done} event then re-sends
-     * the same references with their grounding verdicts. Optional and best-effort: a
-     * missing or malformed event is ignored, since {@code done} is authoritative.
-     */
-    onReferences?: (references: AiReference[]) => void;
-    /**
-     * Trailing grounding verdicts, emitted only when the server runs with
-     * {@code chartsearchai.grounding.async=true}: in that mode {@code done} arrives as soon
-     * as the answer is complete (its references carry no verdicts) and this event re-sends
-     * the same references with their {@code grounded} verdicts once the (slower) Tier-2
-     * verification finishes. Best-effort like {@code onReferences}: when the server runs in
-     * classic mode the event never arrives and {@code done}'s references are already final;
-     * a malformed payload just leaves citations rendered as unverified.
-     *
-     * It carries more than the verdicts: the final {@code safetyWarnings} and the answer-limit
-     * measurements ({@code interactionPairs}, {@code misattributedOrderCitations},
-     * {@code unstatedFindingSeverities}) are all null/empty on the early {@code done} in that
-     * mode and arrive only here, so the whole payload is handed over rather than the
-     * references alone.
-     */
-    onGrounded?: (update: AiGroundedUpdate) => void;
-    /**
-     * Live reasoning ("thinking") chunks, streamed by the server before the answer so the
-     * UI can show progress and the model's rationale instead of a dead spinner during the
-     * reasoning phase. Scratchpad only — render distinctly (subdued, transient), never as
-     * the answer.
-     */
-    onThinking?: (chunk: string) => void;
-    /**
-     * Preliminary reasoning chunks from the optional progressive-reasoning preview pass (server
-     * GP {@code chartsearchai.progressiveReasoning.enabled}). Streamed before {@code onThinking}
-     * over only the top-K focused chart, so the UI can show reasoning almost immediately on a
-     * slow host. It is provisional and can be wrong until the committed full-chart reasoning
-     * arrives — render it distinctly (subdued/labelled as an in-progress preview, not the answer)
-     * and REPLACE it the moment the first {@code onThinking} (or {@code onToken}) chunk arrives.
-     * Never fires when the server GP is off.
-     */
-    onPreliminary?: (chunk: string) => void;
-  },
-  abortController?: AbortController,
-): void {
-  const url = `${window.openmrsBase}${BASE_PATH}/search/stream`;
-
-  window
-    .fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'text/event-stream',
-        'Disable-WWW-Authenticate': 'true',
-      },
-      body: JSON.stringify({ patient: patientUuid, question }),
-      credentials: 'include',
-      redirect: 'manual',
-      signal: abortController?.signal,
-    })
-    .then(async (response) => {
-      if (response.type === 'opaqueredirect' || response.status === 0) {
-        callbacks.onError(SESSION_EXPIRED_ERROR_CODE);
-        return;
-      }
-
-      if (!response.ok) {
-        callbacks.onError(await streamRequestError(response));
-        return;
-      }
-
-      const reader = response.body;
-
-      if (!reader || typeof reader.getReader !== 'function') {
-        callbacks.onError('Streaming not supported by this browser.');
-        return;
-      }
-
-      const textDecoder = new TextDecoder();
-      const streamReader = reader.getReader();
-      let buffer = '';
-      let eventType = '';
-      let dataLines: string[] = [];
-      let streamFinalized = false;
-
-      function dispatchEvent() {
-        if (dataLines.length === 0) {
-          eventType = '';
-          return;
-        }
-        const data = dataLines.join('\n');
-        if (eventType === 'token') {
-          callbacks.onToken(data);
-        } else if (eventType === 'thinking') {
-          callbacks.onThinking?.(data);
-        } else if (eventType === 'preliminary') {
-          callbacks.onPreliminary?.(data);
-        } else if (eventType === 'references') {
-          // Pre-grounding citations: best-effort, so a malformed payload is ignored rather
-          // than failing the stream — the authoritative references arrive with `done`.
-          try {
-            const parsed = JSON.parse(data);
-            callbacks.onReferences?.(parsed.references ?? []);
-          } catch {
-            // ignore; `done` is authoritative
-          }
-        } else if (eventType === 'grounded') {
-          // Post-done verdicts (async grounding). Best-effort: a malformed payload leaves
-          // the citations unverified rather than erroring an already-complete answer.
-          try {
-            const parsed = JSON.parse(data);
-            callbacks.onGrounded?.({ ...parsed, references: parsed.references ?? [] });
-          } catch {
-            // ignore; citations simply stay unverified
-          }
-        } else if (eventType === 'done') {
-          streamFinalized = true;
-          try {
-            const parsed: AiSearchResponse = JSON.parse(data);
-            callbacks.onDone(parsed);
-          } catch {
-            callbacks.onError('Failed to parse final response');
-          }
-        } else if (eventType === 'error') {
-          streamFinalized = true;
-          callbacks.onError(data);
-        }
-        eventType = '';
-        dataLines = [];
-      }
-
-      while (true) {
-        const { done, value } = await streamReader.read();
-        if (done) break;
-
-        buffer += textDecoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-
-        for (const line of lines) {
-          if (line === '') {
-            dispatchEvent();
-          } else if (line.startsWith('event:')) {
-            eventType = line.slice(6).trim();
-          } else if (line.startsWith('data:')) {
-            const raw = line.slice(5);
-            dataLines.push(raw.startsWith(' ') ? raw.slice(1) : raw);
-          }
-        }
-      }
-
-      // Process any remaining lines in the buffer (stream ended without trailing newline)
-      if (buffer) {
-        for (const line of buffer.split('\n')) {
-          if (line === '') {
-            dispatchEvent();
-          } else if (line.startsWith('event:')) {
-            eventType = line.slice(6).trim();
-          } else if (line.startsWith('data:')) {
-            const raw = line.slice(5);
-            dataLines.push(raw.startsWith(' ') ? raw.slice(1) : raw);
-          }
-        }
-      }
-
-      // Flush any event accumulated in the loop but not yet dispatched
-      dispatchEvent();
-
-      if (!streamFinalized) {
-        callbacks.onError('Stream ended unexpectedly without a response');
-      }
-    })
-    .catch((err) => {
-      if (err.name !== 'AbortError') {
-        callbacks.onError(err?.message ?? 'An unknown error occurred');
-      }
-    });
-}
 
 /**
  * Streaming variant for multi-turn chat. SSE (Server-Sent Events) stream, parsed via raw
@@ -947,6 +743,7 @@ export function chatPatientChartStream(
   question: string,
   callbacks: {
     onSession: (uuid: string) => void;
+    onTurnStarted?: (meta: { session?: string; provider?: string; messageId?: string }) => void;
     /**
      * One `answer_delta` frame: a slice of the answer text from a provider that declares
      * `token_streaming` (the bundled engine). Additive and provisional; `answer_done` restates the
@@ -1020,7 +817,7 @@ export function chatPatientChartStream(
       }
 
       if (!response.ok) {
-        callbacks.onError(await streamRequestError(response, () => STREAM_REQUEST_FAILED_ERROR_CODE));
+        callbacks.onError(await streamRequestError(response));
         return;
       }
 
@@ -1140,10 +937,11 @@ export function chatPatientChartStream(
           // canonical stream does not set the session response header, so this
           // is the earliest point the client can pin the conversation uuid.
           try {
-            const raw = JSON.parse(data) as { session?: string };
+            const raw = JSON.parse(data) as { session?: string; provider?: string; messageId?: string };
             if (raw.session) {
               callbacks.onSession(raw.session);
             }
+            callbacks.onTurnStarted?.(raw);
           } catch {
             // A malformed marker is not fatal; the session also arrives on
             // answer_done and turn_done.

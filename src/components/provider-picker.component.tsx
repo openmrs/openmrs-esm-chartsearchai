@@ -9,18 +9,19 @@ import { useMenuTriggerName } from './menu-trigger-name';
 import styles from './provider-picker.scss';
 
 interface ProviderPickerProps {
-  /** Called with the newly selected provider id when the user switches provider. */
-  onSwitched?: (providerId: string) => void;
+  /** Request a provider change; the caller commits shared state after opening its conversation. */
+  onSelect?: (providerId: string) => void;
+  disabled?: boolean;
 }
 
 /**
  * Clinical-answer provider picker (bundled local inference vs. the med-agent-hub
  * relay). A single ready provider needs no picker. An unavailable saved selection
  * stays visible so the user can explicitly choose a replacement. The caller starts
- * a fresh conversation through onSwitched because the backend attributes each
+ * a fresh conversation through onSelect because the backend attributes each
  * conversation to a single provider and never silently falls back.
  */
-const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSwitched }) => {
+const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSelect, disabled = false }) => {
   const { t } = useTranslation();
   const { selectedProviderId } = useStore(chatSessionStore);
   const [data, setData] = useState<ProviderListResponse | null>(null);
@@ -34,9 +35,18 @@ const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSwitched }) => {
         .then((result) => {
           if (controller.signal.aborted) return;
           setData(result);
+          const providers = Array.isArray(result?.providers) ? result.providers : [];
+          // Configuration, not a user's state, so it outlives logout like the list itself.
+          chatSessionStore.setState({
+            providerCapabilities: Object.fromEntries(
+              providers.map((provider) => [
+                provider.id,
+                Array.isArray(provider.capabilities) ? provider.capabilities : [],
+              ]),
+            ),
+          });
           // An enabled provider that is not ready yet can recover; read again so it can be chosen
           // without a remount. A disabled one is configuration and stays as reported.
-          const providers = Array.isArray(result?.providers) ? result.providers : [];
           if (providers.some((provider) => provider.enabled && !provider.ready)) {
             retry = setTimeout(discover, PROFILE_DISCOVERY_RETRY_MS);
           }
@@ -91,10 +101,13 @@ const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSwitched }) => {
       if (providerId === effectiveProviderId) {
         return;
       }
-      chatSessionStore.setState({ selectedProviderId: providerId });
-      onSwitched?.(providerId);
+      if (onSelect) {
+        onSelect(providerId);
+      } else {
+        chatSessionStore.setState({ selectedProviderId: providerId });
+      }
     },
-    [effectiveProviderId, onSwitched],
+    [effectiveProviderId, onSelect],
   );
 
   if (!data || (!data.pickerVisible && providerReady)) {
@@ -107,6 +120,7 @@ const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSwitched }) => {
         <MenuButton
           ref={triggerRef}
           data-testid="chartsearchai-provider-picker"
+          disabled={disabled}
           label={triggerLabel}
           kind="ghost"
           size="sm"

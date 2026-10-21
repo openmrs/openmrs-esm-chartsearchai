@@ -32,6 +32,25 @@
   flex-shrink: 0;
 }
 
+.panelHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: layout.$spacing-02;
+}
+
+.workspaceActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: layout.$spacing-03;
+  padding: layout.$spacing-02 layout.$spacing-05 0;
+  flex-shrink: 0;
+}
+
+.newChatLabel {
+  margin-left: layout.$spacing-02;
+  @include type.type-style('body-compact-01');
+}
+
 .panelTitle {
   @include type.type-style('heading-compact-01');
   display: flex;
@@ -101,6 +120,19 @@
   border-radius: 0.25rem 1rem 1rem 1rem;
   padding: layout.$spacing-04 layout.$spacing-05;
   max-width: 95%;
+}
+
+.modelPickerRow {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  // Vertical: spacing-02 keeps the trigger from crowding the disclaimer above.
+  // Horizontal: spacing-06 on the right adds breathing room from the panel
+  // border — spacing-05 (matching .inputArea) put the chevron hard against
+  // the edge in floating mode at narrow widths.
+  padding: layout.$spacing-02 layout.$spacing-06 layout.$spacing-02 layout.$spacing-05;
+  // The picker hides itself when profile discovery is unavailable or disabled.
+  min-height: 0;
 }
 
 .inputArea {
