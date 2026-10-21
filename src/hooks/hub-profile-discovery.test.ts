@@ -7,6 +7,7 @@ import {
   refreshHubProfiles,
   selectHubProfile,
   stopHubProfileDiscovery,
+  PROFILE_DISCOVERY_RETRY_MS,
   useHubProfileDiscovery,
 } from './hub-profile-discovery';
 
@@ -86,6 +87,36 @@ describe('Hub profile discovery', () => {
 
     expect(chatSessionStore.getState().selectedProfileId).toBe('team');
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('unavailable');
+  });
+
+  it('reads /models again after an outage that left every profile unavailable, while discovery is in use', async () => {
+    vi.useFakeTimers();
+    try {
+      mockFetch.mockResolvedValueOnce(list(profile({}), profile({ id: 'team', label: 'Team', default: false })));
+      renderHook(() => useHubProfileDiscovery());
+      await act(async () => {
+        await refreshHubProfiles(true);
+      });
+      selectHubProfile('team');
+      mockFetch.mockResolvedValueOnce(
+        list(profile({ available: false }), profile({ id: 'team', label: 'Team', available: false })),
+      );
+      await act(async () => {
+        await refreshHubProfiles(true);
+      });
+      expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('unavailable');
+
+      mockFetch.mockResolvedValueOnce(list(profile({}), profile({ id: 'team', label: 'Team', default: false })));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(PROFILE_DISCOVERY_RETRY_MS);
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+      expect(chatSessionStore.getState().selectedProfileId).toBe('team');
+      expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('keeps the current profiles and status while a refresh is in flight', async () => {

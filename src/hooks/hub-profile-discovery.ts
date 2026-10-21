@@ -19,6 +19,15 @@ function clearRetry() {
   }
 }
 
+/** While discovery is in use, read `/models` again after {@link PROFILE_DISCOVERY_RETRY_MS}. */
+function scheduleRetry(): void {
+  if (consumers === 0 || retryTimer) return;
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    refreshHubProfiles();
+  }, PROFILE_DISCOVERY_RETRY_MS);
+}
+
 /** Abort any discovery request and pending retry; a later refresh starts afresh. */
 export function stopHubProfileDiscovery(): void {
   clearRetry();
@@ -76,17 +85,15 @@ export function refreshHubProfiles(preserveExplicit: boolean = lastPreserveExpli
       const profiles = (Array.isArray(result?.data) ? result.data : []).filter(
         (profile) => profile.visibility === 'product',
       );
-      chatSessionStore.setState({ hubProfiles: profiles, ...resolveSelection(profiles, lastPreserveExplicit) });
+      const selection = resolveSelection(profiles, lastPreserveExplicit);
+      chatSessionStore.setState({ hubProfiles: profiles, ...selection });
+      // A read that found no profile available is an outage too: read again until one is.
+      if (selection.profileDiscoveryStatus === 'unavailable') scheduleRetry();
     })
     .catch((error) => {
       if (controller.signal.aborted || error?.name === 'AbortError') return;
       chatSessionStore.setState({ hubProfiles: null, profileDiscoveryStatus: 'unavailable' });
-      if (consumers > 0) {
-        retryTimer = setTimeout(() => {
-          retryTimer = null;
-          refreshHubProfiles();
-        }, PROFILE_DISCOVERY_RETRY_MS);
-      }
+      scheduleRetry();
     })
     .finally(() => {
       if (inFlight?.controller === controller) inFlight = null;

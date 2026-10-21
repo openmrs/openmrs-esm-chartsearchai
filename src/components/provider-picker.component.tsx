@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next';
 import { MenuButton, MenuItem, MenuItemDivider, MenuItemRadioGroup } from '@carbon/react';
 import { useStore } from '@openmrs/esm-framework';
+import { PROFILE_DISCOVERY_RETRY_MS } from '../hooks/hub-profile-discovery';
 import { fetchProviders, type ProviderListResponse } from '../api/chartsearchai';
 import { chatSessionStore } from '../store/chat-session.store';
 import { useMenuTriggerName } from './menu-trigger-name';
@@ -27,16 +28,24 @@ const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSwitched }) => {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchProviders(controller)
-      .then((result) => {
-        if (!controller.signal.aborted) setData(result);
-      })
-      .catch((error) => {
-        if (!controller.signal.aborted && error?.name !== 'AbortError') {
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    const discover = () => {
+      fetchProviders(controller)
+        .then((result) => {
+          if (!controller.signal.aborted) setData(result);
+        })
+        .catch((error) => {
+          if (controller.signal.aborted || error?.name === 'AbortError') return;
+          // A failed read hides the picker; read again rather than leave it hidden until a remount.
           setData(null);
-        }
-      });
-    return () => controller.abort();
+          retry = setTimeout(discover, PROFILE_DISCOVERY_RETRY_MS);
+        });
+    };
+    discover();
+    return () => {
+      controller.abort();
+      if (retry) clearTimeout(retry);
+    };
   }, []);
 
   const providers = useMemo(() => (Array.isArray(data?.providers) ? data.providers : []), [data]);
