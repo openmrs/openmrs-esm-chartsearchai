@@ -852,6 +852,60 @@ describe('useChartSearchAi', () => {
     await waitFor(() => expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('srv-session-2'));
   });
 
+  it('keeps a new session that arrives after the asking panel closed', async () => {
+    let resolveSession!: (value: { session: string; messages: never[] }) => void;
+    mockStartNewChat.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSession = resolve;
+      }),
+    );
+    mockChatStream.mockImplementation(() => {});
+    const { result, unmount } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+    act(() => result.current.submitQuestion('patient-uuid', 'Old question'));
+    act(() =>
+      mockChatStream.mock.calls[0][3].onDone({
+        answer: 'A.',
+        references: [],
+        session: 'old-session',
+        messageId: 'm-1',
+      }),
+    );
+
+    act(() => result.current.startNewChatSession('patient-uuid'));
+    unmount();
+    await act(async () => {
+      resolveSession({ session: 'new-session', messages: [] });
+    });
+
+    expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('new-session');
+    expect(chatSessionStore.getState().messagesByPatient['patient-uuid']).toEqual([]);
+  });
+
+  it('blocks a second panel from submitting while the first waits for a new session', async () => {
+    let resolveSession!: (value: { session: string; messages: never[] }) => void;
+    mockStartNewChat.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSession = resolve;
+      }),
+    );
+    mockChatStream.mockImplementation(() => {});
+    const { result: first } = renderHook(() => useChartSearchAi('patient-uuid'));
+    const { result: second } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+
+    act(() => first.current.startNewChatSession('patient-uuid'));
+    act(() => second.current.submitQuestion('patient-uuid', 'Lost question?'));
+    expect(mockChatStream).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveSession({ session: 'new-session', messages: [] });
+    });
+    act(() => second.current.submitQuestion('patient-uuid', 'After the new session'));
+    expect(mockChatStream).toHaveBeenCalledOnce();
+    expect(second.current.messages.map((m) => m.question)).toEqual(['After the new session']);
+  });
+
   it('blocks submission until a requested new session exists', async () => {
     let resolveSession!: (value: { session: string; messages: never[] }) => void;
     mockStartNewChat.mockReturnValue(

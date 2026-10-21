@@ -355,6 +355,20 @@ function stripCitations(answer: string): string {
   return answer.replace(citationStripPattern(), '').trim();
 }
 
+/** The answer as text to copy: the prose, then each structured table as tab-separated rows. */
+function copyText(answer: string, blocks?: AiBlock[]): string {
+  const tables = (blocks ?? [])
+    .filter((block) => block.kind === 'table')
+    .map((table) => {
+      const lines = [table.columns.map((column) => column.label).join('\t')];
+      for (const row of table.rows) {
+        lines.push(table.columns.map((column) => stripCitations(row.cells[column.key]?.text ?? '')).join('\t'));
+      }
+      return (table.title ? `${table.title}\n` : '') + lines.join('\n');
+    });
+  return [stripCitations(answer), ...tables].filter(Boolean).join('\n\n');
+}
+
 /** Whether a chip is drawn apart from the findings about the drug asked about — the box's split. */
 function isApartFromTheDrugAsked(warning: AiSafetyWarning): boolean {
   return (
@@ -887,8 +901,8 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   );
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard?.writeText(stripCitations(answer));
-  }, [answer]);
+    navigator.clipboard?.writeText(copyText(answer, blocks));
+  }, [answer, blocks]);
 
   // The chips drawn in the safety box: every one but those the answer already states (backend ADR
   // Decision 124 — on a question asking only for her allergies the answer names the conflicting
