@@ -51,6 +51,22 @@ describe('MarkdownAnswer', () => {
     expect(screen.getByRole('columnheader', { name: 'Record' })).toBeInTheDocument();
   });
 
+  it('puts a table in a width-limited wrapper that scrolls sideways on its own', () => {
+    const wide = Array.from({ length: 12 }, (_, i) => `Column ${i}`);
+    render(
+      <MarkdownAnswer
+        answer={`| ${wide.join(' | ')} |\n|${wide.map(() => ' --- ').join('|')}|\n| ${wide.map((_, i) => `Value ${i}`).join(' | ')} |`}
+        references={references}
+        patientUuid={patientUuid}
+      />,
+    );
+    const table = screen.getByRole('table');
+    const wrapper = screen.getByTestId('answer-table-scroll');
+    expect(wrapper).toContainElement(table);
+    expect(wrapper).toHaveClass('tableScroll');
+    expect(wrapper.closest('.markdownAnswer')).not.toBeNull();
+  });
+
   it('keeps a citation group that wraps across a line as navigable chips', () => {
     const refs = [...references, { index: 5, resourceType: 'obs', resourceUuid: 'uuid-505', date: '2006-01-02' }];
     render(<MarkdownAnswer answer={'Outdated [4,\n5].'} references={refs} patientUuid={patientUuid} />);

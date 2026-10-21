@@ -131,6 +131,13 @@ const MarkdownAnswer: React.FC<MarkdownAnswerProps> = ({ answer, references, pat
         </a>
       ),
       p: ({ children }) => <p className={styles.answerParagraph}>{children}</p>,
+      // A table wider than the bubble scrolls inside its own wrapper instead of pushing the
+      // whole chat sideways; the narrow floating panel is where that happens first.
+      table: ({ children }) => (
+        <div className={styles.tableScroll} data-testid="answer-table-scroll">
+          <table>{children}</table>
+        </div>
+      ),
       h1: ({ children }) => <h4 className={styles.answerHeading}>{children}</h4>,
       h2: ({ children }) => <h4 className={styles.answerHeading}>{children}</h4>,
       h3: ({ children }) => <h4 className={styles.answerHeading}>{children}</h4>,

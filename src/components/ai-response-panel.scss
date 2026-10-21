@@ -53,10 +53,23 @@
     margin-bottom: layout.$spacing-01;
   }
 
+  .tableScroll {
+    max-width: 100%;
+    overflow-x: auto;
+    margin: layout.$spacing-02 0 layout.$spacing-03 0;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: max-content;
+    max-width: none;
+  }
+
   th,
   td {
     padding: layout.$spacing-02 layout.$spacing-04 layout.$spacing-02 0;
     text-align: left;
+    white-space: nowrap;
   }
 
   th {
