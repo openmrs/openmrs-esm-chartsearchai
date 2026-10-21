@@ -89,6 +89,37 @@ describe('ProviderPicker', () => {
     }
   });
 
+  it('offers a provider that was not ready once a later read finds it ready, without a remount', async () => {
+    vi.useFakeTimers();
+    try {
+      mockFetch.mockResolvedValueOnce({
+        ...DUAL,
+        providers: [
+          provider({ default: true }),
+          provider({ id: 'hub', label: 'Med-Agent Hub', default: false, ready: false }),
+        ],
+      });
+      mockFetch.mockResolvedValueOnce(DUAL);
+      render(<ProviderPicker />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(mockFetch).toHaveBeenCalledOnce();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(PROFILE_DISCOVERY_RETRY_MS);
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(PROFILE_DISCOVERY_RETRY_MS * 2);
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('shows the provider menu with the default marked when multiple providers exist', async () => {
     mockFetch.mockResolvedValueOnce(DUAL);
     render(<ProviderPicker />);

@@ -270,6 +270,33 @@ describe('ModelPicker', () => {
       vi.useRealTimers();
     }
   });
+  it('reads profiles again when only the explicit pick dropped out, and restores ready on recovery', async () => {
+    vi.useFakeTimers();
+    try {
+      chatSessionStore.setState({ selectedProfileId: 'team-med-checked', profileExplicitlySelected: true });
+      mockFetch.mockResolvedValueOnce({
+        object: 'list',
+        data: [
+          profile({ default: true }),
+          profile({ id: 'team-med-checked', label: 'Checked medical team', topology: 'team', available: false }),
+        ],
+      });
+      mockFetch.mockResolvedValueOnce(PROFILE_DATA);
+      render(<ModelPicker />);
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('selection-unavailable');
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(PROFILE_DISCOVERY_RETRY_MS);
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(chatSessionStore.getState().selectedProfileId).toBe('team-med-checked');
+      expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('stops retrying once the picker is gone', async () => {
     vi.useFakeTimers();
     try {
