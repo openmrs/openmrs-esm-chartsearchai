@@ -22,6 +22,11 @@ export const configSchema = {
     _description:
       "Whether the model's reasoning is shown at all: streamed live while the model thinks, then kept behind a collapsed disclosure under the answer. When false it is neither shown nor retained. Only the streaming endpoint emits reasoning, so this has no effect when useStreaming is false.",
   },
+  showModelPicker: {
+    _type: Type.Boolean,
+    _default: true,
+    _description: 'Show the med-agent-hub product-profile picker in the chat panel footer.',
+  },
   chatLaunchMode: {
     _type: Type.String,
     _default: 'both',
@@ -31,6 +36,7 @@ export const configSchema = {
 };
 
 export interface ChartSearchAiConfig {
+  showModelPicker: boolean;
   aiSearchPlaceholder: string;
   maxQuestionLength: number;
   useStreaming: boolean;
