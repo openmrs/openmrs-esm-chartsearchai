@@ -1,7 +1,7 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
-import { useConfig } from '@openmrs/esm-framework';
+import { getSessionStore, useConfig } from '@openmrs/esm-framework';
 import { NO_ANSWER_LIMITS } from '../utils/answer-limits';
 import {
   ANSWER_CHECK_INTERRUPTED_SUMMARY_CODE,
@@ -20,7 +20,7 @@ import {
   fetchChatHistory,
   startNewChat,
 } from '../api/chartsearchai';
-import { chatSessionStore } from '../store/chat-session.store';
+import { chatSessionStore, setupChatSessionLogoutCleanup } from '../store/chat-session.store';
 import { refreshHubProfiles, useHubProfileDiscovery } from './hub-profile-discovery';
 
 vi.mock('../api/chartsearchai', () => ({
@@ -895,12 +895,16 @@ describe('useChartSearchAi', () => {
     await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
 
     act(() => first.current.startNewChatSession('patient-uuid'));
+    // The other panel's composer is locked too, so its question is never typed into a dead Send.
+    expect(second.current.isStartingSession).toBe(true);
+    expect(second.current.isAwaitingAnswer).toBe(true);
     act(() => second.current.submitQuestion('patient-uuid', 'Lost question?'));
     expect(mockChatStream).not.toHaveBeenCalled();
 
     await act(async () => {
       resolveSession({ session: 'new-session', messages: [] });
     });
+    expect(second.current.isStartingSession).toBe(false);
     act(() => second.current.submitQuestion('patient-uuid', 'After the new session'));
     expect(mockChatStream).toHaveBeenCalledOnce();
     expect(second.current.messages.map((m) => m.question)).toEqual(['After the new session']);
@@ -2477,5 +2481,92 @@ describe('useChartSearchAi history with an unanswered question', () => {
       expect(message.error).toBe(ANSWER_NOT_SAVED_ERROR_CODE);
     }
     expect(result.current.isAwaitingAnswer).toBe(false);
+  });
+
+  describe('when the signed-in user changes while a request is pending', () => {
+    const signIn = (user: string) =>
+      getSessionStore().setState({
+        loaded: true,
+        session: { sessionId: `s-${user}`, authenticated: true, user: { uuid: user } } as never,
+      });
+
+    it("drops the previous user's New chat response", async () => {
+      signIn('user-a');
+      const unsubscribe = setupChatSessionLogoutCleanup();
+      let resolveSession!: (value: { session: string; provider: string }) => void;
+      mockStartNewChat.mockReturnValue(
+        new Promise((resolve) => {
+          resolveSession = resolve;
+        }),
+      );
+      const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+      await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+
+      act(() => result.current.startNewChatSession('patient-uuid'));
+      act(() => signIn('user-b'));
+      await act(async () => {
+        resolveSession({ session: 'private-session-of-user-a', provider: 'bundled' });
+      });
+
+      expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBeUndefined();
+      expect(chatSessionStore.getState().providerByPatient?.['patient-uuid']).toBeUndefined();
+      unsubscribe();
+    });
+
+    it("drops the previous user's history read", async () => {
+      signIn('user-a');
+      const unsubscribe = setupChatSessionLogoutCleanup();
+      let resolveHistory!: (value: unknown) => void;
+      mockFetchHistory.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveHistory = resolve;
+        }),
+      );
+      const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+      await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+
+      act(() => signIn('user-b'));
+      await act(async () => {
+        resolveHistory({
+          session: 'private-session-of-user-a',
+          messages: [
+            { messageId: 'u-1', role: 'user', content: 'Q of A', createdAt: 1 },
+            { messageId: 'a-1', role: 'assistant', content: 'private answer of A', createdAt: 2 },
+          ],
+        });
+      });
+
+      expect(result.current.messages).toEqual([]);
+      expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBeUndefined();
+      unsubscribe();
+    });
+  });
+
+  it('restores a stopped bundled answer with its safety check reported as not completed', async () => {
+    // The retained answer of a bundled turn stopped while its checks ran, as the module stores it.
+    mockFetchHistory.mockResolvedValueOnce({
+      session: 'srv-session-stopped',
+      provider: 'bundled',
+      messages: [
+        { messageId: 'u-1', role: 'user', content: 'Is ibuprofen safe?', createdAt: 1 },
+        {
+          messageId: 'a-1',
+          role: 'assistant',
+          content: 'Ibuprofen is on the order list [1].',
+          terminalState: 'turn_done',
+          references: [{ index: 1, resourceType: 'order', resourceUuid: 'o-1', groundingStatus: 'checking' }],
+          safetyWarnings: [],
+          safetyStatus: 'unavailable',
+          safetyCheck: { status: 'unavailable', issues: [] },
+          createdAt: 2,
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    await waitFor(() => expect(result.current.messages).toHaveLength(1));
+    expect(result.current.messages[0].safetyStatus).toBe('unavailable');
+    expect(result.current.messages[0].safetyCheck).toEqual({ status: 'unavailable', issues: ['execution_failed'] });
   });
 });
