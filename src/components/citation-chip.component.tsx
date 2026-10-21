@@ -277,8 +277,8 @@ export function renderTextWithCitations(answer: string, ctx: CitationContext): R
       );
     });
 
-    // And the finding's own caveat the answer dropped (backend ADR Decision 136), after its rating: one per
-    // finding per answer, for the reason a rating is.
+    // And the finding's own caveat the answer dropped (backend ADR Decision 136), after its rating:
+    // one per finding per answer, for the reason a rating is.
     citIndices.forEach((citIndex) => {
       if (!qualified.has(citIndex) || noted.has(citIndex)) return;
       noted.add(citIndex);
