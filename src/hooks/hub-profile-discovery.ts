@@ -87,8 +87,8 @@ export function refreshHubProfiles(preserveExplicit: boolean = lastPreserveExpli
       );
       const selection = resolveSelection(profiles, lastPreserveExplicit);
       chatSessionStore.setState({ hubProfiles: profiles, ...selection });
-      // A read that found no profile available is an outage too: read again until one is.
-      if (selection.profileDiscoveryStatus === 'unavailable') scheduleRetry();
+      // Whether the Hub is down or only the pick dropped out, read again until the selection is usable.
+      if (selection.profileDiscoveryStatus !== 'ready') scheduleRetry();
     })
     .catch((error) => {
       if (controller.signal.aborted || error?.name === 'AbortError') return;

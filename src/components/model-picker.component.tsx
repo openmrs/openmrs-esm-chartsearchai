@@ -64,18 +64,10 @@ const ModelPicker: React.FC = () => {
     return null;
   }
 
-  if (!hubProfiles || (availableProfiles.length === 0 && !unavailableSelectionLabel)) {
+  if (!hubProfiles || availableProfiles.length === 0) {
     return (
       <div className={styles.root} role="status">
         {t('profilesUnavailable', 'AI profiles unavailable')}
-      </div>
-    );
-  }
-
-  if (availableProfiles.length === 0) {
-    return (
-      <div className={styles.root} role="status">
-        {triggerLabel}
       </div>
     );
   }

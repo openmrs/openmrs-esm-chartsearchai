@@ -32,7 +32,14 @@ const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSwitched }) => {
     const discover = () => {
       fetchProviders(controller)
         .then((result) => {
-          if (!controller.signal.aborted) setData(result);
+          if (controller.signal.aborted) return;
+          setData(result);
+          // An enabled provider that is not ready yet can recover; read again so it can be chosen
+          // without a remount. A disabled one is configuration and stays as reported.
+          const providers = Array.isArray(result?.providers) ? result.providers : [];
+          if (providers.some((provider) => provider.enabled && !provider.ready)) {
+            retry = setTimeout(discover, PROFILE_DISCOVERY_RETRY_MS);
+          }
         })
         .catch((error) => {
           if (controller.signal.aborted || error?.name === 'AbortError') return;
