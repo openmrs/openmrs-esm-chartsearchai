@@ -16,14 +16,14 @@ const seedSession = () =>
           references: [],
           safetyWarnings: [],
           ...NO_ANSWER_LIMITS,
-          questionId: '',
-          isLoading: false,
+          phase: 'complete',
           error: null,
           reasoning: '',
         },
       ],
     },
     sessionUuidByPatient: { 'patient-1': 'server-session-handle-1' },
+    providerByPatient: { 'patient-1': 'hub' },
     selectedProfileId: 'single-e4b-checked',
     selectedProviderId: 'hub',
     profileExplicitlySelected: true,
@@ -42,6 +42,7 @@ describe('chatSessionStore initial state', () => {
     expect(initialChatSessionState()).toStrictEqual({
       messagesByPatient: {},
       sessionUuidByPatient: {},
+      providerByPatient: {},
       selectedProfileId: null,
       profileExplicitlySelected: false,
       profileDiscoveryStatus: 'loading',
@@ -88,6 +89,27 @@ describe('chatSessionStore logout cleanup', () => {
     // Cross-user leak vectors: server session handle and picked profile must not
     // bleed from user-1 into user-2's session, nor any field the reset did not name.
     expect(chatSessionStore.getState()).toStrictEqual(initialChatSessionState());
+    unsubscribe();
+  });
+
+  it('keeps the provider capabilities read from /providers when the user changes', () => {
+    sessionStore.setState({
+      loaded: true,
+      session: { sessionId: 's1', authenticated: true, user: { uuid: 'user-1' } } as never,
+    });
+    const unsubscribe = setupChatSessionLogoutCleanup();
+    seedSession();
+    chatSessionStore.setState({ providerCapabilities: { hub: ['answer', 'indepth'] } });
+
+    sessionStore.setState({
+      loaded: true,
+      session: { sessionId: 's2', authenticated: true, user: { uuid: 'user-2' } } as never,
+    });
+
+    expect(chatSessionStore.getState()).toStrictEqual({
+      ...initialChatSessionState(),
+      providerCapabilities: { hub: ['answer', 'indepth'] },
+    });
     unsubscribe();
   });
 
