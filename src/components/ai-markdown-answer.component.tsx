@@ -43,6 +43,15 @@ function hastText(node: HastNode): string {
   return (node.children ?? []).map(hastText).join('');
 }
 
+/**
+ * A citation group the model wrapped across a line (`[4,\n5]`) is one marker group, but
+ * remark-breaks would split it at the newline before the per-text-node matcher sees it, so the
+ * group's whitespace is collapsed before parsing.
+ */
+function joinWrappedCitationGroups(text: string): string {
+  return text.replace(citationGroupPattern(), (group) => group.replace(/\s+/g, ' '));
+}
+
 function hasCitation(text: string): boolean {
   return citationGroupPattern().test(text);
 }
@@ -136,7 +145,7 @@ const MarkdownAnswer: React.FC<MarkdownAnswerProps> = ({ answer, references, pat
         rehypePlugins={[decorateInDocumentOrder as never]}
         components={components}
       >
-        {answer}
+        {joinWrappedCitationGroups(answer)}
       </ReactMarkdown>
     );
   }, [answer, references, patientUuid, misattributed, severities, qualified, t]);

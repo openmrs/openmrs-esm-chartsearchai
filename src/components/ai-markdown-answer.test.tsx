@@ -38,6 +38,29 @@ describe('MarkdownAnswer', () => {
     expect(chip).toHaveAttribute('href', `/openmrs/spa/patient/${patientUuid}/chart/Orders`);
   });
 
+  it('renders a table as cells that carry the citation chip', () => {
+    render(
+      <MarkdownAnswer
+        answer={'| Record |\n| --- |\n| Order [4] |'}
+        references={references}
+        patientUuid={patientUuid}
+      />,
+    );
+    const chip = screen.getByRole('link', { name: '4' });
+    expect(chip.closest('td')).not.toBeNull();
+    expect(screen.getByRole('columnheader', { name: 'Record' })).toBeInTheDocument();
+  });
+
+  it('keeps a citation group that wraps across a line as navigable chips', () => {
+    const refs = [...references, { index: 5, resourceType: 'obs', resourceUuid: 'uuid-505', date: '2006-01-02' }];
+    render(<MarkdownAnswer answer={'Outdated [4,\n5].'} references={refs} patientUuid={patientUuid} />);
+    expect(screen.getByRole('link', { name: '4' })).toHaveAttribute(
+      'href',
+      `/openmrs/spa/patient/${patientUuid}/chart/Orders`,
+    );
+    expect(screen.getByRole('link', { name: '5' })).toBeInTheDocument();
+  });
+
   it('keeps a [N] citation that sits inside a bold span', () => {
     render(<MarkdownAnswer answer="**Key finding: outdated [4]**" references={references} patientUuid={patientUuid} />);
     const chip = screen.getByRole('link', { name: '4' });
