@@ -2513,6 +2513,39 @@ describe('useChartSearchAi history with an unanswered question', () => {
       unsubscribe();
     });
 
+    it("drops the previous user's stream events", async () => {
+      signIn('user-a');
+      const unsubscribe = setupChatSessionLogoutCleanup();
+      mockChatStream.mockImplementation(() => {});
+      const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+      await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+
+      act(() => result.current.submitQuestion('patient-uuid', 'Q of A'));
+      const callbacks = mockChatStream.mock.calls[0][3];
+      act(() => signIn('user-b'));
+      act(() => callbacks.onSession('private-session-of-user-a'));
+
+      expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBeUndefined();
+      unsubscribe();
+    });
+
+    it("lets the next user send while the previous user's New chat is still pending", async () => {
+      signIn('user-a');
+      const unsubscribe = setupChatSessionLogoutCleanup();
+      mockStartNewChat.mockReturnValue(new Promise(() => {}));
+      mockChatStream.mockImplementation(() => {});
+      const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+      await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+
+      act(() => result.current.startNewChatSession('patient-uuid'));
+      act(() => signIn('user-b'));
+      expect(result.current.isStartingSession).toBe(false);
+      act(() => result.current.submitQuestion('patient-uuid', 'Q of B'));
+
+      expect(mockChatStream).toHaveBeenCalledOnce();
+      unsubscribe();
+    });
+
     it("drops the previous user's history read", async () => {
       signIn('user-a');
       const unsubscribe = setupChatSessionLogoutCleanup();
@@ -2542,6 +2575,30 @@ describe('useChartSearchAi history with an unanswered question', () => {
     });
   });
 
+  it("leaves a Hub answer's bare unavailable safety result as stored", async () => {
+    mockFetchHistory.mockResolvedValueOnce({
+      session: 'srv-session-hub',
+      provider: 'hub',
+      messages: [
+        { messageId: 'u-1', role: 'user', content: 'Is ibuprofen safe?', createdAt: 1 },
+        {
+          messageId: 'a-1',
+          role: 'assistant',
+          content: 'Ibuprofen is on the order list.',
+          safetyWarnings: [],
+          safetyStatus: 'unavailable',
+          safetyCheck: { status: 'unavailable', issues: [] },
+          createdAt: 2,
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    await waitFor(() => expect(result.current.messages).toHaveLength(1));
+    expect(result.current.messages[0].safetyCheck).toEqual({ status: 'unavailable', issues: [] });
+  });
+
   it('restores a stopped bundled answer with its safety check reported as not completed', async () => {
     // The retained answer of a bundled turn stopped while its checks ran, as the module stores it.
     mockFetchHistory.mockResolvedValueOnce({
@@ -2554,7 +2611,7 @@ describe('useChartSearchAi history with an unanswered question', () => {
           role: 'assistant',
           content: 'Ibuprofen is on the order list [1].',
           terminalState: 'turn_done',
-          references: [{ index: 1, resourceType: 'order', resourceUuid: 'o-1', groundingStatus: 'checking' }],
+          references: [{ index: 1, resourceType: 'order', resourceUuid: 'o-1' }],
           safetyWarnings: [],
           safetyStatus: 'unavailable',
           safetyCheck: { status: 'unavailable', issues: [] },

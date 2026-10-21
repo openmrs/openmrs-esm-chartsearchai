@@ -134,8 +134,19 @@ const inFlightByPatient = new Map<string, InFlightTurn>();
 /** How many panels are open on each patient: only closing the last one may stop that patient's turn. */
 const openPanelsByPatient = new Map<string, number>();
 
+/** A New chat in flight, with the user generation that started it. */
+interface PendingNewChat {
+  promise: Promise<void>;
+  generation: number;
+}
+
 /** A New chat in flight for a patient, shared by every panel on that patient. */
-const pendingSessionByPatient = new Map<string, Promise<void>>();
+const pendingSessionByPatient = new Map<string, PendingNewChat>();
+
+/** Whether a New chat is pending that this user started; the previous user's no longer blocks. */
+function isPendingForThisUser(pending: PendingNewChat | null | undefined): boolean {
+  return Boolean(pending && pending.generation === chatSessionUserGeneration());
+}
 
 /** Abort and forget the patient's in-flight turn; returns the message id it was producing. */
 function releaseInFlight(patientUuid: string): string | null {
@@ -183,7 +194,7 @@ function setPatientProvider(patientUuid: string, providerId: string | null): voi
  * separately (one per turn); the UI groups them as Q+A pairs anchored
  * on the user-message uuid as the row id.
  */
-function hydrateMessages(history: ChatHistoryMessage[]): ChatMessage[] {
+function hydrateMessages(history: ChatHistoryMessage[], provider?: string | null): ChatMessage[] {
   const out: ChatMessage[] = [];
   let pending: ChatMessage | null = null;
   for (const m of history) {
@@ -215,15 +226,11 @@ function hydrateMessages(history: ChatHistoryMessage[]): ChatMessage[] {
         pending.safetyWarnings = m.safetyWarnings;
         pending.safetyStatus = m.safetyStatus;
         pending.safetyCheck = m.safetyCheck;
-        // A stopped bundled turn keeps the answer it had while its checks ran. A check still pending
-        // in the stored row, beside a bare `unavailable` safety result, means the safety check did
-        // not complete: say so, as stopping it live does, rather than restore a result the panel
-        // reads as nothing to report.
-        if (
-          isUnsettledBundledSafetyCheck(m) &&
-          (m.answerValidation?.status === 'checking' ||
-            m.references?.some((ref) => ref.groundingStatus === 'checking') === true)
-        ) {
+        // A stopped bundled turn keeps the answer it had while its checks ran, whose safety result is
+        // a bare `unavailable`; a finished bundled check always states its cause. So on a bundled
+        // conversation that result means the check did not complete: say so, as stopping it live
+        // does, rather than restore a result the panel reads as nothing to report.
+        if (provider === 'bundled' && isUnsettledBundledSafetyCheck(m)) {
           pending.safetyStatus = 'unavailable';
           pending.safetyCheck = { status: 'unavailable', issues: ['execution_failed'] };
         }
@@ -348,7 +355,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
   const config = useConfig<ChartSearchAiConfig>();
   const { messagesByPatient, sessionUuidByPatient, newChatPendingByPatient } = useStore(chatSessionStore);
   const messages: ChatMessage[] = patientUuid ? (messagesByPatient[patientUuid] ?? EMPTY_MESSAGES) : EMPTY_MESSAGES;
-  const sessionStartRef = useRef<Promise<void> | null>(null);
+  const sessionStartRef = useRef<PendingNewChat | null>(null);
   const isMountedRef = useRef(true);
   const showReasoningRef = useRef(config.showReasoning);
   showReasoningRef.current = config.showReasoning;
@@ -420,7 +427,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           setPatientProvider(patientUuid, response.provider);
           chatSessionStore.setState({ selectedProviderId: response.provider });
         }
-        const hydrated = hydrateMessages(response.messages ?? []);
+        const hydrated = hydrateMessages(response.messages ?? [], response.provider);
         if (hydrated.length > 0) {
           updateMessages(patientUuid, () => hydrated);
         }
@@ -473,7 +480,12 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
   }, [patientUuid]);
 
   const startNewChatSession = useCallback((patientUuid: string, requestedProviderId?: string) => {
-    if (sessionStartRef.current || pendingSessionByPatient.has(patientUuid)) return;
+    if (
+      isPendingForThisUser(sessionStartRef.current) ||
+      isPendingForThisUser(pendingSessionByPatient.get(patientUuid))
+    ) {
+      return;
+    }
     const state = chatSessionStore.getState();
     const providerId =
       requestedProviderId ?? state.providerByPatient?.[patientUuid] ?? state.selectedProviderId ?? undefined;
@@ -500,20 +512,25 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         }
       })
       .finally(() => {
-        if (pendingSessionByPatient.get(patientUuid) === pending) pendingSessionByPatient.delete(patientUuid);
-        if (sessionStartRef.current === pending) {
+        if (pendingSessionByPatient.get(patientUuid)?.promise === pending) pendingSessionByPatient.delete(patientUuid);
+        if (sessionStartRef.current?.promise === pending) {
           sessionStartRef.current = null;
         }
         // Cleared whether or not this panel is still open: the flag locks every panel on the patient.
         if (chatSessionUserGeneration() === generation) setNewChatPending(patientUuid, false);
       });
-    sessionStartRef.current = pending;
-    pendingSessionByPatient.set(patientUuid, pending);
+    sessionStartRef.current = { promise: pending, generation };
+    pendingSessionByPatient.set(patientUuid, { promise: pending, generation });
   }, []);
 
   const submitQuestion = useCallback(
     (patientUuid: string, question: string) => {
-      if (sessionStartRef.current || pendingSessionByPatient.has(patientUuid)) return;
+      if (
+        isPendingForThisUser(sessionStartRef.current) ||
+        isPendingForThisUser(pendingSessionByPatient.get(patientUuid))
+      ) {
+        return;
+      }
       setSessionError(null);
       const state = chatSessionStore.getState();
       const existingSession = state.sessionUuidByPatient[patientUuid] ?? null;
@@ -618,7 +635,10 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       // One buffer per turn: the hook runs another patient's turn beside a checking one.
       let completedReasoning = '';
       const ownsInFlight = () => inFlightByPatient.get(patientUuid)?.controller === abortController;
-      const isCurrentRequest = () => ownsInFlight() && !abortController.signal.aborted;
+      // A turn started for the previous user writes nothing into the next user's cleared state.
+      const turnGeneration = chatSessionUserGeneration();
+      const isCurrentRequest = () =>
+        ownsInFlight() && !abortController.signal.aborted && chatSessionUserGeneration() === turnGeneration;
       const finishInFlight = () => {
         if (ownsInFlight()) inFlightByPatient.delete(patientUuid);
       };
