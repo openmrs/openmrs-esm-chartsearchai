@@ -89,6 +89,19 @@ describe('Hub profile discovery', () => {
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('unavailable');
   });
 
+  it('clears an explicit pick it drops when the hidden picker leaves no default to take over', async () => {
+    mockFetch.mockResolvedValueOnce(list(profile({}), profile({ id: 'team', label: 'Team', default: false })));
+    await refreshHubProfiles(true);
+    selectHubProfile('team');
+
+    mockFetch.mockResolvedValueOnce(list(profile({ id: 'other', label: 'Other', default: false })));
+    await refreshHubProfiles(false);
+
+    expect(chatSessionStore.getState().selectedProfileId).toBeNull();
+    expect(chatSessionStore.getState().profileExplicitlySelected).toBe(false);
+    expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('unavailable');
+  });
+
   it('reads /models again after an outage that left every profile unavailable, while discovery is in use', async () => {
     vi.useFakeTimers();
     try {
