@@ -238,7 +238,8 @@ function hydrateMessages(history: ChatHistoryMessage[], provider?: string | null
         }
         pending.confidence = m.confidence;
         pending.answerValidation = interruptAnswerValidation(m.answerValidation);
-        pending.inDepth = interruptInDepth(m.inDepth);
+        pending.inDepth = interruptInDepth(normalizeInDepth(m.inDepth));
+        pending.resolvedModel = m.resolvedModel ?? m.model;
         pending.references = m.references ?? [];
         pending.auditLogId = m.auditLogId;
         // The persisted turn carries the answer-limit statements the stream published (#157).
@@ -272,8 +273,11 @@ function unanswered(message: ChatMessage): ChatMessage {
   return { ...message, phase: 'error', error: ANSWER_NOT_SAVED_ERROR_CODE };
 }
 
-function stripInDepthHeader(text: string): string {
-  return text.replace(/^\s*\*\*In ?Depth\*\*\s*/i, '').trimStart();
+/** The panel draws its own In-Depth heading, so a model-written one is removed wherever it arrives. */
+function normalizeInDepth(inDepth?: AiInDepth): AiInDepth | undefined {
+  if (!inDepth?.answer) return inDepth;
+  const answer = inDepth.answer.replace(/^\s*\*\*In ?Depth\*\*\s*/i, '').trimStart();
+  return answer === inDepth.answer ? inDepth : { ...inDepth, answer };
 }
 
 function interruptInDepth(inDepth?: AiInDepth): AiInDepth | undefined {
@@ -349,7 +353,7 @@ function applyTurnEnvelope(message: ChatMessage, payload: TurnEnvelope, phase: T
     blocks: payload.blocks ?? message.blocks,
     confidence: payload.confidence ?? message.confidence,
     answerValidation: payload.answerValidation ?? message.answerValidation,
-    inDepth: payload.inDepth ?? message.inDepth,
+    inDepth: normalizeInDepth(payload.inDepth) ?? message.inDepth,
     auditLogId: payload.auditLogId ?? message.auditLogId,
     resolvedModel: payload.resolvedModel ?? message.resolvedModel,
     // Answer-limit statements accumulate across the turn's events: a later event that states
@@ -793,14 +797,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           if (idx === -1) return prev;
           if (isTerminal(prev[idx].phase)) return prev;
           const updated = [...prev];
-          const inDepth = payload.inDepth;
-          updated[idx] = applyTurnEnvelope(
-            updated[idx],
-            inDepth
-              ? { ...payload, inDepth: { ...inDepth, answer: stripInDepthHeader(inDepth.answer ?? '') } }
-              : payload,
-            'settled',
-          );
+          updated[idx] = applyTurnEnvelope(updated[idx], payload, 'settled');
           return updated;
         });
       };
