@@ -34,6 +34,35 @@ describe('chat history requests', () => {
     );
   });
 
+  it('accepts the rows the server sends for a finished turn and for one still running', async () => {
+    const history: ChatHistoryResponse = {
+      session: 'session-1',
+      provider: 'hub',
+      mode: 'queryScoped',
+      messages: [
+        { messageId: 'request-1', role: 'user', content: 'Any allergies?', createdAt: 1 },
+        {
+          messageId: 'turn-1',
+          role: 'assistant',
+          content: 'Penicillin allergy.',
+          terminalState: 'turn_done',
+          problemCode: null,
+          createdAt: 2,
+          auditLogId: 7,
+        },
+        { messageId: 'request-2', role: 'user', content: 'Since when?', createdAt: 3 },
+        { messageId: 'turn-2', role: 'assistant', content: 'Since 2019.', terminalState: null, problemCode: null },
+      ],
+    };
+    mockFetch.mockResolvedValueOnce({ data: history });
+
+    const result = await fetchChatHistory('patient-1');
+
+    expect(result.messages[1].terminalState).toBe('turn_done');
+    expect(result.messages[3].terminalState).toBeNull();
+    expect(result.messages[3].createdAt).toBeUndefined();
+  });
+
   it('accepts an empty history with no server conversation', async () => {
     const empty: ChatHistoryResponse = { session: null, provider: null, messages: [] };
     mockFetch.mockResolvedValueOnce({ data: empty });
