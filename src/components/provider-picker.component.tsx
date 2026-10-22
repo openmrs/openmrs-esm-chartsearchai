@@ -4,7 +4,7 @@ import { MenuButton, MenuItem, MenuItemDivider, MenuItemRadioGroup } from '@carb
 import { useStore } from '@openmrs/esm-framework';
 import { PROFILE_DISCOVERY_RETRY_MS } from '../hooks/hub-profile-discovery';
 import { fetchProviders, type ProviderListResponse } from '../api/chartsearchai';
-import { chatSessionStore } from '../store/chat-session.store';
+import { chatSessionStore, requestProviderFor } from '../store/chat-session.store';
 import { useMenuTriggerName } from './menu-trigger-name';
 import styles from './provider-picker.scss';
 
@@ -12,6 +12,8 @@ interface ProviderPickerProps {
   /** Request a provider change; the caller commits shared state after opening its conversation. */
   onSelect?: (providerId: string) => void;
   disabled?: boolean;
+  /** The panel's patient, whose conversation's provider the picker shows. */
+  patientUuid?: string;
 }
 
 /**
@@ -21,9 +23,10 @@ interface ProviderPickerProps {
  * a fresh conversation through onSelect because the backend attributes each
  * conversation to a single provider and never silently falls back.
  */
-const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSelect, disabled = false }) => {
+const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSelect, disabled = false, patientUuid }) => {
   const { t } = useTranslation();
-  const { selectedProviderId } = useStore(chatSessionStore);
+  const sessionState = useStore(chatSessionStore);
+  const { selectedProviderId } = sessionState;
   const [data, setData] = useState<ProviderListResponse | null>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
 
@@ -76,7 +79,7 @@ const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSelect, disabled = fa
   );
 
   // Availability never changes the provider bound to an existing conversation.
-  const effectiveProviderId = selectedProviderId ?? data?.defaultProvider ?? null;
+  const effectiveProviderId = requestProviderFor(sessionState, patientUuid) ?? data?.defaultProvider ?? null;
 
   const effectiveProvider = useMemo(
     () => providers.find((provider) => provider.id === effectiveProviderId) ?? null,
@@ -91,10 +94,10 @@ const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSelect, disabled = fa
   // know which contract applies. This does not start a new conversation: it records the provider
   // the backend would select anyway.
   useEffect(() => {
-    if (effectiveProviderId && selectedProviderId === null) {
-      chatSessionStore.setState({ selectedProviderId: effectiveProviderId });
+    if (data?.defaultProvider && selectedProviderId === null) {
+      chatSessionStore.setState({ selectedProviderId: data.defaultProvider });
     }
-  }, [effectiveProviderId, selectedProviderId]);
+  }, [data?.defaultProvider, selectedProviderId]);
 
   const handleSelect = useCallback(
     (providerId: string) => {

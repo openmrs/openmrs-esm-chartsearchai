@@ -16,7 +16,7 @@ import {
   startNewChat,
 } from '../api/chartsearchai';
 import { type ChartSearchAiConfig } from '../config-schema';
-import { chatSessionStore, chatSessionUserGeneration } from '../store/chat-session.store';
+import { chatSessionStore, chatSessionUserGeneration, requestProviderFor } from '../store/chat-session.store';
 import { refreshHubProfiles, useHubProfileDiscovery } from './hub-profile-discovery';
 import {
   ANSWER_CHECK_INTERRUPTED_SUMMARY_CODE,
@@ -363,7 +363,8 @@ function applyTurnEnvelope(message: ChatMessage, payload: TurnEnvelope, phase: T
 
 export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
   const config = useConfig<ChartSearchAiConfig>();
-  const { messagesByPatient, sessionUuidByPatient, newChatPendingByPatient } = useStore(chatSessionStore);
+  const sessionState = useStore(chatSessionStore);
+  const { messagesByPatient, sessionUuidByPatient, newChatPendingByPatient } = sessionState;
   const messages: ChatMessage[] = patientUuid ? (messagesByPatient[patientUuid] ?? EMPTY_MESSAGES) : EMPTY_MESSAGES;
   const sessionStartRef = useRef<PendingNewChat | null>(null);
   const isMountedRef = useRef(true);
@@ -372,7 +373,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
   const isStartingSession = Boolean(patientUuid && newChatPendingByPatient?.[patientUuid]);
   const [sessionError, setSessionError] = useState<string | null>(null);
   // Whether a Hub question may be sent must not depend on the profile picker being mounted.
-  useHubProfileDiscovery();
+  useHubProfileDiscovery(requestProviderFor(sessionState, patientUuid));
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -546,10 +547,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       }
       setSessionError(null);
       const state = chatSessionStore.getState();
-      const existingSession = state.sessionUuidByPatient[patientUuid] ?? null;
-      const patientProvider = state.providerByPatient?.[patientUuid] ?? undefined;
-      const selectedProviderId =
-        (existingSession ? patientProvider : undefined) ?? state.selectedProviderId ?? undefined;
+      const selectedProviderId = requestProviderFor(state, patientUuid) ?? undefined;
       const discoveryStatus = state.profileDiscoveryStatus;
       if (selectedProviderId === 'hub' && discoveryStatus !== 'ready') {
         const failedMessage: ChatMessage = {
