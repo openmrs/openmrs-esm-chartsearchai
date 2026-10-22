@@ -322,9 +322,14 @@ rendering or session behavior.
 The client checks the lifecycle rules it can see event by event: the preview may not
 resume once committed reasoning began, reasoning ends once answer tokens begin, and,
 when the caller passes the provider's advertised capabilities, delta events require
-`token_streaming`. A violation, an unparseable event, a stream that closes without
-`turn_done` or `turn_error`, a failed connection and a refused request each end the
-turn with a stable `chartsearchai:*` error code for the panel to translate, as the
-session-expiry code already does. The provider-lifecycle cases in
+`token_streaming`. A preview out of order, a delta from a provider without
+`token_streaming`, an unparseable event, a stream that closes without `turn_done` or
+`turn_error`, a failed connection and a refused request each end the turn with a
+stable `chartsearchai:*` error code for the panel to translate, as the session-expiry
+code already does. Two exceptions do not end the turn: a late reasoning or answer
+delta is dropped, because `answer_done` and `turn_done` still carry the answer, and a
+malformed `turn_started` marker is ignored, because the session also arrives on those
+events. A refused request whose body is a controller JSON error passes that error
+through unchanged rather than as a `chartsearchai:*` code. The provider-lifecycle cases in
 `src/conformance/dual-provider-conformance.v1.json` run against the client in
 `src/api/chat-stream.test.ts`.

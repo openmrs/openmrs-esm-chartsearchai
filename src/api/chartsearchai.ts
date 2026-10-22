@@ -935,7 +935,7 @@ export function searchPatientChartStream(
  * ReadableStream). The staged endpoint emits answer/validation/in-depth boundary events:
  *   - sends an optional {@code session} uuid so the server can reuse the
  *     prior conversation thread
- *   - sends a product profile only for med-agent-hub requests
+ *   - forwards a supplied nonblank product profile; med-agent-hub requests require one
  *   - accepts the canonical {@code turn_started} session marker
  *
  * The server is the source of truth for conversation history — the client

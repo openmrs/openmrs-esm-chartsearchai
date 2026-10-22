@@ -740,9 +740,18 @@ describe('chatPatientChartStream', () => {
 
   it('stays silent when the caller aborts the request', async () => {
     const cb = makeCallbacks();
-    fetchSpy = vi.spyOn(window, 'fetch').mockRejectedValueOnce(new DOMException('aborted', 'AbortError'));
+    const controller = new AbortController();
+    fetchSpy = vi.spyOn(window, 'fetch').mockImplementationOnce(
+      (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+        }),
+    );
 
-    chatPatientChartStream('uuid-1', null, 'q?', cb, new AbortController(), undefined, 'bundled');
+    chatPatientChartStream('uuid-1', null, 'q?', cb, controller, undefined, 'bundled');
+    await flushPromises();
+    expect(fetchSpy.mock.calls[0][1]?.signal).toBe(controller.signal);
+    controller.abort();
     await flushPromises();
 
     expect(cb.onError).not.toHaveBeenCalled();
