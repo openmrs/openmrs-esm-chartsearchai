@@ -330,6 +330,7 @@ code already does. Two exceptions do not end the turn: a late reasoning or answe
 delta is dropped, because `answer_done` and `turn_done` still carry the answer, and a
 malformed `turn_started` marker is ignored, because the session also arrives on those
 events. A refused request whose body is a controller JSON error passes that error
-through unchanged rather than as a `chartsearchai:*` code. The provider-lifecycle cases in
+through unchanged rather than as a `chartsearchai:*` code, and so does a `turn_error` whose
+body is not JSON, since it already ends the turn as an error. The provider-lifecycle cases in
 `src/conformance/dual-provider-conformance.v1.json` run against the client in
 `src/api/chat-stream.test.ts`.
