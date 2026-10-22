@@ -248,7 +248,7 @@ function hydrateMessages(history: ChatHistoryMessage[], provider?: string | null
         pending.answerValidation = interruptAnswerValidation(m.answerValidation);
         pending.inDepth = interruptInDepth(normalizeInDepth(m.inDepth));
         pending.resolvedModel = m.resolvedModel ?? m.model;
-        pending.references = m.references ?? [];
+        pending.references = interruptGroundingChecks(m.references ?? []);
         pending.auditLogId = m.auditLogId;
         // The persisted turn carries the answer-limit statements the stream published (#157).
         Object.assign(pending, mergeDisclosure(pending, m));

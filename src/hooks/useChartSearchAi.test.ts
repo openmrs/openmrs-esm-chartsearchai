@@ -229,6 +229,28 @@ describe('useChartSearchAi', () => {
     });
   });
 
+  it('hydrates a citation still being checked as unchecked', async () => {
+    mockFetchHistory.mockResolvedValueOnce({
+      session: 'srv-session-1',
+      messages: [
+        { messageId: 'u-1', role: 'user', content: 'First Q', createdAt: 1 },
+        {
+          messageId: 'a-1',
+          role: 'assistant',
+          content: 'First A [1]',
+          terminalState: 'turn_done',
+          references: [{ index: 1, groundingStatus: 'checking' }],
+          createdAt: 2,
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    await waitFor(() => expect(result.current.messages).toHaveLength(1));
+    expect(result.current.messages[0].references?.[0].groundingStatus).toBe('unchecked');
+  });
+
   it('appends a loading message on submitQuestion and calls chatPatientChartStream with null session before hydration', async () => {
     // Force hydration to never resolve so the session uuid stays null
     // when submitQuestion fires — this exercises the "first turn ever"
