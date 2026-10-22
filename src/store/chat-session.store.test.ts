@@ -26,6 +26,7 @@ const seedSession = () =>
     sessionUuidByPatient: { 'patient-1': 'server-session-handle-1' },
     selectedProfileId: 'single-e4b-checked',
     selectedProviderId: 'hub',
+    profileExplicitlySelected: true,
     profileDiscoveryStatus: 'ready',
     hubProfiles: [],
     reasoningExpanded: true,

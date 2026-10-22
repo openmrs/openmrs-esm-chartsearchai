@@ -105,6 +105,14 @@ describe('ProviderPicker', () => {
         await Promise.resolve();
       });
       expect(mockFetch).toHaveBeenCalledOnce();
+      const trigger = screen.getByRole('button', { name: /^AI provider: Bundled \(local\)$/i });
+      fireEvent.click(trigger);
+      expect(screen.getByRole('menuitem', { name: /Med-Agent Hub \(unavailable\)/i })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
+      expect(screen.queryByRole('menuitemradio', { name: /Med-Agent Hub/i })).not.toBeInTheDocument();
+      fireEvent.click(trigger);
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(PROFILE_DISCOVERY_RETRY_MS);
@@ -115,6 +123,9 @@ describe('ProviderPicker', () => {
         await vi.advanceTimersByTimeAsync(PROFILE_DISCOVERY_RETRY_MS * 2);
       });
       expect(mockFetch).toHaveBeenCalledTimes(2);
+      fireEvent.click(screen.getByRole('button', { name: /^AI provider: Bundled \(local\)$/i }));
+      fireEvent.click(screen.getByRole('menuitemradio', { name: /Med-Agent Hub/i }));
+      expect(chatSessionStore.getState().selectedProviderId).toBe('hub');
     } finally {
       vi.useRealTimers();
     }
