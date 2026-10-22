@@ -38,7 +38,7 @@ describe('chat history requests', () => {
     const history: ChatHistoryResponse = {
       session: 'session-1',
       provider: 'hub',
-      mode: 'queryScoped',
+      mode: 'query_scoped',
       messages: [
         { messageId: 'request-1', role: 'user', content: 'Any allergies?', createdAt: 1 },
         {
