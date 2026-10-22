@@ -301,22 +301,10 @@ function safetyIssueText(issue: string, t: Translate): string {
       );
     case 'checks_partially_disabled':
       return t('safetyChecksPartiallyDisabled', 'Some medication-safety checks are disabled.');
-    case 'no_applicable_check':
-      return t('safetyNoApplicableCheck', 'This answer did not trigger an applicable medication-safety check.');
-    case 'condition_rules_unavailable':
-      return t(
-        'safetyConditionRulesUnavailable',
-        'The reference source has no condition rules for a medication in this check.',
-      );
     case 'interaction_reference_unavailable':
       return t(
         'safetyInteractionReferenceUnavailable',
         'A medication in this check has no usable interaction reference data.',
-      );
-    case 'no_actionable_dose_reference':
-      return t(
-        'safetyNoActionableDoseReference',
-        'No dose reference could be applied to the available patient context.',
       );
     case 'dose_not_assessable':
       return t(

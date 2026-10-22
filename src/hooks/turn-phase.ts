@@ -2,14 +2,14 @@
  * One explicit lifecycle phase per assistant turn — the single source of truth the UI derives all
  * behavior, rendering, and DOM signals from. It mirrors the canonical provider SSE lifecycle:
  *
- *   created           → 'answering'
+ *   question sent     → 'answering'
  *   answer_done       → 'checking' or 'settled' (depending on answerValidation)
  *   answer_validation → 'settled'      (answer available + checked; composer unlocks)
  *   indepth_pending   → 'in-depth'     (in-depth generating in the background; delivered whole on
  *                                       indepth_done — the hub does not token-stream in-depth)
  *   indepth_done | indepth_error → 'settled' (payload complete; terminal marker still pending)
- *   done | stop | preempt → 'complete'
- *   onError           → 'error'        (the answer generation itself failed)
+ *   turn_done | stop | preempt → 'complete'
+ *   turn_error | transport failure → 'error' (the answer generation itself failed)
  *
  * Validation and In-Depth details (checked/edited/… and pending/complete/failed) remain on the
  * message payload; `phase` is the single lifecycle position used for UI behavior.

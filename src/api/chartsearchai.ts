@@ -561,8 +561,8 @@ export interface AiSearchResponse {
    * The citation indexes of the safety findings the answer cites whose record says the
    * interaction's clinical significance is unknown, where the answer says nothing of the kind
    * (backend ADR Decision 136). The finding's own caveat the answer left out, never a correction of
-   * its rating. `[]` is not a certificate; `null` or absent is no measurement, which the early
-   * `done` always is.
+   * its rating. `[]` is not a certificate; `null` or absent is no measurement, which
+   * `answer_done` always is.
    */
   unstatedSignificanceQualifiers?: number[] | null;
   /** @see AiInteractionPairs */
@@ -624,13 +624,12 @@ export interface AiSearchResponse {
  * on the wire type, and referenced by the chat message and the panel props so the three cannot
  * drift — in particular the reading that an empty array is not a certificate.
  *
- * FIVE now, not four. `activeOrderClaims` was added to the backend after this client's work on
- * the other four began, and it is not a sixth nice-to-have: it is the key that separates the two
- * readings of `misattributedOrderCitations: []`, so leaving it out left an already-rendered field
+ * `activeOrderClaims` is not optional among them: it is the key that separates the two readings of
+ * `misattributedOrderCitations: []`, so leaving it out would leave an already-rendered field
  * ambiguous in exactly the way that field's own doc warns about.
  *
  * `orderStopDates` is here too, though it states a date rather than a limit: it reaches the panel
- * by the same path, and riding this merge is what delivers it from `done` and `grounded` alike.
+ * by the same path, and riding this merge delivers it from whichever turn event states it.
  */
 export type AiAnswerLimits = Pick<
   AiSearchResponse,
