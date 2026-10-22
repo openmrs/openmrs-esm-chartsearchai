@@ -77,6 +77,17 @@ export function chatSessionUserGeneration(): number {
   return userGeneration;
 }
 
+/**
+ * The provider a request about this patient goes to: its conversation's provider while it has one,
+ * else the browser session's selection. Each panel's pickers show this, so what a panel shows is
+ * what it sends even while panels on different patients are open.
+ */
+export function requestProviderFor(state: ChatSessionState, patientUuid?: string | null): string | null {
+  const conversationProvider =
+    patientUuid && state.sessionUuidByPatient[patientUuid] ? state.providerByPatient?.[patientUuid] : undefined;
+  return conversationProvider ?? state.selectedProviderId;
+}
+
 /** A fresh session's state: the store starts from it, and a user change replaces the state with it. */
 export const initialChatSessionState = (): ChatSessionState => ({
   messagesByPatient: {},

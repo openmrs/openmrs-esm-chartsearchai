@@ -4,7 +4,7 @@ import { WatsonHealthAiResults } from '@carbon/react/icons';
 import { useConfig, usePatient, useStore } from '@openmrs/esm-framework';
 import { warmupPatient } from '../api/chartsearchai';
 import { type ChartSearchAiConfig } from '../config-schema';
-import { chatSessionStore } from '../store/chat-session.store';
+import { chatSessionStore, requestProviderFor } from '../store/chat-session.store';
 import AiSearchPanel from './ai-search-panel.component';
 import styles from './ai-search-button.scss';
 
@@ -12,10 +12,10 @@ const AiSearchButton: React.FC = () => {
   const { patientUuid } = usePatient();
   const { t } = useTranslation();
   const { chatLaunchMode } = useConfig<ChartSearchAiConfig>();
-  const { selectedProviderId, providerByPatient } = useStore(chatSessionStore);
+  const sessionState = useStore(chatSessionStore);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
 
-  const effectiveProviderId = (patientUuid ? providerByPatient?.[patientUuid] : undefined) ?? selectedProviderId;
+  const effectiveProviderId = requestProviderFor(sessionState, patientUuid);
 
   // Pre-warm the server-side LLM prompt cache on patient open when the bundled
   // provider is in use. The cleanup aborts an in-flight warmup if the user

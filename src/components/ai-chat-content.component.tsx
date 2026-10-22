@@ -382,8 +382,8 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
       )}
 
       <div className={styles.modelPickerRow}>
-        <ProviderPicker onSelect={handleProviderSelected} disabled={isStartingSession} />
-        <ModelPicker />
+        <ProviderPicker onSelect={handleProviderSelected} disabled={isStartingSession} patientUuid={patientUuid} />
+        <ModelPicker patientUuid={patientUuid} />
       </div>
 
       <form className={styles.inputArea} onSubmit={handleSubmit}>

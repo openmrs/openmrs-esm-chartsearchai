@@ -181,6 +181,24 @@ describe('ProviderPicker', () => {
     );
   });
 
+  it("shows each panel its own patient's conversation provider", async () => {
+    mockFetch.mockResolvedValue(DUAL);
+    chatSessionStore.setState({
+      selectedProviderId: 'hub',
+      sessionUuidByPatient: { 'patient-a': 'sess-A', 'patient-b': 'sess-B' },
+      providerByPatient: { 'patient-a': 'bundled', 'patient-b': 'hub' },
+    });
+    render(
+      <>
+        <ProviderPicker patientUuid="patient-a" />
+        <ProviderPicker patientUuid="patient-b" />
+      </>,
+    );
+
+    expect(await screen.findByRole('button', { name: /^AI provider: Bundled \(local\)$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^AI provider: Med-Agent Hub$/i })).toBeInTheDocument();
+  });
+
   it('shows the provider menu with the default marked when multiple providers exist', async () => {
     mockFetch.mockResolvedValueOnce(DUAL);
     render(<ProviderPicker />);

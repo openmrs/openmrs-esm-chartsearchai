@@ -2152,6 +2152,26 @@ describe('conversation streaming preference and optional capabilities', () => {
     expect(stored.safetyWarnings).toHaveLength(1);
   });
 
+  it("sends the patient's conversation provider while the session selection differs, then keeps the server's", async () => {
+    mockChatStream.mockImplementation(() => {});
+    mockFetchHistory.mockResolvedValue({ session: null, messages: [] });
+    chatSessionStore.setState({
+      sessionUuidByPatient: { 'patient-a': 'sess-A' },
+      providerByPatient: { 'patient-a': 'bundled' },
+      messagesByPatient: { 'patient-a': [] },
+    });
+    const { result } = renderHook(() => useChartSearchAi('patient-a'));
+    // Another panel, on another patient, selects the Hub after this one mounted.
+    act(() => chatSessionStore.setState({ selectedProviderId: 'hub' }));
+
+    act(() => result.current.submitQuestion('patient-a', 'Any allergies?'));
+
+    expect(mockChatStream.mock.calls[0][6]).toBe('bundled');
+    const cb = mockChatStream.mock.calls[0][3];
+    act(() => cb.onTurnStarted({ provider: 'bundled-research', session: 'sess-A' }));
+    expect(chatSessionStore.getState().providerByPatient?.['patient-a']).toBe('bundled-research');
+  });
+
   it('preserves each patient conversation provider when switching between patients', async () => {
     mockChatStream.mockImplementation(() => {});
     mockFetchHistory
