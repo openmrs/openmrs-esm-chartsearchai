@@ -23,8 +23,9 @@ numbered citations linked to chart records. Citation warnings, omitted severity
 ratings and clinical-significance caveats retain the same meaning in formatted text:
 a finding's rating and caveat sit beside the first marker for it in reading order,
 including one inside bold text or a list item. Images in model output are not loaded,
-and a model-supplied link that is not a citation opens in a new tab without sending
-the chart address. Streaming answers remain plain text until they finish.
+and a model-supplied link that is not a citation is shown as its label only, because
+its destination could carry chart details; footnote links stay within the answer.
+Streaming answers remain plain text until they finish.
 
 ### Model reasoning
 

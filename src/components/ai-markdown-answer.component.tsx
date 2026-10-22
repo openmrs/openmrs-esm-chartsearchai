@@ -35,6 +35,13 @@ interface HastNode {
   children?: HastNode[];
 }
 
+/** Every heading level as one subtle heading; the id stays, which the footnote list's label needs. */
+const heading = ({ children, id }: { children?: React.ReactNode; id?: string }) => (
+  <h4 id={id} className={styles.answerHeading}>
+    {children}
+  </h4>
+);
+
 /** Stands in for a decorated text run; the component below renders the decoration it carries. */
 const CITED_TEXT = 'chartsearchai-cited-text';
 
@@ -141,12 +148,16 @@ const MarkdownAnswer: React.FC<MarkdownAnswerProps> = ({ answer, references, pat
           /[\p{L}\p{N}]/u.test(source[end] ?? '');
         return notation ? <>*{children}*</> : <em>{children}</em>;
       },
-      // A model-supplied link leaves the chart in a new tab and does not send the chart URL along.
-      a: ({ children, href }) => (
-        <a href={href} target="_blank" rel="noopener noreferrer">
-          {children}
-        </a>
-      ),
+      // A model-supplied link shows its label only: the model wrote its destination, which can carry
+      // chart details off the page. The parser's own footnote links stay in-page with their ids.
+      a: ({ node, children, ...link }) => {
+        const properties = (node as HastNode | undefined)?.properties;
+        return properties?.dataFootnoteRef != null || properties?.dataFootnoteBackref != null ? (
+          <a {...link}>{children}</a>
+        ) : (
+          <>{children}</>
+        );
+      },
       p: ({ children }) => <p className={styles.answerParagraph}>{children}</p>,
       // A table wider than the bubble scrolls inside its own wrapper instead of pushing the
       // whole chat sideways; the narrow floating panel is where that happens first.
@@ -155,12 +166,12 @@ const MarkdownAnswer: React.FC<MarkdownAnswerProps> = ({ answer, references, pat
           <table>{children}</table>
         </div>
       ),
-      h1: ({ children }) => <h4 className={styles.answerHeading}>{children}</h4>,
-      h2: ({ children }) => <h4 className={styles.answerHeading}>{children}</h4>,
-      h3: ({ children }) => <h4 className={styles.answerHeading}>{children}</h4>,
-      h4: ({ children }) => <h4 className={styles.answerHeading}>{children}</h4>,
-      h5: ({ children }) => <h4 className={styles.answerHeading}>{children}</h4>,
-      h6: ({ children }) => <h4 className={styles.answerHeading}>{children}</h4>,
+      h1: heading,
+      h2: heading,
+      h3: heading,
+      h4: heading,
+      h5: heading,
+      h6: heading,
     } as Components;
 
     return (
