@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useId, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -78,6 +78,9 @@ const MarkdownAnswer: React.FC<MarkdownAnswerProps> = ({ answer, references, pat
   const misattributed = decorations?.misattributed;
   const severities = decorations?.severities;
   const qualified = decorations?.qualified;
+  // Footnote ids are document-wide, and every answer numbers its notes from one, so each answer
+  // prefixes its own: without that a later answer's [^1] would jump to the first answer's note.
+  const footnotePrefix = `answer-${useId().replace(/:/g, '')}-`;
   const rendered = useMemo(() => {
     const decorated = new WeakMap<object, React.ReactNode>();
 
@@ -178,12 +181,13 @@ const MarkdownAnswer: React.FC<MarkdownAnswerProps> = ({ answer, references, pat
       <ReactMarkdown
         remarkPlugins={REMARK_PLUGINS}
         rehypePlugins={[decorateInDocumentOrder as never]}
+        remarkRehypeOptions={{ clobberPrefix: footnotePrefix }}
         components={components}
       >
         {source}
       </ReactMarkdown>
     );
-  }, [answer, references, patientUuid, misattributed, severities, qualified, t]);
+  }, [answer, references, patientUuid, misattributed, severities, qualified, footnotePrefix, t]);
 
   return <div className={styles.markdownAnswer}>{rendered}</div>;
 };

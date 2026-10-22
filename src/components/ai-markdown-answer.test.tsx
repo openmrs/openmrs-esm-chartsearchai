@@ -347,4 +347,17 @@ describe('MarkdownAnswer', () => {
     const describedBy = links[0].getAttribute('aria-describedby');
     expect(describedBy && container.querySelector(`[id="${describedBy}"]`)).not.toBeNull();
   });
+
+  it("points each answer's footnote link at its own note when two answers share a page", () => {
+    const { container } = render(
+      <>
+        <MarkdownAnswer answer={'First [^1].\n\n[^1]: First note.'} references={[]} patientUuid={patientUuid} />
+        <MarkdownAnswer answer={'Second [^1].\n\n[^1]: Second note.'} references={[]} patientUuid={patientUuid} />
+      </>,
+    );
+    const refs = Array.from(container.querySelectorAll('a[data-footnote-ref]'));
+    expect(refs).toHaveLength(2);
+    const target = container.querySelector(`[id="${refs[1].getAttribute('href')?.slice(1)}"]`);
+    expect(target).toHaveTextContent('Second note.');
+  });
 });
