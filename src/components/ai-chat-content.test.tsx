@@ -340,6 +340,24 @@ describe('AiChatContent', () => {
       expect(mockStartNewChatSession).toHaveBeenCalledWith('p1');
     });
 
+    it('disables New chat and shows the new chat opening, not Stop, while one is pending', () => {
+      mockUseChartSearchAi.mockReturnValue({
+        messages: [],
+        isAwaitingAnswer: true,
+        isStartingSession: true,
+        sessionError: null,
+        submitQuestion: mockSubmitQuestion,
+        stopCurrent: mockStopCurrent,
+        clearMessages: vi.fn(),
+        startNewChatSession: mockStartNewChatSession,
+      });
+      render(<AiChatContent mode="floating" patientUuid="p1" onClose={vi.fn()} />);
+
+      expect(screen.getByRole('button', { name: /new chat/i })).toBeDisabled();
+      expect(screen.queryByRole('button', { name: /^stop$/i })).not.toBeInTheDocument();
+      expect(screen.getByText('Starting new chat…')).toBeInTheDocument();
+    });
+
     it('surfaces an error and keeps the typed question when starting a new chat fails', async () => {
       let currentSessionError: string | null = null;
       mockStartNewChatSession.mockImplementationOnce(() => {

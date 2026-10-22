@@ -267,7 +267,7 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
               align="bottom"
               label={t('newChat', 'New chat')}
               onClick={handleNewChat}
-              disabled={!patientUuid}
+              disabled={!patientUuid || isStartingSession}
             >
               <Add size={16} />
             </IconButton>
@@ -279,7 +279,13 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
       )}
       {mode === 'workspace' && (
         <div className={styles.workspaceActions}>
-          <Button kind="ghost" size="sm" renderIcon={Add} onClick={handleNewChat} disabled={!patientUuid}>
+          <Button
+            kind="ghost"
+            size="sm"
+            renderIcon={Add}
+            onClick={handleNewChat}
+            disabled={!patientUuid || isStartingSession}
+          >
             {t('newChat', 'New chat')}
           </Button>
         </div>
@@ -411,7 +417,10 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
             {isListening ? <MicrophoneFilled size={20} /> : <Microphone size={20} />}
           </button>
         )}
-        {isAwaitingAnswer ? (
+        {isStartingSession ? (
+          // Nothing to stop: the new conversation is being opened, and the composer waits for it.
+          <InlineLoading className={styles.sessionLoading} description={t('startingNewChat', 'Starting new chat…')} />
+        ) : isAwaitingAnswer ? (
           <button
             className={styles.actionButton}
             onClick={stopCurrent}

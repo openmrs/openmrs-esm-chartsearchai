@@ -234,6 +234,12 @@
   }
 }
 
+// Takes the action button's place while a New chat opens; sized to its text, not the row.
+.sessionLoading {
+  width: auto;
+  flex-shrink: 0;
+}
+
 .infoText {
   @include type.type-style('label-01');
   color: colors.$gray-60;
