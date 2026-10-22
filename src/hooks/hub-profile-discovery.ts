@@ -45,7 +45,8 @@ export function stopHubProfileDiscovery(): void {
 function resolveSelection(
   profiles: HubProfileMetadata[],
   preserveExplicit: boolean,
-): Pick<ChatSessionState, 'selectedProfileId' | 'profileDiscoveryStatus'> {
+): Pick<ChatSessionState, 'selectedProfileId' | 'profileDiscoveryStatus'> &
+  Partial<Pick<ChatSessionState, 'profileExplicitlySelected'>> {
   const { selectedProfileId, profileExplicitlySelected } = chatSessionStore.getState();
   const available = profiles.filter((profile) => profile.available);
   if (selectedProfileId && available.some((profile) => profile.id === selectedProfileId)) {
@@ -59,10 +60,11 @@ function resolveSelection(
       profileDiscoveryStatus: available.length > 0 ? 'selection-unavailable' : 'unavailable',
     };
   }
+  // Whatever replaces the pick here was not the user's choice, so a later discovery may replace it too.
   const fallback = available.find((profile) => profile.default);
   return fallback
-    ? { selectedProfileId: fallback.id, profileDiscoveryStatus: 'ready' }
-    : { selectedProfileId: null, profileDiscoveryStatus: 'unavailable' };
+    ? { selectedProfileId: fallback.id, profileExplicitlySelected: false, profileDiscoveryStatus: 'ready' }
+    : { selectedProfileId: null, profileExplicitlySelected: false, profileDiscoveryStatus: 'unavailable' };
 }
 
 /**

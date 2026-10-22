@@ -241,13 +241,50 @@ describe('ModelPicker', () => {
     expect(chatSessionStore.getState().selectedProfileId).toBe('single-e4b-checked');
     expect(screen.getByRole('button', { name: /Fast checked answer/ })).toBeInTheDocument();
   });
+  it('ignores a successful obsolete discovery after switching away from and back to Hub', async () => {
+    let resolveOld: (data: typeof PROFILE_DATA) => void;
+    mockFetch.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOld = resolve;
+      }),
+    );
+    mockFetch.mockResolvedValueOnce(PROFILE_DATA);
+    render(<ModelPicker />);
+    act(() => chatSessionStore.setState({ selectedProviderId: 'bundled' }));
+    act(() => chatSessionStore.setState({ selectedProviderId: 'hub' }));
+    await waitFor(() => expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready'));
+    const current = chatSessionStore.getState().hubProfiles;
+    await act(async () =>
+      resolveOld({
+        object: 'list',
+        data: [profile({ id: 'single-12b-checked', label: 'Checked answer (12B)', default: true })],
+      }),
+    );
+    expect(chatSessionStore.getState().hubProfiles).toBe(current);
+    expect(chatSessionStore.getState().selectedProfileId).toBe('single-e4b-checked');
+  });
   it('replaces an explicit pick that became unavailable with the default when the picker is hidden', async () => {
     mockUseConfig.mockReturnValue({ showModelPicker: false });
     chatSessionStore.setState({ selectedProfileId: 'team-high-unavailable', profileExplicitlySelected: true });
     mockFetch.mockResolvedValueOnce(PROFILE_DATA);
-    render(<ModelPicker />);
+    const { unmount } = render(<ModelPicker />);
 
     await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('single-e4b-checked'));
+    expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
+    expect(chatSessionStore.getState().profileExplicitlySelected).toBe(false);
+    unmount();
+
+    // Shown again, the automatic default is not held as the user's pick when it drops out.
+    mockUseConfig.mockReturnValue({ showModelPicker: true });
+    mockFetch.mockResolvedValueOnce({
+      object: 'list',
+      data: [
+        profile({ available: false, default: true }),
+        profile({ id: 'single-12b-checked', label: 'Checked answer (12B)', default: true }),
+      ],
+    });
+    render(<ModelPicker />);
+    await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('single-12b-checked'));
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
   });
   it('retries discovery after a failed fetch and recovers while the panel stays open', async () => {
