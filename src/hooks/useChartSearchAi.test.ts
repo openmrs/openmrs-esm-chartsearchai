@@ -905,6 +905,31 @@ describe('useChartSearchAi', () => {
     expect(chatSessionStore.getState().messagesByPatient['patient-uuid']).toEqual([]);
   });
 
+  it("sends another patient's question while the first patient's New chat is pending", async () => {
+    let resolveSession!: (value: { session: string; messages: never[] }) => void;
+    mockStartNewChat.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSession = resolve;
+      }),
+    );
+    mockChatStream.mockImplementation(() => {});
+    const { result, rerender } = renderHook(({ patient }) => useChartSearchAi(patient), {
+      initialProps: { patient: 'new-chat-patient-a' },
+    });
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+    act(() => result.current.startNewChatSession('new-chat-patient-a'));
+
+    rerender({ patient: 'new-chat-patient-b' });
+    expect(result.current.isStartingSession).toBe(false);
+    act(() => result.current.submitQuestion('new-chat-patient-b', 'For the second patient?'));
+
+    expect(mockChatStream).toHaveBeenCalledOnce();
+    expect(mockChatStream.mock.calls[0][0]).toBe('new-chat-patient-b');
+    await act(async () => {
+      resolveSession({ session: 'new-session', messages: [] });
+    });
+  });
+
   it('blocks a second panel from submitting while the first waits for a new session', async () => {
     let resolveSession!: (value: { session: string; messages: never[] }) => void;
     mockStartNewChat.mockReturnValue(
