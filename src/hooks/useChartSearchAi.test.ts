@@ -2017,6 +2017,58 @@ describe('conversation streaming preference and optional capabilities', () => {
     expect(stopped.safetyCheck?.issues).toEqual(['execution_failed']);
   });
 
+  it('marks a citation check stopped mid-way unchecked without claiming a safety check failed', async () => {
+    mockChatStream.mockImplementation(() => {});
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+
+    act(() => result.current.submitQuestion('patient-uuid', 'When was the last visit?'));
+    const cb = mockChatStream.mock.calls[0][3];
+    act(() => {
+      cb.onAnswerDone({
+        answer: 'On 26 January [1].',
+        references: [
+          {
+            index: 1,
+            resourceType: 'encounter',
+            resourceUuid: 'enc-1',
+            date: '2026-01-26',
+            groundingStatus: 'checking',
+          },
+        ],
+        messageId: 'm-citations',
+      });
+    });
+    expect(result.current.messages[0].phase).toBe('checking');
+
+    act(() => result.current.stopCurrent());
+
+    const stopped = result.current.messages[0];
+    expect(stopped.phase).toBe('complete');
+    expect(stopped.references[0].groundingStatus).toBe('unchecked');
+    expect(stopped.safetyStatus).toBeUndefined();
+    expect(stopped.safetyCheck).toBeUndefined();
+  });
+
+  it('ignores an earlier request cancelled after the next question was sent', async () => {
+    chatSessionStore.setState({ selectedProviderId: 'bundled' });
+    mockChatStream.mockImplementation(() => {});
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+
+    act(() => result.current.submitQuestion('patient-uuid', 'First question?'));
+    const first = mockChatStream.mock.calls[0][3];
+    act(() => first.onAnswerDone({ answer: 'First answer.', references: [], messageId: 'm-1' }));
+    act(() => result.current.submitQuestion('patient-uuid', 'Second question?'));
+    const secondController = mockChatStream.mock.calls[1][4] as AbortController;
+
+    act(() => first.onError('cancelled'));
+
+    expect(secondController.signal.aborted).toBe(false);
+    expect(result.current.messages.map((m) => m.question)).toEqual(['First question?', 'Second question?']);
+    expect(result.current.messages[1].phase).toBe('answering');
+  });
+
   it('lets a turn run on while another panel on the same patient is still open', async () => {
     chatSessionStore.setState({ selectedProviderId: 'bundled' });
     mockChatStream.mockImplementation(() => {});
