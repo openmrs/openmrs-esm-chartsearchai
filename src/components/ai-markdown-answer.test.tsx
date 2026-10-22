@@ -99,6 +99,26 @@ describe('MarkdownAnswer', () => {
     );
   });
 
+  it.each([
+    ['header', '| Record [4] |\n| --- |\n| Order |', 'th'],
+    ['body', '| Record |\n| --- |\n| Order [4] |', 'td'],
+  ])('keeps a misattributed citation, its rating and its caveat inside a table %s cell', (_kind, answer, cell) => {
+    const props = {
+      answer,
+      references,
+      patientUuid,
+      decorations: { misattributed: new Set([4]), severities: new Map([[4, 'Major']]), qualified: new Set([4]) },
+    };
+    const { rerender } = render(<MarkdownAnswer {...props} />);
+    for (let pass = 0; pass < 2; pass++) {
+      expect(screen.queryByRole('link')).not.toBeInTheDocument();
+      expect(screen.getByTitle(/module reports that this citation/).closest(cell)).not.toBeNull();
+      expect(screen.getByText('Major').closest(cell)).not.toBeNull();
+      expect(screen.getByText('Clinical significance unknown').closest(cell)).not.toBeNull();
+      rerender(<MarkdownAnswer {...props} />);
+    }
+  });
+
   it('retains citation disclosures inside inline code and ordinary link text', () => {
     render(
       <MarkdownAnswer
@@ -299,27 +319,32 @@ describe('MarkdownAnswer', () => {
     expect(screen.getByText('Clinical significance unknown')).toBeInTheDocument();
   });
 
-  it('preserves ordinary non-citation markdown links', () => {
-    render(
+  it('shows a model-supplied link as its label, without its destination', () => {
+    const { container } = render(
       <MarkdownAnswer
-        answer="[Source website](https://example.test/source)"
+        answer="See the [Official guideline](https://example.test/collect?patient=patient)."
         references={references}
         patientUuid={patientUuid}
       />,
     );
-    expect(screen.getByRole('link', { name: 'Source website' })).toHaveAttribute('href', 'https://example.test/source');
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(container).toHaveTextContent('See the Official guideline.');
+    expect(container.innerHTML).not.toContain('example.test');
   });
 
-  it('opens a model-supplied link away from the chart, without passing the chart as referrer', () => {
-    render(
-      <MarkdownAnswer
-        answer="[Source website](https://example.test/source)"
-        references={references}
-        patientUuid={patientUuid}
-      />,
+  it('keeps footnote links in the page, each pointing at an element that carries its id', () => {
+    const { container } = render(
+      <MarkdownAnswer answer={'Finding [^note].\n\n[^note]: A note.'} references={[]} patientUuid={patientUuid} />,
     );
-    const link = screen.getByRole('link', { name: 'Source website' });
-    expect(link).toHaveAttribute('target', '_blank');
-    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    const links = Array.from(container.querySelectorAll('a'));
+    expect(links).toHaveLength(2);
+    for (const link of links) {
+      expect(link).not.toHaveAttribute('target');
+      const href = link.getAttribute('href') ?? '';
+      expect(href.startsWith('#')).toBe(true);
+      expect(container.querySelector(`[id="${href.slice(1)}"]`)).not.toBeNull();
+    }
+    const describedBy = links[0].getAttribute('aria-describedby');
+    expect(describedBy && container.querySelector(`[id="${describedBy}"]`)).not.toBeNull();
   });
 });
