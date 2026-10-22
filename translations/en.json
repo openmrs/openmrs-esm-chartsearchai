@@ -48,6 +48,7 @@
   "grounded": "Verified",
   "groundedSourceSetTitle": "Supports this claim together with the other cited records.",
   "groundedTitle": "Supported by the cited record.",
+  "groundingCheckedTogetherWith": "checked together with {{records}}",
   "groundingChecking": "Checking",
   "groundingCheckingTitle": "Source resolved; support check is still running.",
   "groundingChecksLabel": "Claims checked against this record",

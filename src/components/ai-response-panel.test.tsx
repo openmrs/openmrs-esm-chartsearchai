@@ -730,6 +730,40 @@ describe('AiResponsePanel citation grounding', () => {
     expect(items).toEqual(['Verified Started nevirapine in 2006', 'Unsupported stopped it in 2007']);
   });
 
+  it('names the other records a claim was checked against together with this one', () => {
+    render(
+      <AiResponsePanel
+        answer="CD4 fell from 350 [1] to 200 [2], and nevirapine was stopped [1]."
+        references={[
+          {
+            index: 1,
+            resourceType: 'obs',
+            resourceUuid: 'uuid-101',
+            date: '2006-01-15',
+            sourceText: 'CD4 count 350',
+            groundingStatus: 'mixed',
+            groundingScope: 'source_set',
+            groundingChecks: [
+              { status: 'verified', claim: 'CD4 fell from 350 to 200', location: 'answer', source_indices: [1, 2] },
+              { status: 'unsupported', claim: 'nevirapine was stopped', location: 'answer', source_indices: [1] },
+            ],
+          },
+          { index: 2, resourceType: 'obs', resourceUuid: 'uuid-102', date: '2006-06-15', sourceText: 'CD4 count 200' },
+        ]}
+        auditLogId={42}
+        error={null}
+        phase="complete"
+        patientUuid={patientUuid}
+      />,
+    );
+    const claims = screen.getByRole('list', { name: 'Claims checked against this record' });
+    const items = Array.from(claims.querySelectorAll('li')).map((li) => li.textContent);
+    expect(items).toEqual([
+      'Verified CD4 fell from 350 to 200 (checked together with [2])',
+      'Unsupported nevirapine was stopped',
+    ]);
+  });
+
   it('shows no grounding badge when the verdict is null (unverified)', () => {
     renderWithGrounded(null);
     expect(screen.queryByText('Verified')).not.toBeInTheDocument();

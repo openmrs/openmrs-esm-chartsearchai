@@ -484,6 +484,15 @@ const EvidenceCard: React.FC<{
                     : t('groundingUnchecked', 'Not checked')}
               </Tag>{' '}
               {check.claim}
+              {/* A source-set check judged the claim against several records at once, not this one alone. */}
+              {check.source_indices.some((index) => index !== refItem.index) &&
+                ` (${t('groundingCheckedTogetherWith', 'checked together with {{records}}', {
+                  records: check.source_indices
+                    .filter((index) => index !== refItem.index)
+                    .map((index) => `[${index}]`)
+                    .join(', '),
+                  interpolation: { escapeValue: false },
+                })})`}
             </li>
           ))}
         </ul>
