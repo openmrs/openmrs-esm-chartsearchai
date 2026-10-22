@@ -48,6 +48,7 @@ beforeEach(() => {
     selectedProfileId: 'single-e4b-checked',
     profileDiscoveryStatus: 'ready',
     selectedProviderId: 'hub',
+    newChatErrorByPatient: {},
   });
   // Default: empty hydration so tests opt-in to populated history.
   mockFetchHistory.mockResolvedValue({ session: 'srv-session-default', messages: [] });
@@ -963,6 +964,21 @@ describe('useChartSearchAi', () => {
     expect(result.current.messages).toHaveLength(1);
     expect(result.current.messages[0].answer).toBe('A.');
     expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('srv-session-1');
+  });
+
+  it('tells every panel on the patient that New chat failed, not only the one that asked', async () => {
+    mockStartNewChat.mockRejectedValue(new Error('server unavailable'));
+    const { result: asking } = renderHook(() => useChartSearchAi('patient-uuid'));
+    const { result: other } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+
+    await act(async () => asking.current.startNewChatSession('patient-uuid'));
+    await waitFor(() => expect(asking.current.isStartingSession).toBe(false));
+
+    expect(asking.current.sessionError).toBe(NEW_CHAT_ERROR_CODE);
+    expect(other.current.sessionError).toBe(NEW_CHAT_ERROR_CODE);
+    const { result: another } = renderHook(() => useChartSearchAi('another-patient'));
+    expect(another.current.sessionError).toBeNull();
   });
 
   it('keeps an active turn running when starting a new session fails', async () => {

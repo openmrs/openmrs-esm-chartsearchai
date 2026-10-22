@@ -65,6 +65,8 @@ export interface ChatSessionState {
    * its composer until the new conversation is in place, not only the panel that asked for it.
    */
   newChatPendingByPatient?: Record<string, boolean>;
+  /** Patients whose last New chat request failed: every panel on the patient says so. */
+  newChatErrorByPatient?: Record<string, string | null>;
 }
 
 let userGeneration = 0;

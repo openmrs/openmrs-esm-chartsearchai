@@ -177,6 +177,7 @@
   "sourceOfFindingsTitle": "The chart record the cited safety finding is based on. The answer has no marker for it, since it cites the finding; opening it goes to the record.",
   "sourceUuid": "UUID",
   "speechRecognitionError": "Speech recognition failed. Please try again.",
+  "startingNewChat": "Starting new chat…",
   "statedAboveByTheModule": "Stated above",
   "statedAboveByTheModuleTitle": "The module states this finding after the answer; open the detail to read it in full.",
   "stop": "Stop",

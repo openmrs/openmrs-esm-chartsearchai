@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useConfig, useStore } from '@openmrs/esm-framework';
 import {
   type AiBlock,
@@ -179,6 +179,14 @@ function setNewChatPending(patientUuid: string, pending: boolean): void {
   const state = chatSessionStore.getState();
   chatSessionStore.setState({
     newChatPendingByPatient: { ...(state.newChatPendingByPatient ?? {}), [patientUuid]: pending },
+  });
+}
+
+function setNewChatError(patientUuid: string, error: string | null): void {
+  const state = chatSessionStore.getState();
+  if ((state.newChatErrorByPatient?.[patientUuid] ?? null) === error) return;
+  chatSessionStore.setState({
+    newChatErrorByPatient: { ...(state.newChatErrorByPatient ?? {}), [patientUuid]: error },
   });
 }
 
@@ -368,14 +376,14 @@ function applyTurnEnvelope(message: ChatMessage, payload: TurnEnvelope, phase: T
 export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
   const config = useConfig<ChartSearchAiConfig>();
   const sessionState = useStore(chatSessionStore);
-  const { messagesByPatient, sessionUuidByPatient, newChatPendingByPatient } = sessionState;
+  const { messagesByPatient, sessionUuidByPatient, newChatPendingByPatient, newChatErrorByPatient } = sessionState;
   const messages: ChatMessage[] = patientUuid ? (messagesByPatient[patientUuid] ?? EMPTY_MESSAGES) : EMPTY_MESSAGES;
   const sessionStartRef = useRef<PendingNewChat | null>(null);
   const isMountedRef = useRef(true);
   const showReasoningRef = useRef(config.showReasoning);
   showReasoningRef.current = config.showReasoning;
   const isStartingSession = Boolean(patientUuid && newChatPendingByPatient?.[patientUuid]);
-  const [sessionError, setSessionError] = useState<string | null>(null);
+  const sessionError = (patientUuid && newChatErrorByPatient?.[patientUuid]) || null;
   // Whether a Hub question may be sent must not depend on the profile picker being mounted.
   useHubProfileDiscovery(requestProviderFor(sessionState, patientUuid));
 
@@ -509,7 +517,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       requestedProviderId ?? state.providerByPatient?.[patientUuid] ?? state.selectedProviderId ?? undefined;
     const generation = chatSessionUserGeneration();
     setNewChatPending(patientUuid, true);
-    setSessionError(null);
+    setNewChatError(patientUuid, null);
     const pending = startNewChat(patientUuid, providerId)
       .then((response) => {
         // A conversation started for the previous user is not the next user's to continue.
@@ -525,9 +533,8 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       })
       .catch((err) => {
         console.warn('[useChartSearchAi] startNewChat failed', err);
-        if (isMountedRef.current) {
-          setSessionError(NEW_CHAT_ERROR_CODE);
-        }
+        // Shared, like the pending flag, so every panel on the patient keeps its draft and says why.
+        if (chatSessionUserGeneration() === generation) setNewChatError(patientUuid, NEW_CHAT_ERROR_CODE);
       })
       .finally(() => {
         if (pendingSessionByPatient.get(patientUuid)?.promise === pending) pendingSessionByPatient.delete(patientUuid);
@@ -549,7 +556,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       ) {
         return;
       }
-      setSessionError(null);
+      setNewChatError(patientUuid, null);
       const state = chatSessionStore.getState();
       const selectedProviderId = requestProviderFor(state, patientUuid) ?? undefined;
       const discoveryStatus = state.profileDiscoveryStatus;
