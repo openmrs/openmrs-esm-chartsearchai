@@ -41,8 +41,8 @@ export const NO_ANSWER_LIMITS: MessageAnswerLimits = {
  * distinction between "the check ran and named none" and "no measurement stated".
  *
  * One of two enumerations of these keys — {@link NO_ANSWER_LIMITS} above is the other — and
- * those two are the WHOLE of the compile-time backstop. Verified with `tsc`: adding a fifth key
- * to {@link AiAnswerLimits} reddens exactly these two functions and nothing else. It does NOT
+ * those two are the WHOLE of the compile-time backstop. Verified with `tsc`: adding a key to
+ * {@link AiAnswerLimits} reddens exactly these two functions and nothing else. It does NOT
  * redden the `ChatMessage` literals or the hook, because each literal spreads
  * `...NO_ANSWER_LIMITS` and the hook goes through `mergeDisclosure` — this doc claimed all three
  * for a while, which overstated the safety net by two. Nor the panel, which reads its props by

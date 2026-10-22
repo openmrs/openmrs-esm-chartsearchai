@@ -410,9 +410,8 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
     chatSessionStore.setState({ messagesByPatient });
   }, [config.showReasoning]);
 
-  // Hydrate on mount / patient change. Cleared if the patient has nothing
-  // server-side OR if hydration fails — in either case we start blank and
-  // the first submit creates a fresh session.
+  // Hydrate on mount / patient change. With nothing server-side, or a failed read, the transcript is
+  // left as it is and the first submit creates a fresh session.
   useEffect(() => {
     if (!patientUuid) return;
     const cachedProvider = chatSessionStore.getState().providerByPatient?.[patientUuid];
@@ -605,9 +604,9 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       const inFlightTurn = inFlightByPatient.get(patientUuid);
       if (inFlightTurn) {
         // A turn is still in flight for this patient. If its answer has NOT settled yet, don't
-        // start a second answer generation: one at a time is what keeps the server's
-        // getLastOrdinal() path single-flight and race-free. If the answer HAS settled and only
-        // the background in-depth is trailing, PREEMPT it so this new question starts immediately.
+        // start a second answer generation: a conversation answers one question at a time. If the
+        // answer HAS settled and only the background in-depth is trailing, PREEMPT it so this new
+        // question starts immediately.
         // The turn's phase is the single source of truth: isAnswerSettled once validation landed.
         // A turn whose message is gone (the transcript was cleared) blocks nothing.
         const preemptedId = inFlightTurn.messageId;
@@ -687,8 +686,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           };
           return updated;
         });
-        // The `done` event is where the session uuid arrives: the conversation
-        // backend sends no session header.
+        // `turn_done` carries the session uuid too: the conversation backend sends no session header.
         if (ownsSession && response.session) {
           setSessionUuid(patientUuid, response.session);
         }

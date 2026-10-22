@@ -21,7 +21,7 @@ export const configSchema = {
     _type: Type.Boolean,
     _default: true,
     _description:
-      "Whether the model's reasoning is shown at all: streamed live while the model thinks, then kept behind a collapsed disclosure under the answer. When false it is neither shown nor retained. With streaming disabled, any supplied reasoning is shown only after the complete answer arrives. A provider that emits no reasoning still delivers its answer.",
+      "Whether the model's reasoning is shown at all: streamed live while the model thinks, then kept behind a collapsed disclosure above the answer. When false it is neither shown nor retained. With streaming disabled, any supplied reasoning is shown only after the complete answer arrives. A provider that emits no reasoning still delivers its answer.",
   },
   showModelPicker: {
     _type: Type.Boolean,
