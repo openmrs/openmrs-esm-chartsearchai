@@ -56,6 +56,8 @@ export interface ChatMessage extends MessageAnswerLimits {
   safetyStatus?: AiSafetyStatus;
   /** Canonical safety result with package provenance and coverage limitations. */
   safetyCheck?: AiSafetyCheck;
+  /** The medication-safety check was still running when the answer arrived; its result has not. */
+  safetyCheckPending?: boolean;
   blocks?: AiBlock[];
   auditLogId?: number;
   /**
@@ -291,6 +293,13 @@ function interruptAnswerValidation(
   };
 }
 
+/** A citation check a stopped turn will never finish is unchecked, not still checking. */
+function interruptGroundingChecks(references: AiReference[]): AiReference[] {
+  return references.some((ref) => ref.groundingStatus === 'checking')
+    ? references.map((ref) => (ref.groundingStatus === 'checking' ? { ...ref, groundingStatus: 'unchecked' } : ref))
+    : references;
+}
+
 function isUnsettledBundledSafetyCheck(
   response: Pick<AiSearchResponse, 'safetyCheck' | 'safetyStatus' | 'safetyWarnings'>,
 ): boolean {
@@ -336,6 +345,7 @@ function applyTurnEnvelope(message: ChatMessage, payload: TurnEnvelope, phase: T
     safetyWarnings: payload.safetyWarnings ?? message.safetyWarnings,
     safetyStatus: payload.safetyStatus ?? message.safetyStatus,
     safetyCheck: payload.safetyCheck ?? message.safetyCheck,
+    safetyCheckPending: payload.safetyStatus || payload.safetyCheck ? false : message.safetyCheckPending,
     blocks: payload.blocks ?? message.blocks,
     confidence: payload.confidence ?? message.confidence,
     answerValidation: payload.answerValidation ?? message.answerValidation,
@@ -465,12 +475,15 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           preliminaryReasoning: '',
           answerValidation: interruptAnswerValidation(msg.answerValidation),
           inDepth: interruptInDepth(msg.inDepth),
+          references: interruptGroundingChecks(msg.references),
           // Stopped while the medication-safety check ran: say it did not complete, which the panel
-          // draws, rather than leave no result, which reads like a check that found nothing.
-          ...(msg.phase === 'checking' && !msg.safetyStatus
+          // draws, rather than leave no result, which reads like a check that found nothing. Only that
+          // check: a turn stopped while only its citations were checked received no safety result.
+          ...(msg.safetyCheckPending
             ? {
                 safetyStatus: 'unavailable' as const,
                 safetyCheck: { status: 'unavailable' as const, issues: ['execution_failed'] },
+                safetyCheckPending: false,
               }
             : {}),
         };
@@ -674,7 +687,8 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
 
       const fail = (errMessage: string) => {
         if (errMessage === 'cancelled') {
-          stopCurrent();
+          // An earlier request's cancellation arriving after the next question must not stop that one.
+          if (isCurrentRequest()) stopCurrent();
           return;
         }
         // Not gated on isMountedRef: a genuine terminal error must still settle the shared store.
@@ -718,7 +732,10 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           // its own indepth_pending event; a provider with no In-Depth capability at all (e.g.
           // bundled) never sends one and never follows up — fabricating {status: 'pending'} for
           // it would show a "Preparing in-depth..." spinner that can never resolve.
-          updated[idx] = applyTurnEnvelope(updated[idx], effectiveResponse, phase);
+          updated[idx] = {
+            ...applyTurnEnvelope(updated[idx], effectiveResponse, phase),
+            safetyCheckPending: effectiveResponse !== response,
+          };
           if (!config.useStreaming && showReasoningRef.current) updated[idx].reasoning = completedReasoning;
           return updated;
         });
