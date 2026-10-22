@@ -561,8 +561,9 @@ export interface AiSearchResponse {
    * The citation indexes of the safety findings the answer cites whose record says the
    * interaction's clinical significance is unknown, where the answer says nothing of the kind
    * (backend ADR Decision 136). The finding's own caveat the answer left out, never a correction of
-   * its rating. `[]` is not a certificate; `null` or absent is no measurement, which
-   * `answer_done` always is.
+   * its rating. `[]` is not a certificate; `null` or absent is no measurement, which an early
+   * `answer_done` always is. An answer that was already final, such as a cached one, arrives whole on
+   * `answer_done` and may carry it.
    */
   unstatedSignificanceQualifiers?: number[] | null;
   /** @see AiInteractionPairs */
