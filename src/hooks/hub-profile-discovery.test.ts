@@ -132,6 +132,31 @@ describe('Hub profile discovery', () => {
     }
   });
 
+  it('keeps retrying for a panel still on the Hub after another leaves, whatever the session selection', async () => {
+    vi.useFakeTimers();
+    try {
+      chatSessionStore.setState({ selectedProviderId: 'bundled' });
+      mockFetch.mockRejectedValueOnce(new Error('unreachable'));
+      renderHook(() => useHubProfileDiscovery('hub'));
+      const view = renderHook(() => useHubProfileDiscovery('hub'));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('unavailable');
+
+      view.unmount();
+      mockFetch.mockResolvedValueOnce(list(profile({})));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(PROFILE_DISCOVERY_RETRY_MS);
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps the current profiles and status while a refresh is in flight', async () => {
     mockFetch.mockResolvedValueOnce(list(profile({})));
     await refreshHubProfiles(true);

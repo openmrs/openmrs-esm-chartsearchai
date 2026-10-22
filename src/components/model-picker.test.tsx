@@ -77,6 +77,18 @@ describe('ModelPicker', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it('shows for a patient whose conversation runs on the Hub while the session selection is bundled', async () => {
+    chatSessionStore.setState({
+      selectedProviderId: 'bundled',
+      sessionUuidByPatient: { 'hub-patient': 'session-1' },
+      providerByPatient: { 'hub-patient': 'hub' },
+    });
+    mockFetch.mockResolvedValueOnce(PROFILE_DATA);
+    render(<ModelPicker patientUuid="hub-patient" />);
+
+    expect(await screen.findByTestId('chartsearchai-profile-picker')).toBeInTheDocument();
+  });
+
   it('still discovers and selects the hub default when the picker is hidden', async () => {
     mockUseConfig.mockReturnValue({ showModelPicker: false });
     mockFetch.mockResolvedValueOnce(PROFILE_DATA);
