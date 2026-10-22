@@ -35,6 +35,18 @@ beforeEach(() => {
   sessionStore.setState({ loaded: false, session: null });
 });
 
+describe('chatSessionStore initial state', () => {
+  it('starts with no history, no handles, no selections and profile discovery loading', () => {
+    expect(initialChatSessionState()).toStrictEqual({
+      messagesByPatient: {},
+      sessionUuidByPatient: {},
+      selectedProfileId: null,
+      profileDiscoveryStatus: 'loading',
+      selectedProviderId: null,
+    });
+  });
+});
+
 describe('chatSessionStore logout cleanup', () => {
   it('clears all per-session state when the session transitions from a logged-in user to logged-out', () => {
     sessionStore.setState({

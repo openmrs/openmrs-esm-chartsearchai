@@ -1238,8 +1238,10 @@ export interface ChatHistoryMessage extends Partial<AiAnswerLimits> {
   auditLogId?: number;
   role: 'user' | 'assistant' | 'system';
   content: string;
-  terminalState?: 'turn_done' | 'turn_error';
-  problemCode?: string;
+  /** Null on an assistant row whose turn has not finished, such as a checked answer whose In-Depth tail
+   *  runs. */
+  terminalState?: 'turn_done' | 'turn_error' | null;
+  problemCode?: string | null;
   references?: AiReference[];
   blocks?: AiBlock[];
   /**
@@ -1254,7 +1256,8 @@ export interface ChatHistoryMessage extends Partial<AiAnswerLimits> {
   confidence?: AiConfidence;
   answerValidation?: AiAnswerValidation;
   inDepth?: AiInDepth;
-  createdAt: number;
+  /** Absent on an assistant row whose turn has not finished. */
+  createdAt?: number;
 }
 
 export interface ChatHistoryResponse {
@@ -1268,9 +1271,9 @@ export interface ChatHistoryResponse {
 }
 
 /**
- * Hydrate the chat panel state on mount. Returns the active session
- * and its full message list in chronological order. If no conversation exists,
- * the server returns a null session and an empty message list without creating one.
+ * Fetch the active conversation's history for the panel to hydrate from. Returns the session and
+ * its message list in chronological order. If no conversation exists, the server returns a null
+ * session and an empty message list without creating one.
  */
 export async function fetchChatHistory(
   patientUuid: string,
@@ -1283,8 +1286,8 @@ export async function fetchChatHistory(
 }
 
 /**
- * Close the current active chat session for this (patient, user) pair
- * and open a fresh one. Returns the new session uuid.
+ * Close the current active chat session for this (patient, user) pair and open a fresh one.
+ * Returns the new conversation as a history response with its session and an empty message list.
  */
 export async function startNewChat(
   patientUuid: string,
