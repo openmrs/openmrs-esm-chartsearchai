@@ -472,6 +472,18 @@
   overflow-wrap: anywhere;
 }
 
+.groundingChecks {
+  @include type.type-style('label-01');
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-wrap: anywhere;
+
+  li + li {
+    margin-top: 0.25rem;
+  }
+}
+
 .evidenceBadges {
   display: flex;
   flex-wrap: wrap;
