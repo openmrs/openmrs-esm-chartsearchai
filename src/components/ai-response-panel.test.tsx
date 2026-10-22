@@ -701,6 +701,35 @@ describe('AiResponsePanel citation grounding', () => {
     ).toBeInTheDocument();
   });
 
+  it('lists which claims a mixed-support record supports and which it does not', () => {
+    render(
+      <AiResponsePanel
+        answer="Started nevirapine in 2006 [1] and stopped it in 2007 [1]."
+        references={[
+          {
+            index: 1,
+            resourceType: 'order',
+            resourceUuid: 'uuid-101',
+            date: '2006-01-15',
+            sourceText: 'Nevirapine 200 mg',
+            groundingStatus: 'mixed',
+            groundingChecks: [
+              { status: 'verified', claim: 'Started nevirapine in 2006', location: 'answer', source_indices: [1] },
+              { status: 'unsupported', claim: 'stopped it in 2007', location: 'answer', source_indices: [1] },
+            ],
+          },
+        ]}
+        auditLogId={42}
+        error={null}
+        phase="complete"
+        patientUuid={patientUuid}
+      />,
+    );
+    const claims = screen.getByRole('list', { name: 'Claims checked against this record' });
+    const items = Array.from(claims.querySelectorAll('li')).map((li) => li.textContent);
+    expect(items).toEqual(['Verified Started nevirapine in 2006', 'Unsupported stopped it in 2007']);
+  });
+
   it('shows no grounding badge when the verdict is null (unverified)', () => {
     renderWithGrounded(null);
     expect(screen.queryByText('Verified')).not.toBeInTheDocument();
@@ -1019,6 +1048,27 @@ describe('AiResponsePanel safety warnings', () => {
       />,
     );
     expect(screen.queryByTestId('ai-response-safety')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('safety-check-summary')).not.toBeInTheDocument();
+  });
+
+  it('keeps the box closed for a suppressed issue when the result names its rule package', () => {
+    render(
+      <AiResponsePanel
+        answer="Recorded HbA1c is 6.8% [1]."
+        references={[]}
+        safetyWarnings={[]}
+        safetyStatus="unavailable"
+        safetyCheck={{
+          status: 'unavailable',
+          issues: ['check_disabled'],
+          package: { id: 'openclinai-medication-rules', version: '1.0.0', cross_reactivity: { id: 'cross-rules' } },
+        }}
+        auditLogId={42}
+        error={null}
+        phase="complete"
+        patientUuid={patientUuid}
+      />,
+    );
     expect(screen.queryByTestId('safety-check-summary')).not.toBeInTheDocument();
   });
 

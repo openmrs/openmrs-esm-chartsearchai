@@ -477,6 +477,29 @@ const EvidenceCard: React.FC<{
           {t('usedIn', 'Used in')}: {[...new Set(refItem.usage.map((item) => item.location))].join(', ')}
         </div>
       )}
+      {/* The badge says some claims are unsupported; this says which. */}
+      {refItem.groundingStatus === 'mixed' && refItem.groundingChecks && refItem.groundingChecks.length > 0 && (
+        <ul
+          className={styles.groundingChecks}
+          aria-label={t('groundingChecksLabel', 'Claims checked against this record')}
+        >
+          {refItem.groundingChecks.map((check, i) => (
+            <li key={i}>
+              <Tag
+                type={check.status === 'verified' ? 'green' : check.status === 'unsupported' ? 'red' : 'gray'}
+                size="sm"
+              >
+                {check.status === 'verified'
+                  ? t('grounded', 'Verified')
+                  : check.status === 'unsupported'
+                    ? t('notGrounded', 'Unsupported')
+                    : t('groundingUnchecked', 'Not checked')}
+              </Tag>{' '}
+              {check.claim}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 };
@@ -1068,7 +1091,10 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
       source: relationshipPackage,
     },
   ].filter(({ source }) => Boolean(source?.id?.trim()));
-  const hasSafetyDetails = issues.length > 0 || sourceRows.length > 0;
+  // Which rules ran is beside the point when the only issues are ones deliberately not reported and
+  // nothing was found: the rule source alone must not reopen the box those issues kept closed.
+  const sourcesReopenBox = !onlySuppressedSafetyIssues || (safetyWarnings?.length ?? 0) > 0;
+  const hasSafetyDetails = issues.length > 0 || (sourcesReopenBox && sourceRows.length > 0);
   // A bare `unavailable` with no reason, no rule source and no finding has nothing to report, so
   // it draws no box; a status with a reason or a finding beside it is still tagged.
   const statusNeedsBox = Boolean(
