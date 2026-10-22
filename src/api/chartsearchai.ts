@@ -1054,6 +1054,9 @@ export interface ChatHistoryMessage extends Partial<AiAnswerLimits> {
   confidence?: AiConfidence;
   answerValidation?: AiAnswerValidation;
   inDepth?: AiInDepth;
+  /** The Hub product profile that produced the answer; older rows name it {@link model}. */
+  resolvedModel?: string;
+  model?: string;
   /** Absent on an assistant row whose turn has not finished. */
   createdAt?: number;
 }

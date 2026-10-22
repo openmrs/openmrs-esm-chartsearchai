@@ -1158,6 +1158,49 @@ describe('useChartSearchAi', () => {
     });
   });
 
+  it('keeps the In-Depth answer without its model-written heading after the terminal envelope', async () => {
+    mockChatStream.mockImplementation(() => {});
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+
+    act(() => result.current.submitQuestion('patient-uuid', 'What changed?'));
+    const cb = mockChatStream.mock.calls[0][3];
+    act(() => cb.onAnswerDone({ answer: 'Aspirin [1].', references: [], messageId: 'm-1' }));
+    act(() => cb.onInDepthDone({ inDepth: { status: 'complete', answer: '**In Depth** More' } }));
+    expect(result.current.messages[0].inDepth?.answer).toBe('More');
+
+    act(() => cb.onDone({ answer: 'Aspirin [1].', inDepth: { status: 'complete', answer: '**In Depth** More' } }));
+
+    expect(result.current.messages[0].inDepth?.answer).toBe('More');
+  });
+
+  it('restores model attribution and an In-Depth answer without its heading from history', async () => {
+    mockFetchHistory.mockResolvedValueOnce({
+      session: 'srv-session-1',
+      provider: 'hub',
+      messages: [
+        { messageId: 'u-1', role: 'user', content: 'First Q', createdAt: 1 },
+        {
+          messageId: 'a-1',
+          role: 'assistant',
+          content: 'First A',
+          createdAt: 2,
+          resolvedModel: 'single-12b-checked',
+          inDepth: { status: 'complete', answer: '**In Depth** More' },
+        },
+        { messageId: 'u-2', role: 'user', content: 'Second Q', createdAt: 3 },
+        { messageId: 'a-2', role: 'assistant', content: 'Second A', createdAt: 4, model: 'single-e4b-checked' },
+      ],
+    });
+
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    await waitFor(() => expect(result.current.messages).toHaveLength(2));
+    expect(result.current.messages[0].resolvedModel).toBe('single-12b-checked');
+    expect(result.current.messages[0].inDepth?.answer).toBe('More');
+    expect(result.current.messages[1].resolvedModel).toBe('single-e4b-checked');
+  });
+
   it('merges final evidence into the existing assistant row', async () => {
     mockChatStream.mockImplementation(() => {});
     const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
