@@ -722,27 +722,38 @@ describe('reader position through asynchronous completion', () => {
     fireEvent.scroll(log);
     log.scrollTop = 100;
     fireEvent.scroll(log);
-    hookReturns(
-      {
-        ...current,
-        phase: 'in-depth',
-        answerValidation: { status: 'checked', label: 'Checked' },
-        inDepth: { status: 'pending', answer: '' },
-      },
-      false,
-    );
-    rerender(<AiChatContent mode="workspace" patientUuid="p1" />);
-    expect(log.scrollTop).toBe(100);
-    hookReturns(
-      {
-        ...current,
-        phase: 'complete',
-        answerValidation: { status: 'checked', label: 'Checked' },
-        inDepth: { status: 'complete', answer: 'Completed In-Depth.' },
-      },
-      false,
-    );
-    rerender(<AiChatContent mode="workspace" patientUuid="p1" />);
-    expect(log.scrollTop).toBe(100);
+    // The finished message is taller than the history area, the case that aligns it to its top for a
+    // reader still following it; this reader scrolled away, so it must stay where they left it.
+    const original = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+      if (this.hasAttribute('data-message-pair')) return { top: -200, height: 600 } as DOMRect;
+      return this === log ? ({ top: 100 } as DOMRect) : ({ top: 0, height: 0 } as DOMRect);
+    };
+    try {
+      hookReturns(
+        {
+          ...current,
+          phase: 'in-depth',
+          answerValidation: { status: 'checked', label: 'Checked' },
+          inDepth: { status: 'pending', answer: '' },
+        },
+        false,
+      );
+      rerender(<AiChatContent mode="workspace" patientUuid="p1" />);
+      expect(log.scrollTop).toBe(100);
+      hookReturns(
+        {
+          ...current,
+          phase: 'complete',
+          answerValidation: { status: 'checked', label: 'Checked' },
+          inDepth: { status: 'complete', answer: 'Completed In-Depth.' },
+        },
+        false,
+      );
+      rerender(<AiChatContent mode="workspace" patientUuid="p1" />);
+      expect(log.scrollTop).toBe(100);
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = original;
+    }
   });
 });

@@ -2526,6 +2526,47 @@ describe('useChartSearchAi in-flight turns across patients and panel instances',
     expect((mockChatStream.mock.calls[0][4] as AbortController).signal.aborted).toBe(false);
   });
 
+  it('shows buffered reasoning with the answer at answer_done, before turn_done arrives', async () => {
+    (useConfig as Mock).mockReturnValue({ useStreaming: false, showReasoning: true });
+    mockChatStream.mockImplementation(() => {});
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+    act(() => result.current.submitQuestion('patient-uuid', 'Any allergies?'));
+    const cb = mockChatStream.mock.calls[0][3];
+
+    act(() => cb.onReasoning('Reading the allergy list. '));
+    act(() => cb.onAnswerDone({ answer: 'Penicillin allergy.', references: [], messageId: 'm-1' }));
+
+    expect(result.current.messages[0]).toMatchObject({
+      answer: 'Penicillin allergy.',
+      reasoning: 'Reading the allergy list. ',
+    });
+  });
+
+  it('keeps the new conversation when an older history response arrives after New chat', async () => {
+    let resolveHistory: (history: unknown) => void = () => {};
+    mockFetchHistory.mockReturnValueOnce(new Promise((resolve) => (resolveHistory = resolve)));
+    mockStartNewChat.mockResolvedValueOnce({ session: 'new-session', provider: 'hub', messages: [] });
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+
+    await act(async () => result.current.startNewChatSession('patient-uuid'));
+    await waitFor(() => expect(result.current.isStartingSession).toBe(false));
+    expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('new-session');
+    await act(async () =>
+      resolveHistory({
+        session: 'old-session',
+        provider: 'hub',
+        messages: [
+          { messageId: 'u-1', role: 'user', content: 'Old Q', createdAt: 1 },
+          { messageId: 'a-1', role: 'assistant', content: 'Old A', createdAt: 2 },
+        ],
+      }),
+    );
+
+    expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('new-session');
+    expect(result.current.messages).toEqual([]);
+  });
+
   it("keeps another patient's buffered reasoning off an answer that completes later", async () => {
     (useConfig as Mock).mockReturnValue({ useStreaming: false, showReasoning: true });
     mockChatStream.mockImplementation(() => {});
