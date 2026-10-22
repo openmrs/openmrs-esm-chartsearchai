@@ -378,7 +378,6 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
   const sessionState = useStore(chatSessionStore);
   const { messagesByPatient, sessionUuidByPatient, newChatPendingByPatient, newChatErrorByPatient } = sessionState;
   const messages: ChatMessage[] = patientUuid ? (messagesByPatient[patientUuid] ?? EMPTY_MESSAGES) : EMPTY_MESSAGES;
-  const sessionStartRef = useRef<PendingNewChat | null>(null);
   const isMountedRef = useRef(true);
   const showReasoningRef = useRef(config.showReasoning);
   showReasoningRef.current = config.showReasoning;
@@ -505,12 +504,7 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
   }, [patientUuid]);
 
   const startNewChatSession = useCallback((patientUuid: string, requestedProviderId?: string) => {
-    if (
-      isPendingForThisUser(sessionStartRef.current) ||
-      isPendingForThisUser(pendingSessionByPatient.get(patientUuid))
-    ) {
-      return;
-    }
+    if (isPendingForThisUser(pendingSessionByPatient.get(patientUuid))) return;
     const state = chatSessionStore.getState();
     const providerId =
       requestedProviderId ?? state.providerByPatient?.[patientUuid] ?? state.selectedProviderId ?? undefined;
@@ -537,24 +531,16 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       })
       .finally(() => {
         if (pendingSessionByPatient.get(patientUuid)?.promise === pending) pendingSessionByPatient.delete(patientUuid);
-        if (sessionStartRef.current?.promise === pending) {
-          sessionStartRef.current = null;
-        }
         // Cleared whether or not this panel is still open: the flag locks every panel on the patient.
         if (chatSessionUserGeneration() === generation) setNewChatPending(patientUuid, false);
       });
-    sessionStartRef.current = { promise: pending, generation };
     pendingSessionByPatient.set(patientUuid, { promise: pending, generation });
   }, []);
 
   const submitQuestion = useCallback(
     (patientUuid: string, question: string) => {
-      if (
-        isPendingForThisUser(sessionStartRef.current) ||
-        isPendingForThisUser(pendingSessionByPatient.get(patientUuid))
-      ) {
-        return;
-      }
+      // Only this patient's New chat holds the question: another patient's has no bearing on it.
+      if (isPendingForThisUser(pendingSessionByPatient.get(patientUuid))) return;
       setNewChatError(patientUuid, null);
       const state = chatSessionStore.getState();
       const selectedProviderId = requestProviderFor(state, patientUuid) ?? undefined;
