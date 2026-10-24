@@ -306,3 +306,31 @@ yarn build
 ## License
 
 [MPL-2.0](https://opensource.org/licenses/MPL-2.0)
+
+## Staged chat transport
+
+`chatPatientChartStream` in `src/api/chartsearchai.ts` provides the client transport
+for the staged `/chat/stream` contract. It delivers the initial answer, subsequent
+validation and evidence updates, optional In-Depth events, and the final turn result.
+Requests carry the patient, new question, optional conversation identifier and
+provider selection; Hub requests require a product profile.
+
+This transport is available for the conversation integration. The current chat
+panel continues to use `/search/stream`; this contribution does not change its
+rendering or session behavior.
+
+The client checks the lifecycle rules it can see event by event: the preview may not
+resume once committed reasoning began, reasoning ends once answer tokens begin, and,
+when the caller passes the provider's advertised capabilities, delta events require
+`token_streaming`. A preview out of order, a delta from a provider without
+`token_streaming`, an unparseable event, a stream that closes without `turn_done` or
+`turn_error`, a failed connection and a refused request each end the turn with a
+stable `chartsearchai:*` error code for the panel to translate, as the session-expiry
+code already does. Two exceptions do not end the turn: a late reasoning or answer
+delta is dropped, because `answer_done` and `turn_done` still carry the answer, and a
+malformed `turn_started` marker is ignored, because the session also arrives on those
+events. A refused request whose body is a controller JSON error passes that error
+through unchanged rather than as a `chartsearchai:*` code, and so does a `turn_error` whose
+body is not JSON, since it already ends the turn as an error. The provider-lifecycle cases in
+`src/conformance/dual-provider-conformance.v1.json` run against the client in
+`src/api/chat-stream.test.ts`.
