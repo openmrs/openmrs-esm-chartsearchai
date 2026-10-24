@@ -2134,7 +2134,16 @@ describe('conversation streaming preference and optional capabilities', () => {
     act(() => {
       cb.onAnswerDone({
         answer: 'Ibuprofen may interact with warfarin [1].',
-        references: [{ index: 1, resourceType: 'order', resourceUuid: 'ord-1', date: '2026-01-01', grounded: null }],
+        references: [
+          {
+            index: 1,
+            resourceType: 'order',
+            resourceUuid: 'ord-1',
+            date: '2026-01-01',
+            grounded: null,
+            groundingStatus: 'checking',
+          },
+        ],
         safetyWarnings: [],
         safetyStatus: 'unavailable',
         safetyCheck: { schema_version: 'drug_safety.v1', status: 'unavailable', issues: [], warnings: [] },
