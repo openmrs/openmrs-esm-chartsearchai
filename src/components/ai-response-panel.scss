@@ -20,6 +20,73 @@
   margin: 0;
 }
 
+// Rendered-markdown answer (headers / bold / lists) with inline citation chips.
+.markdownAnswer {
+  @include type.type-style('body-01');
+  color: colors.$gray-90;
+  line-height: 1.5;
+
+  > :first-child {
+    margin-top: 0;
+  }
+
+  > :last-child {
+    margin-bottom: 0;
+  }
+
+  // The shell's Carbon reset sets `ol, ul { list-style: none }` and zeroes table-cell padding.
+  ul,
+  ol {
+    margin: layout.$spacing-02 0;
+    padding-left: layout.$spacing-06;
+  }
+
+  ul {
+    list-style: disc;
+  }
+
+  ol {
+    list-style: decimal;
+  }
+
+  li {
+    margin-bottom: layout.$spacing-01;
+  }
+
+  .tableScroll {
+    max-width: 100%;
+    overflow-x: auto;
+    margin: layout.$spacing-02 0 layout.$spacing-03 0;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: max-content;
+    max-width: none;
+  }
+
+  th,
+  td {
+    padding: layout.$spacing-02 layout.$spacing-04 layout.$spacing-02 0;
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  th {
+    font-weight: 600;
+  }
+}
+
+.answerParagraph {
+  margin: 0 0 layout.$spacing-03 0;
+}
+
+.answerHeading {
+  @include type.type-style('heading-compact-01');
+  color: colors.$gray-100;
+  margin: layout.$spacing-04 0 layout.$spacing-02 0;
+}
+
 .actionsRow {
   display: flex;
   align-items: center;
