@@ -110,4 +110,27 @@ describe('chatSessionStore logout cleanup', () => {
     expect(state.reasoningExpanded).toBe(true);
     unsubscribe();
   });
+
+  it('keeps the state of the same user when a session refetch fails and leaves the store unloaded', () => {
+    sessionStore.setState({
+      loaded: true,
+      session: { sessionId: 's1', authenticated: true, user: { uuid: 'user-1' } } as never,
+    });
+
+    const unsubscribe = setupChatSessionLogoutCleanup();
+    seedSession();
+
+    // What a failed /session refetch writes from framework 5.5 until 11.
+    sessionStore.setState({ loaded: false, session: null });
+    sessionStore.setState({
+      loaded: true,
+      session: { sessionId: 's1', authenticated: true, user: { uuid: 'user-1' } } as never,
+    });
+
+    const state = chatSessionStore.getState();
+    expect(state.sessionUuidByPatient).toEqual({ 'patient-1': 'server-session-handle-1' });
+    expect(state.selectedProviderId).toBe('hub');
+    expect(state.selectedProfileId).toBe('single-e4b-checked');
+    unsubscribe();
+  });
 });
