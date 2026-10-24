@@ -142,6 +142,17 @@ describe('MarkdownAnswer', () => {
     expect(container).toHaveTextContent('Genotype UGT1A1*28 and an AUC in pg*h/mL.');
   });
 
+  it('keeps a * as notation after a wrapped group that joining shortens', () => {
+    const { container } = render(
+      <MarkdownAnswer
+        answer={'- Outdated [4,\n  5].\n\nGenotype UGT1A1*28 and an AUC in pg*h/mL.'}
+        references={[]}
+        patientUuid={patientUuid}
+      />,
+    );
+    expect(container).toHaveTextContent('Genotype UGT1A1*28 and an AUC in pg*h/mL.');
+  });
+
   it('still renders *emphasis* set off by spaces', () => {
     const { container } = render(
       <MarkdownAnswer answer={'This is *recent* data.'} references={[]} patientUuid={patientUuid} />,
