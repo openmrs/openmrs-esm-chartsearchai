@@ -542,7 +542,8 @@ describe('chatPatientChartStream', () => {
         ]),
       );
 
-    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled', ['answer', 'token_streaming']);
+    // No capabilities passed: the README says the order rules apply then too.
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled');
     await flushPromises();
 
     expect(cb.onError).not.toHaveBeenCalled();
