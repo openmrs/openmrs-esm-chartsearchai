@@ -11,6 +11,14 @@ export interface ChatSessionState {
    * logout (see {@link setupChatSessionLogoutCleanup}).
    */
   sessionUuidByPatient: Record<string, string | null>;
+  /**
+   * Provider bound to each patient's active conversation, populated from
+   * history hydration, `/chat/new` and `turn_started`. Follow-up turns on an
+   * existing conversation send this provider rather than the global selection,
+   * so switching provider on another patient cannot silently close an earlier
+   * patient's conversation.
+   */
+  providerByPatient?: Record<string, string | null>;
   /** Hub product profile selected for this browser session. */
   selectedProfileId: string | null;
   /** Whether selectedProfileId was chosen explicitly by the user through the profile menu. */
@@ -34,6 +42,12 @@ export interface ChatSessionState {
    */
   selectedProviderId: string | null;
   /**
+   * The capabilities each provider advertises on `/providers`, recorded by the provider picker.
+   * Passed with each turn so the stream client can reject events the provider never declared;
+   * absent until `/providers` has been read, in which case only the event order is checked.
+   */
+  providerCapabilities?: Record<string, string[]>;
+  /**
    * Whether the reader wants an answer's reasoning disclosure open, remembered for the session so
    * the choice costs one click rather than one per answer.
    *
@@ -46,12 +60,41 @@ export interface ChatSessionState {
    * ever written to browser storage — it reasons over chart records.
    */
   reasoningExpanded?: boolean;
+  /**
+   * Patients with a New chat request in flight. Shared, so every panel open on that patient locks
+   * its composer until the new conversation is in place, not only the panel that asked for it.
+   */
+  newChatPendingByPatient?: Record<string, boolean>;
+  /** Patients whose last New chat request failed: every panel on the patient says so. */
+  newChatErrorByPatient?: Record<string, string | null>;
+}
+
+let userGeneration = 0;
+
+/**
+ * Counts user changes. A request records it when it starts and drops its response if it has moved,
+ * so a reply meant for the previous user never lands in the next user's cleared state.
+ */
+export function chatSessionUserGeneration(): number {
+  return userGeneration;
+}
+
+/**
+ * The provider a request about this patient goes to: its conversation's provider while it has one,
+ * else the browser session's selection. Each panel's pickers show this, so what a panel shows is
+ * what it sends even while panels on different patients are open.
+ */
+export function requestProviderFor(state: ChatSessionState, patientUuid?: string | null): string | null {
+  const conversationProvider =
+    patientUuid && state.sessionUuidByPatient[patientUuid] ? state.providerByPatient?.[patientUuid] : undefined;
+  return conversationProvider ?? state.selectedProviderId;
 }
 
 /** A fresh session's state: the store starts from it, and a user change replaces the state with it. */
 export const initialChatSessionState = (): ChatSessionState => ({
   messagesByPatient: {},
   sessionUuidByPatient: {},
+  providerByPatient: {},
   selectedProfileId: null,
   profileExplicitlySelected: false,
   profileDiscoveryStatus: 'loading',
@@ -76,10 +119,16 @@ export function setupChatSessionLogoutCleanup(): () => void {
     }
     const currentUserUuid = readUserUuid(state);
     if (currentUserUuid !== previousUserUuid) {
+      userGeneration += 1;
       // Replaced, not merged, so no field outlives the user who set it. The reasoning preference
       // goes with the history: an O3 workstation is shared, and the next user has expressed no view
-      // on whether the model's working notes should be open.
-      chatSessionStore.setState(initialChatSessionState(), true);
+      // on whether the model's working notes should be open. The provider capabilities are
+      // configuration read from /providers, not a user's state, so they stay.
+      const { providerCapabilities } = chatSessionStore.getState();
+      chatSessionStore.setState(
+        { ...initialChatSessionState(), ...(providerCapabilities ? { providerCapabilities } : {}) },
+        true,
+      );
       previousUserUuid = currentUserUuid;
     }
   });

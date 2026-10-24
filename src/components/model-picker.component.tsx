@@ -5,7 +5,7 @@ import { useConfig, useStore } from '@openmrs/esm-framework';
 import { type ChartSearchAiConfig } from '../config-schema';
 import { type HubProfileMetadata } from '../api/chartsearchai';
 import { selectHubProfile, useHubProfileDiscovery } from '../hooks/hub-profile-discovery';
-import { chatSessionStore } from '../store/chat-session.store';
+import { chatSessionStore, requestProviderFor } from '../store/chat-session.store';
 import { useMenuTriggerName } from './menu-trigger-name';
 import styles from './model-picker.scss';
 
@@ -15,17 +15,24 @@ interface ProfileSection {
   profiles: HubProfileMetadata[];
 }
 
+interface ModelPickerProps {
+  /** The panel's patient: the picker shows only while that patient's requests go to the Hub. */
+  patientUuid?: string;
+}
+
 /**
  * Product-profile picker backed entirely by med-agent-hub metadata. It lists only the profiles the
  * Hub currently advertises as available; discovery and the decision whether a question may be sent
  * live in {@link useHubProfileDiscovery}, which the conversation hook also runs.
  */
-const ModelPicker: React.FC = () => {
+const ModelPicker: React.FC<ModelPickerProps> = ({ patientUuid }) => {
   const { t } = useTranslation();
   const { showModelPicker } = useConfig<ChartSearchAiConfig>();
-  const { selectedProfileId, selectedProviderId, hubProfiles, profileDiscoveryStatus } = useStore(chatSessionStore);
+  const sessionState = useStore(chatSessionStore);
+  const { selectedProfileId, hubProfiles, profileDiscoveryStatus } = sessionState;
+  const providerId = requestProviderFor(sessionState, patientUuid);
   const triggerRef = useRef<HTMLDivElement>(null);
-  useHubProfileDiscovery();
+  useHubProfileDiscovery(providerId);
 
   const availableProfiles = useMemo(() => (hubProfiles ?? []).filter((profile) => profile.available), [hubProfiles]);
   const selectedProfile = useMemo(
@@ -60,7 +67,7 @@ const ModelPicker: React.FC = () => {
     effectiveProfile?.label ?? unavailableSelectionLabel ?? t('chooseAiProfile', 'Choose AI profile');
   useMenuTriggerName(triggerRef, `${t('aiProfile', 'AI profile')}: ${triggerLabel}`);
 
-  if (showModelPicker === false || selectedProviderId !== 'hub' || profileDiscoveryStatus === 'loading') {
+  if (showModelPicker === false || providerId !== 'hub' || profileDiscoveryStatus === 'loading') {
     return null;
   }
 
