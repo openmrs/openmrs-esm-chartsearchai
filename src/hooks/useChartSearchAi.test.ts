@@ -2123,6 +2123,36 @@ describe('conversation streaming preference and optional capabilities', () => {
     expect(stopped.safetyCheck?.issues).toEqual(['execution_failed']);
   });
 
+  it('settles the pending safety and citation checks when a turn fails after its answer', async () => {
+    chatSessionStore.setState({ selectedProviderId: 'bundled' });
+    mockChatStream.mockImplementation(() => {});
+    const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+
+    act(() => result.current.submitQuestion('patient-uuid', 'Is ibuprofen safe?'));
+    const cb = mockChatStream.mock.calls[0][3];
+    act(() => {
+      cb.onAnswerDone({
+        answer: 'Ibuprofen may interact with warfarin [1].',
+        references: [{ index: 1, resourceType: 'order', resourceUuid: 'ord-1', date: '2026-01-01', grounded: null }],
+        safetyWarnings: [],
+        safetyStatus: 'unavailable',
+        safetyCheck: { schema_version: 'drug_safety.v1', status: 'unavailable', issues: [], warnings: [] },
+        messageId: 'm-bundled',
+      });
+    });
+    expect(result.current.messages[0].phase).toBe('checking');
+
+    // A turn_error or a broken stream after answer_done, where Stop would say the check did not complete.
+    act(() => cb.onError('Stream failed'));
+
+    const failed = result.current.messages[0];
+    expect(failed.phase).toBe('error');
+    expect(failed.safetyStatus).toBe('unavailable');
+    expect(failed.safetyCheck?.issues).toEqual(['execution_failed']);
+    expect(failed.references?.some((ref) => ref.groundingStatus === 'checking')).toBe(false);
+  });
+
   it('marks a citation check stopped mid-way unchecked without claiming a safety check failed', async () => {
     mockChatStream.mockImplementation(() => {});
     const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
