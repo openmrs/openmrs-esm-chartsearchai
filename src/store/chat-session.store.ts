@@ -4,6 +4,23 @@ import type { ChatMessage } from '../hooks/useChartSearchAi';
 export interface ChatSessionState {
   messagesByPatient: Record<string, ChatMessage[]>;
   /**
+   * Server-pinned conversation handle per patient. Captured from the stream's
+   * `turn_started` event and from the history and New chat responses, then
+   * threaded into every subsequent post for the same patient. Cleared on
+   * logout (see {@link setupChatSessionLogoutCleanup}).
+   */
+  sessionUuidByPatient: Record<string, string | null>;
+  /** Hub product profile selected for this browser session. */
+  selectedProfileId: string | null;
+  /** Whether product-profile discovery can safely authorize a chat request. */
+  profileDiscoveryStatus: 'loading' | 'ready' | 'unavailable';
+  /**
+   * Clinical-answer provider selected for this browser session. Null means the
+   * backend applies its configured default (bundled on a fresh install); it is
+   * never a silent cross-provider fallback.
+   */
+  selectedProviderId: string | null;
+  /**
    * Whether the reader wants an answer's reasoning disclosure open, remembered for the session so
    * the choice costs one click rather than one per answer.
    *
@@ -18,20 +35,36 @@ export interface ChatSessionState {
   reasoningExpanded?: boolean;
 }
 
-export const chatSessionStore = createGlobalStore<ChatSessionState>('chartsearchai-chat-session', {
+/** A fresh session's state: the store starts from it, and a user change replaces the state with it. */
+export const initialChatSessionState = (): ChatSessionState => ({
   messagesByPatient: {},
+  sessionUuidByPatient: {},
+  selectedProfileId: null,
+  profileDiscoveryStatus: 'loading',
+  selectedProviderId: null,
 });
+
+export const chatSessionStore = createGlobalStore<ChatSessionState>(
+  'chartsearchai-chat-session',
+  initialChatSessionState(),
+);
 
 export function setupChatSessionLogoutCleanup(): () => void {
   const sessionStore = getSessionStore();
   const readUserUuid = (state = sessionStore.getState()) => (state.loaded ? state.session?.user?.uuid : undefined);
   let previousUserUuid = readUserUuid();
   return sessionStore.subscribe((state) => {
+    // A failed refetch leaves the store unloaded (framework 5.5 to 10), which says nothing about who is
+    // signed in. Logout and a user switch arrive loaded.
+    if (!state.loaded) {
+      return;
+    }
     const currentUserUuid = readUserUuid(state);
     if (currentUserUuid !== previousUserUuid) {
-      // The preference goes with the history: an O3 workstation is shared, and the next user has
-      // expressed no view on whether the model's working notes should be open.
-      chatSessionStore.setState({ messagesByPatient: {}, reasoningExpanded: undefined });
+      // Replaced, not merged, so no field outlives the user who set it. The reasoning preference
+      // goes with the history: an O3 workstation is shared, and the next user has expressed no view
+      // on whether the model's working notes should be open.
+      chatSessionStore.setState(initialChatSessionState(), true);
       previousUserUuid = currentUserUuid;
     }
   });
