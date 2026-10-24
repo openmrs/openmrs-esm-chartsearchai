@@ -54,6 +54,11 @@ export function setupChatSessionLogoutCleanup(): () => void {
   const readUserUuid = (state = sessionStore.getState()) => (state.loaded ? state.session?.user?.uuid : undefined);
   let previousUserUuid = readUserUuid();
   return sessionStore.subscribe((state) => {
+    // A failed refetch leaves the store unloaded (framework 5.5 to 10), which says nothing about who is
+    // signed in. Logout and a user switch arrive loaded.
+    if (!state.loaded) {
+      return;
+    }
     const currentUserUuid = readUserUuid(state);
     if (currentUserUuid !== previousUserUuid) {
       // Replaced, not merged, so no field outlives the user who set it. The reasoning preference
