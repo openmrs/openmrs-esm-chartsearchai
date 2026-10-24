@@ -703,6 +703,15 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
             ...updated[idx],
             answerValidation: interruptAnswerValidation(updated[idx].answerValidation),
             inDepth: interruptInDepth(updated[idx].inDepth),
+            references: interruptGroundingChecks(updated[idx].references),
+            // As stopCurrent does: a safety check still running did not complete, which the panel draws.
+            ...(updated[idx].safetyCheckPending
+              ? {
+                  safetyStatus: 'unavailable' as const,
+                  safetyCheck: { status: 'unavailable' as const, issues: ['execution_failed'] },
+                  safetyCheckPending: false,
+                }
+              : {}),
             error: errMessage,
             phase: 'error',
           };
