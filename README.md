@@ -14,7 +14,7 @@ A floating AI button appears on the patient chart page. Clicking it opens a sear
 - "Has she ever had a bad reaction to penicillin?"
 - "Is her diabetes getting better or worse?"
 
-The module streams an answer token-by-token (via SSE) with numbered citations (e.g. `[1]`, `[2]`) that link back to the relevant section of the patient chart (Results, Orders, Allergies, etc.).
+The conversation panel returns an answer with numbered citations (e.g. `[1]`, `[2]`) that link to chart records. Bundled inference can show tokens as they arrive; providers that supply only completed answers use the same conversation flow. The selected provider and Hub profile stay explicit.
 
 ### Answer formatting
 
@@ -27,9 +27,14 @@ and a model-supplied link that is not a citation is shown as its label only, bec
 its destination could carry chart details; footnote links stay within the answer.
 Streaming answers remain plain text until they finish.
 
+Provider-supplied structured tables, source details and grounding results render with
+the answer. When a provider supplies asynchronous review or In-Depth, their status
+and output remain separate. Original, edited or withheld output stays inspectable
+for manual review. Missing optional sections do not prevent plain-answer display.
+
 ### Model reasoning
 
-The backend streams the model's reasoning before the answer, on its own `thinking` SSE event. The reasoning phase is long and CPU-bound, so the text shows itself while it arrives — a dead spinner says nothing about whether anything is happening — and then **collapses** to a `Model reasoning` row above the answer rather than disappearing. A reader who looked away, or who wants to know how an answer was reached, opens the row; the choice is remembered for the session, so wanting to watch it costs one click rather than one per answer.
+When the selected provider supplies model reasoning, the conversation displays it as it arrives if streaming is enabled. After the answer arrives, the reasoning remains in a collapsed `Model reasoning` disclosure above the answer. The reader's choice to expand it is remembered for the session. With streaming disabled, supplied reasoning appears only after the complete answer arrives. Providers that supply no reasoning still return their supported answer.
 
 It is the model's scratchpad, not a finding: none of it goes through the grounding pass that verifies the answer's citations, and it can state things the answer does not. That caveat is the `Model reasoning` row's tooltip — a native `title`, so it is the summary's accessible description for a screen reader, but it appears on hover only. A touch user, or a reader who never hovers, sees no caveat on the transcript itself and has only the panel's own "AI-generated … verify against the records" disclaimer. The transcript is never copied by the answer's Copy button, never written to browser storage, and is dropped with the chat history at logout. `showReasoning: false` switches it off entirely — nothing is shown, and nothing is retained.
 
@@ -37,18 +42,17 @@ The optional progressive-reasoning preview (backend GP `chartsearchai.progressiv
 
 When the backend's optional [drug-reference feature](https://github.com/openmrs/openmrs-module-chartsearchai#drug-reference-injection--safety-validation) is enabled, the panel also shows non-blocking **safety-check** chips below the answer (overdose / interaction / contraindication), renders module-supplied reference citations (drug references, safety findings, drug-class notes) as distinct non-navigating reference chips, and states what the safety check did and did not cover — see [Fields that state the answer's limits](#fields-that-state-the-answers-limits). A chip about a medication the patient already takes is marked as such — see [API endpoints used](#api-endpoints-used).
 
+Whatever the drug-reference setting, an answer whose safety check is `limited`, or `unavailable` with a reason, a rule source or a finding beside it, carries an **Answer safety check** box with a `Limited safety check` or `Safety check unavailable` tag, the reasons as an issue list and the rule sources as rows. A bare `unavailable` with nothing else to report draws no box, and neither does a status whose only reasons are ones the panel does not draw (a disabled or inapplicable check). A `checked` answer with no findings stays quiet.
+
 ## Backend
 
-This frontend requires the [Chart Search AI backend module](https://github.com/openmrs/openmrs-module-chartsearchai), which uses a RAG (Retrieval Augmented Generation) architecture:
-
-1. **Retrieval** -- patient records are embedded with all-MiniLM-L6-v2 (ONNX, CPU) and narrowed to the top-K most relevant via cosine similarity.
-2. **Generation** -- the filtered records are sent to a local GGUF LLM (default: Llama 3.3 8B via llama.cpp) with a system prompt that produces cited, structured answers.
+This frontend requires the [Chart Search AI backend module](https://github.com/openmrs/openmrs-module-chartsearchai). The backend uses QueryStore to retrieve patient-chart evidence and routes the conversation to the explicitly selected provider. Bundled inference supports its configured local or remote model; Med-Agent Hub exposes configured product profiles. The frontend uses the same conversation interface for both and displays the capabilities and output they actually provide.
 
 See the [backend README](https://github.com/openmrs/openmrs-module-chartsearchai#readme) for full setup instructions, model downloads, and global property configuration.
 
 ## Prerequisites
 
-- OpenMRS 3.x with the [Chart Search AI module](https://github.com/openmrs/openmrs-module-chartsearchai) installed and configured
+- OpenMRS 3.x with a build of the [Chart Search AI module](https://github.com/openmrs/openmrs-module-chartsearchai) that includes [openmrs-module-chartsearchai#622](https://github.com/openmrs/openmrs-module-chartsearchai/pull/622), installed and configured
 - Node.js 18+
 - Yarn 4.x
 
@@ -66,17 +70,17 @@ yarn start
 
 The following options can be set via the OpenMRS 3.x config system:
 
-| Property              | Type      | Default                          | Description                                                            |
-| --------------------- | --------- | -------------------------------- | ---------------------------------------------------------------------- |
-| `aiSearchPlaceholder` | `string`  | `"Ask AI about this patient..."` | Placeholder text for the search input                                  |
-| `maxQuestionLength`   | `number`  | `1000`                           | Maximum characters allowed in a question                               |
-| `useStreaming`        | `boolean` | `true`                           | Use the SSE streaming endpoint for token-by-token responses            |
-| `showReasoning`       | `boolean` | `true`                           | Show the model's reasoning — see [Model reasoning](#model-reasoning)   |
-| `showModelPicker`     | `boolean` | `true`                           | Show the med-agent-hub product-profile picker in the chat panel footer |
+| Property              | Type      | Default                          | Description                                                                                             |
+| --------------------- | --------- | -------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `aiSearchPlaceholder` | `string`  | `"Ask AI about this patient..."` | Placeholder text for the search input                                                                   |
+| `maxQuestionLength`   | `number`  | `1000`                           | Maximum characters allowed in a question                                                                |
+| `useStreaming`        | `boolean` | `true`                           | Show incremental answer/reasoning output; false shows the complete answer on the same conversation path |
+| `showReasoning`       | `boolean` | `true`                           | Show the model's reasoning — see [Model reasoning](#model-reasoning)                                    |
+| `showModelPicker`     | `boolean` | `true`                           | Show the med-agent-hub product-profile picker in the chat panel footer                                  |
 
 ### Provider and profile selection components
 
-The extracted provider selector reads `/providers`, uses the backend's advertised
+The provider selector reads `/providers`, uses the backend's advertised
 default, and keeps an unavailable explicit selection until the user chooses a
 replacement.
 
@@ -94,21 +98,33 @@ The Hub profile selector lists only the profiles the Hub currently advertises as
 available, grouped by topology. Both selectors' triggers are named for what they
 select, for example "AI provider: Bundled (local)".
 
-These components and discovery calls are prepared for the conversation workflow.
-The current search view does not mount them. Their integration with history,
-new-conversation requests and answer submission belongs to the dependent lifecycle
-change.
+The conversation panel mounts these controls. Restored history adopts its recorded
+provider; switching providers starts a fresh conversation. The selection and transcript
+change only after that request succeeds. If it fails, the existing provider, conversation
+and active answer remain available. An unavailable explicit
+selection remains visible until the user chooses a supported replacement.
+
+The conversation hook runs Hub profile discovery itself and checks it before sending a Hub
+question. If the Hub no longer offers the selected profile, the question is not sent and the
+panel says so by name: "The selected profile, Checked medical team, is no longer available.
+Pick another profile." If `/models` could not be read, it reports the Hub as unavailable and
+reads `/models` again. A failed Hub turn also reads `/models` again, so a profile or Hub that
+went away while the panel was open is noticed before the next question.
 
 ## API endpoints used
 
 All endpoints are served by the backend module under `/ws/rest/v1/chartsearchai/`:
 
-| Method | Path             | Description                                         |
-| ------ | ---------------- | --------------------------------------------------- |
-| POST   | `/search`        | Synchronous search (returns complete answer)        |
-| POST   | `/search/stream` | SSE streaming search (tokens streamed in real-time) |
+| Method | Path                   | Description                                                                |
+| ------ | ---------------------- | -------------------------------------------------------------------------- |
+| POST   | `/chat/stream`         | Conversation answer, optional review/evidence/In-Depth and terminal result |
+| GET    | `/chat?patient=<uuid>` | Active conversation history for the current user                           |
+| POST   | `/chat/new`            | New conversation for a patient and optional explicit provider              |
+| GET    | `/providers`           | Configured provider capabilities and availability                          |
+| GET    | `/models`              | Hub product profiles and availability                                      |
+| POST   | `/feedback`            | Audit feedback under `questionId`, with rating and optional comment        |
 
-Request body: `{ "patient": "<uuid>", "question": "<text>" }`
+Chat request: `{ "patient": "<uuid>", "question": "<text>", "session": "<optional uuid>", "provider": "<optional id>", "profile": "<Hub profile>" }`. Hub requests require a profile.
 
 Response:
 
@@ -157,7 +173,7 @@ Four response fields, plus three per-reference fields, say what a bounded safety
 | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `unstatedFindingSeverities`         | The rating for that finding, beside the sentence whose finding the answer left unrated — as a **caveat**, since the backend documents cells where this key over-reports. The rating is not on the key and cannot be joined to a chip by `(type, drug)`, so the panel narrows to the candidates sharing it and requires the answer's own sentence to single one out. It reads three independent kinds of evidence — `chartOrderBridges` (typed, and carrying both the substance and the chart's order display), the partner substance alone, and the module's whole sentence — and any disagreement between them refuses rather than being resolved by precedence. Findings sharing one `(type, drug)` are a candidate **set**: they are badged together or not at all, because a bare item beside a badged one reads as "no rating exists" rather than "we declined" |
 | `misattributedOrderCitations`       | Those citations struck through and non-navigating, marked _Not the order named_ — bad **evidence** for a sound finding, never an unsupported claim                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `unstatedSignificanceQualifiers`    | _Clinical significance unknown_ beside each citation whose finding's record says so where the answer does not, after any rating badge, once per finding — the finding's own **caveat** the answer left out, never a correction of its rating. It arrives on the final `done` or `grounded`, never the early `done`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `unstatedSignificanceQualifiers`    | _Clinical significance unknown_ beside each citation whose finding's record says so where the answer does not, after any rating badge, once per finding — the finding's own **caveat** the answer left out, never a correction of its rating. It arrives on `evidence_updated` or `turn_done`, never on an early `answer_done`; an answer that was already final, such as a cached one, arrives whole on `answer_done` and may carry it.                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `unsupportedEndedOrderClaims`       | One amber line under the answer, _No record says the Nevirapine order has ended — the answer states it without one._ It names drugs and not sentences, so it sits under the answer rather than beside one. A statement in the answer that nothing in the records supports, never a finding that the order is in force.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `references[].attachedFor`          | A chip tagged _source of [46]_, naming the cited findings the record backs — the prose carries no `[N]` marker for such a citation, so this is the only place it appears. An index naming no `safety_finding` among the citations is dropped                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `references[].source`               | The dataset, verbatim, as the citation label's hover text (_Source: DDInter 2.0 (via openmrs-ddi-knowledge-base)_) — keyed on the value and never on `group`, since a `reference`-group entry may carry no attribution and the module's own computed finding carries none                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
@@ -179,13 +195,13 @@ The third is a cost rather than a wrong reading, and it is the one most likely t
 
 **Not rendered.** The backend publishes more than the seven above. Naming them here is a deliberate gap, not a claim that the contract stops at what this panel draws.
 
-- `conditionRuleCoverage` and `doseCeilingCoverage` — drawn for one release as a grey _Not checked against this patient’s age or recorded conditions._ note beside a drug-safety answer, and removed.
-- `interactionPairs`, `conditionRuleCoverage` and `activeOrderClaims` — drawn until this release under a _What the safety checks covered_ heading, and removed with it. On a live clarithromycin answer listing four of the patient's own active orders as interactions, its `interactionPairs: { found: 0 }` line — _related no drug pairs_ — read as "no interactions with her medications", because the backend's screen skips the source's unrated pairs before relating any. The panel still carries all three on each message, and draws `conditionRuleCoverage` only in the note described next. That includes `interactionPairs.belowFloor`, which was briefly drawn as an amber _Not raised as a warning: … the drug reference rates these below the warning threshold_ line and removed: every such pair is a DDInter row rated `Unknown` with no mechanism text, so the line gave a clinician nothing to act on, and its wording read as a low rating the source never gave.
+- `conditionRuleCoverage` and `doseCeilingCoverage` — drawn for one release as a grey _Not checked against this patient’s age or recorded conditions._ note beside a drug-safety answer, and removed. The corresponding `safetyCheck.issues` codes (`condition_rules_unavailable` and `no_actionable_dose_reference`), along with `check_disabled` and `no_applicable_check`, are likewise not drawn.
+- `interactionPairs`, `conditionRuleCoverage` and `activeOrderClaims` — drawn until this release under a _What the safety checks covered_ heading, and removed with it. On a live clarithromycin answer listing four of the patient's own active orders as interactions, its `interactionPairs: { found: 0 }` line — _related no drug pairs_ — read as "no interactions with her medications", because the backend's screen skips the source's unrated pairs before relating any. The panel still carries all three on each message and draws none of them. That includes `interactionPairs.belowFloor`, which was briefly drawn as an amber _Not raised as a warning: … the drug reference rates these below the warning threshold_ line and removed: every such pair is a DDInter row rated `Unknown` with no mechanism text, so the line gave a clinician nothing to act on, and its wording read as a low rating the source never gave.
 - `unresolvedDrugClass` — the drug **class** a question named that the module resolved to no substance (`"NSAID"`, `"oral contraceptive"`), or `null`. The backend asks a client to say that reference _entries_ are indexed by individual substance name so the class matched none of them, and to ask for a specific drug by name.
 - `unfaithfullyRenderedCitations` — citations whose rendering _in the answer_ the module found unfaithful to the record they point at. A partial, with `unfoundedFindingSeverities`, `cautionLedOverWithholding` and `interactionClaimPairs`: the panel **reads** all four, only to decide whether a chip may be drawn on one line (above), and displays none of them.
 - `safetyWarnings[].chartOrderBridges` — `{ substance, orderDisplay }`, saying _this chip's `Ibuprofen` is your `Advil 400mg` order_. This one is a partial: the panel **reads** it, as one of the three ORDER-FREE kinds of evidence the severity join weighs — they corroborate or contradict and none outranks another, which is why a disagreement refuses rather than being settled by precedence — but does not **display** it. The backend asks for it beside the chip, and until that is done a clinician reading a chip list next to the answer still has to work out whether `Advil` and `Ibuprofen` are one prescription or two.
 
-Under `chartsearchai.grounding.async=true` the SSE `done` event is emitted before validation runs, so `safetyWarnings` and every measurement taken _after_ the answer — `interactionPairs`, `misattributedOrderCitations`, `unstatedFindingSeverities` — arrive on the trailing `grounded` event instead. That is why the stream's `onGrounded` callback hands over the whole payload rather than the references alone. Two exceptions not to gate on that event: `conditionRuleCoverage` is read off the dataset load before the model is called and so is already final on `done` (as is `orderStopDates`, a projection over the answer's own citations that owes the grounding pass nothing), and on an answer-cache hit no early `done` is emitted at all.
+On `/chat/stream` the `answer_done` event can arrive before validation runs, so `safetyWarnings` and every measurement taken _after_ the answer (`interactionPairs`, `misattributedOrderCitations`, `unstatedFindingSeverities`) may arrive on the trailing `evidence_updated` event or the terminal `turn_done` instead. The hook merges each event's full payload, and a null or absent measurement never erases one an earlier event stated. `conditionRuleCoverage` is read off the dataset load before the model is called and so is already final on `answer_done`, as is `orderStopDates`, a projection over the answer's own citations that owes the grounding pass nothing.
 
 The required privilege is **AI Query Patient Data**.
 
@@ -352,9 +368,31 @@ validation and evidence updates, optional In-Depth events, and the final turn re
 Requests carry the patient, new question, optional conversation identifier and
 provider selection; Hub requests require a product profile.
 
-This transport is available for the conversation integration. The current chat
-panel continues to use `/search/stream`; this contribution does not change its
-rendering or session behavior.
+The conversation panel uses this transport. `useStreaming: false` suppresses
+incremental display while retaining the selected provider/profile, conversation
+identity, history, cancellation and review status. Any supplied enabled reasoning
+is then offered only after the complete answer arrives. The transport still uses
+`/chat/stream`; this display preference does not yet suppress backend token generation.
+A provider that emits no token, reasoning, structured-block, review or In-Depth
+events still delivers its supported complete answer. No alternate provider or
+model is selected to obtain a missing feature.
+
+Stop retains displayed answer or enabled reasoning, drops temporary previews and
+marks unfinished checks and In-Depth as interrupted. Once the direct answer settles,
+a new question may preempt trailing In-Depth. A turn whose answer is still being
+checked keeps running when the panel closes; the in-flight turn is tracked per
+patient rather than per panel, so a reopened panel can stop or preempt it, and it
+never blocks a question about another patient. Completed responses do not pull a
+reader away from earlier transcript content. Feedback and Copy appear once the
+direct answer settles, without waiting for In-Depth. Feedback uses the numeric audit
+id internally and sends the existing backend `questionId` field. A pre-check
+"Original model answer" stays collapsed under the checked one. A restored question
+with no saved answer says so instead of showing an empty answer.
+
+This source requires a backend build that includes the conversation endpoints and
+provider contracts of
+[openmrs-module-chartsearchai#622](https://github.com/openmrs/openmrs-module-chartsearchai/pull/622).
+Local component checks do not establish combined runtime acceptance.
 
 The client checks the lifecycle rules it can see event by event: the preview may not
 resume once committed reasoning began, reasoning ends once answer tokens begin, and,
@@ -384,6 +422,6 @@ provider/profile selections. Logout or a user change clears them together with t
 messages and reasoning-display preference; refreshing the same user's session
 preserves them. These values remain in memory, not browser storage.
 
-These client and state contracts support the later conversation-hook integration.
-The visible panel still uses the existing search workflow; history hydration and
-the New chat control are not activated by this extraction.
+The panel hydrates this history and offers New chat even before the first question.
+An expired or failed turn remains visible with its recorded error, while interrupted
+review or In-Depth is not restored as permanently pending work.

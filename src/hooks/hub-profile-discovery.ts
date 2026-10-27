@@ -114,15 +114,16 @@ export function selectHubProfile(profileId: string): void {
 }
 
 /**
- * Keep Hub profile discovery running while the Hub is the selected provider. Both the profile
- * picker and the conversation hook use this, so whether a question may be sent never depends on
- * the picker being mounted. Switching to another provider, or the last user unmounting, stops
- * discovery and its retries.
+ * Keep Hub profile discovery running while the Hub is the provider in use. Both the profile picker
+ * and the conversation hook use this, so whether a question may be sent never depends on the picker
+ * being mounted. Discovery and its retries stop once no user is on the Hub.
+ *
+ * @param providerId the provider this user's requests go to; the session's selection by default
  */
-export function useHubProfileDiscovery(): void {
+export function useHubProfileDiscovery(providerId?: string | null): void {
   const { showModelPicker } = useConfig<ChartSearchAiConfig>();
   const { selectedProviderId } = useStore(chatSessionStore);
-  const isHub = selectedProviderId === 'hub';
+  const isHub = (providerId === undefined ? selectedProviderId : providerId) === 'hub';
   const preserveExplicit = showModelPicker !== false;
 
   useEffect(() => {
@@ -131,7 +132,7 @@ export function useHubProfileDiscovery(): void {
     refreshHubProfiles(preserveExplicit);
     return () => {
       consumers -= 1;
-      if (consumers === 0 || chatSessionStore.getState().selectedProviderId !== 'hub') {
+      if (consumers === 0) {
         stopHubProfileDiscovery();
       }
     };

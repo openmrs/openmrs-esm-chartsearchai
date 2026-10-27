@@ -4,25 +4,29 @@ import { MenuButton, MenuItem, MenuItemDivider, MenuItemRadioGroup } from '@carb
 import { useStore } from '@openmrs/esm-framework';
 import { PROFILE_DISCOVERY_RETRY_MS } from '../hooks/hub-profile-discovery';
 import { fetchProviders, type ProviderListResponse } from '../api/chartsearchai';
-import { chatSessionStore } from '../store/chat-session.store';
+import { chatSessionStore, requestProviderFor } from '../store/chat-session.store';
 import { useMenuTriggerName } from './menu-trigger-name';
 import styles from './provider-picker.scss';
 
 interface ProviderPickerProps {
-  /** Called with the newly selected provider id when the user switches provider. */
-  onSwitched?: (providerId: string) => void;
+  /** Request a provider change; the caller commits shared state after opening its conversation. */
+  onSelect?: (providerId: string) => void;
+  disabled?: boolean;
+  /** The panel's patient, whose conversation's provider the picker shows. */
+  patientUuid?: string;
 }
 
 /**
  * Clinical-answer provider picker (bundled local inference vs. the med-agent-hub
  * relay). A single ready provider needs no picker. An unavailable saved selection
  * stays visible so the user can explicitly choose a replacement. The caller starts
- * a fresh conversation through onSwitched because the backend attributes each
+ * a fresh conversation through onSelect because the backend attributes each
  * conversation to a single provider and never silently falls back.
  */
-const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSwitched }) => {
+const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSelect, disabled = false, patientUuid }) => {
   const { t } = useTranslation();
-  const { selectedProviderId } = useStore(chatSessionStore);
+  const sessionState = useStore(chatSessionStore);
+  const { selectedProviderId } = sessionState;
   const [data, setData] = useState<ProviderListResponse | null>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
 
@@ -34,9 +38,18 @@ const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSwitched }) => {
         .then((result) => {
           if (controller.signal.aborted) return;
           setData(result);
+          const providers = Array.isArray(result?.providers) ? result.providers : [];
+          // Configuration, not a user's state, so it outlives logout like the list itself.
+          chatSessionStore.setState({
+            providerCapabilities: Object.fromEntries(
+              providers.map((provider) => [
+                provider.id,
+                Array.isArray(provider.capabilities) ? provider.capabilities : [],
+              ]),
+            ),
+          });
           // An enabled provider that is not ready yet can recover; read again so it can be chosen
           // without a remount. A disabled one is configuration and stays as reported.
-          const providers = Array.isArray(result?.providers) ? result.providers : [];
           if (providers.some((provider) => provider.enabled && !provider.ready)) {
             retry = setTimeout(discover, PROFILE_DISCOVERY_RETRY_MS);
           }
@@ -66,7 +79,7 @@ const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSwitched }) => {
   );
 
   // Availability never changes the provider bound to an existing conversation.
-  const effectiveProviderId = selectedProviderId ?? data?.defaultProvider ?? null;
+  const effectiveProviderId = requestProviderFor(sessionState, patientUuid) ?? data?.defaultProvider ?? null;
 
   const effectiveProvider = useMemo(
     () => providers.find((provider) => provider.id === effectiveProviderId) ?? null,
@@ -81,20 +94,23 @@ const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSwitched }) => {
   // know which contract applies. This does not start a new conversation: it records the provider
   // the backend would select anyway.
   useEffect(() => {
-    if (effectiveProviderId && selectedProviderId === null) {
-      chatSessionStore.setState({ selectedProviderId: effectiveProviderId });
+    if (data?.defaultProvider && selectedProviderId === null) {
+      chatSessionStore.setState({ selectedProviderId: data.defaultProvider });
     }
-  }, [effectiveProviderId, selectedProviderId]);
+  }, [data?.defaultProvider, selectedProviderId]);
 
   const handleSelect = useCallback(
     (providerId: string) => {
       if (providerId === effectiveProviderId) {
         return;
       }
-      chatSessionStore.setState({ selectedProviderId: providerId });
-      onSwitched?.(providerId);
+      if (onSelect) {
+        onSelect(providerId);
+      } else {
+        chatSessionStore.setState({ selectedProviderId: providerId });
+      }
     },
-    [effectiveProviderId, onSwitched],
+    [effectiveProviderId, onSelect],
   );
 
   if (!data || (!data.pickerVisible && providerReady)) {
@@ -107,6 +123,7 @@ const ProviderPicker: React.FC<ProviderPickerProps> = ({ onSwitched }) => {
         <MenuButton
           ref={triggerRef}
           data-testid="chartsearchai-provider-picker"
+          disabled={disabled}
           label={triggerLabel}
           kind="ghost"
           size="sm"
