@@ -1232,3 +1232,77 @@ export function chatPatientChartStream(
       }
     });
 }
+
+export interface ChatHistoryMessage extends Partial<AiAnswerLimits> {
+  messageId: string;
+  auditLogId?: number;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  /** Null on an assistant row whose turn has not finished, such as a checked answer whose In-Depth tail
+   *  runs. */
+  terminalState?: 'turn_done' | 'turn_error' | null;
+  problemCode?: string | null;
+  references?: AiReference[];
+  blocks?: AiBlock[];
+  /**
+   * Deterministic safety advisories persisted with the answer: the module's own drug-reference
+   * chips on a bundled turn, the selected Hub profile's on a Hub turn.
+   */
+  safetyWarnings?: AiSafetyWarning[];
+  /** checked/limited/unavailable — present alongside safetyWarnings, even when it's empty. */
+  safetyStatus?: AiSafetyStatus;
+  /** Canonical safety result, persisted with the assistant row for reload and review. */
+  safetyCheck?: AiSafetyCheck;
+  confidence?: AiConfidence;
+  answerValidation?: AiAnswerValidation;
+  inDepth?: AiInDepth;
+  /** Absent on an assistant row whose turn has not finished. */
+  createdAt?: number;
+}
+
+export interface ChatHistoryResponse {
+  session: string | null;
+  /** The provider that produced this conversation (bundled/hub). Null or absent when there is no
+   *  conversation yet (empty history). */
+  provider?: string | null;
+  /** The provider's chart mode for this conversation. Null or absent when there is no conversation. */
+  mode?: string | null;
+  messages: ChatHistoryMessage[];
+}
+
+/**
+ * Fetch the active conversation's history for the panel to hydrate from. Returns the session and
+ * its message list in chronological order. If no conversation exists, the server returns a null
+ * session and an empty message list without creating one.
+ */
+export async function fetchChatHistory(
+  patientUuid: string,
+  abortController?: AbortController,
+): Promise<ChatHistoryResponse> {
+  const response = await openmrsFetch(`${BASE_PATH}/chat?patient=${encodeURIComponent(patientUuid)}`, {
+    signal: abortController?.signal,
+  });
+  return response.data as ChatHistoryResponse;
+}
+
+/**
+ * Close the current active chat session for this (patient, user) pair and open a fresh one.
+ * Returns the new conversation as a history response with its session and an empty message list.
+ */
+export async function startNewChat(
+  patientUuid: string,
+  providerId?: string,
+  abortController?: AbortController,
+): Promise<ChatHistoryResponse> {
+  const body: Record<string, string> = { patient: patientUuid };
+  if (providerId?.trim()) {
+    body.provider = providerId;
+  }
+  const response = await openmrsFetch(`${BASE_PATH}/chat/new`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: abortController?.signal,
+  });
+  return response.data as ChatHistoryResponse;
+}

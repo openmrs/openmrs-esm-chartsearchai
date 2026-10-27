@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { NO_ANSWER_LIMITS } from '../utils/answer-limits';
 import { getSessionStore } from '@openmrs/esm-framework';
-import { chatSessionStore, setupChatSessionLogoutCleanup } from './chat-session.store';
+import { chatSessionStore, initialChatSessionState, setupChatSessionLogoutCleanup } from './chat-session.store';
 
 const sessionStore = getSessionStore();
 
-const seedMessages = () =>
+const seedSession = () =>
   chatSessionStore.setState({
     messagesByPatient: {
       'patient-1': [
@@ -23,47 +23,67 @@ const seedMessages = () =>
         },
       ],
     },
+    sessionUuidByPatient: { 'patient-1': 'server-session-handle-1' },
+    selectedProfileId: 'single-e4b-checked',
+    selectedProviderId: 'hub',
+    profileDiscoveryStatus: 'ready',
+    reasoningExpanded: true,
   });
 
 beforeEach(() => {
-  chatSessionStore.setState({ messagesByPatient: {} });
+  chatSessionStore.setState(initialChatSessionState(), true);
   sessionStore.setState({ loaded: false, session: null });
 });
 
+describe('chatSessionStore initial state', () => {
+  it('starts with no history, no handles, no selections and profile discovery loading', () => {
+    expect(initialChatSessionState()).toStrictEqual({
+      messagesByPatient: {},
+      sessionUuidByPatient: {},
+      selectedProfileId: null,
+      profileDiscoveryStatus: 'loading',
+      selectedProviderId: null,
+    });
+  });
+});
+
 describe('chatSessionStore logout cleanup', () => {
-  it('clears messages when the session transitions from a logged-in user to logged-out', () => {
+  it('clears all per-session state when the session transitions from a logged-in user to logged-out', () => {
     sessionStore.setState({
       loaded: true,
       session: { sessionId: 's1', authenticated: true, user: { uuid: 'user-1' } } as never,
     });
 
     const unsubscribe = setupChatSessionLogoutCleanup();
-    seedMessages();
+    seedSession();
 
     sessionStore.setState({
       loaded: true,
       session: { sessionId: '', authenticated: false } as never,
     });
 
-    expect(chatSessionStore.getState().messagesByPatient).toEqual({});
+    // Strictly the fresh state: a field the reset did not name would survive a merge.
+    expect(chatSessionStore.getState()).toStrictEqual(initialChatSessionState());
     unsubscribe();
   });
 
-  it('clears messages when a different user logs in', () => {
+  it('clears all per-session state when a different user logs in', () => {
     sessionStore.setState({
       loaded: true,
       session: { sessionId: 's1', authenticated: true, user: { uuid: 'user-1' } } as never,
     });
 
     const unsubscribe = setupChatSessionLogoutCleanup();
-    seedMessages();
+    seedSession();
 
     sessionStore.setState({
       loaded: true,
       session: { sessionId: 's2', authenticated: true, user: { uuid: 'user-2' } } as never,
     });
 
-    expect(chatSessionStore.getState().messagesByPatient).toEqual({});
+    // Cross-user leak vectors: server session handle and picked profile must not
+    // bleed from user-1 into user-2's session, nor any field the reset did not name.
+    expect(chatSessionStore.getState()).toStrictEqual(initialChatSessionState());
     unsubscribe();
   });
 
@@ -74,14 +94,43 @@ describe('chatSessionStore logout cleanup', () => {
     });
 
     const unsubscribe = setupChatSessionLogoutCleanup();
-    seedMessages();
+    seedSession();
 
     sessionStore.setState({
       loaded: true,
       session: { sessionId: 's1', authenticated: true, user: { uuid: 'user-1' } } as never,
     });
 
-    expect(chatSessionStore.getState().messagesByPatient).not.toEqual({});
+    const state = chatSessionStore.getState();
+    expect(state.messagesByPatient).not.toEqual({});
+    expect(state.sessionUuidByPatient).not.toEqual({});
+    expect(state.selectedProfileId).not.toBeNull();
+    expect(state.selectedProviderId).toBe('hub');
+    expect(state.profileDiscoveryStatus).toBe('ready');
+    expect(state.reasoningExpanded).toBe(true);
+    unsubscribe();
+  });
+
+  it('keeps the state of the same user when a session refetch fails and leaves the store unloaded', () => {
+    sessionStore.setState({
+      loaded: true,
+      session: { sessionId: 's1', authenticated: true, user: { uuid: 'user-1' } } as never,
+    });
+
+    const unsubscribe = setupChatSessionLogoutCleanup();
+    seedSession();
+
+    // What a failed /session refetch writes from framework 5.5 until 11.
+    sessionStore.setState({ loaded: false, session: null });
+    sessionStore.setState({
+      loaded: true,
+      session: { sessionId: 's1', authenticated: true, user: { uuid: 'user-1' } } as never,
+    });
+
+    const state = chatSessionStore.getState();
+    expect(state.sessionUuidByPatient).toEqual({ 'patient-1': 'server-session-handle-1' });
+    expect(state.selectedProviderId).toBe('hub');
+    expect(state.selectedProfileId).toBe('single-e4b-checked');
     unsubscribe();
   });
 });
