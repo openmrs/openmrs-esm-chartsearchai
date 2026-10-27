@@ -26,7 +26,9 @@ const seedSession = () =>
     sessionUuidByPatient: { 'patient-1': 'server-session-handle-1' },
     selectedProfileId: 'single-e4b-checked',
     selectedProviderId: 'hub',
+    profileExplicitlySelected: true,
     profileDiscoveryStatus: 'ready',
+    hubProfiles: [],
     reasoningExpanded: true,
   });
 
@@ -41,7 +43,9 @@ describe('chatSessionStore initial state', () => {
       messagesByPatient: {},
       sessionUuidByPatient: {},
       selectedProfileId: null,
+      profileExplicitlySelected: false,
       profileDiscoveryStatus: 'loading',
+      hubProfiles: null,
       selectedProviderId: null,
     });
   });
