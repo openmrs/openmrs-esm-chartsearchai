@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { WatsonHealthAiResults } from '@carbon/react/icons';
-import { useConfig, usePatient, useStore } from '@openmrs/esm-framework';
-import { warmupPatient } from '../api/chartsearchai';
+import { useConfig, usePatient } from '@openmrs/esm-framework';
 import { type ChartSearchAiConfig } from '../config-schema';
-import { chatSessionStore, requestProviderFor } from '../store/chat-session.store';
+import { warmupPatient } from '../api/chartsearchai';
 import AiSearchPanel from './ai-search-panel.component';
 import styles from './ai-search-button.scss';
 
@@ -12,22 +11,18 @@ const AiSearchButton: React.FC = () => {
   const { patientUuid } = usePatient();
   const { t } = useTranslation();
   const { chatLaunchMode } = useConfig<ChartSearchAiConfig>();
-  const sessionState = useStore(chatSessionStore);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
 
-  const effectiveProviderId = requestProviderFor(sessionState, patientUuid);
-
-  // Pre-warm the server-side LLM prompt cache on patient open when the bundled
-  // provider is in use. The cleanup aborts an in-flight warmup if the user
-  // switches patients or providers before it finishes — server-side stale-skip
-  // handles late completions, but cancelling saves a server-thread hop and a DB
-  // hit per discarded warmup.
+  // Pre-warm the server-side LLM prompt cache on patient open. The cleanup
+  // aborts an in-flight warmup if the user switches patients before it
+  // finishes — server-side stale-skip handles late completions, but cancelling
+  // saves a server-thread hop and a DB hit per discarded warmup.
   useEffect(() => {
-    if (!patientUuid || effectiveProviderId === 'hub') return;
+    if (!patientUuid) return;
     const controller = new AbortController();
     warmupPatient(patientUuid, controller.signal);
     return () => controller.abort();
-  }, [patientUuid, effectiveProviderId]);
+  }, [patientUuid]);
 
   const togglePanel = useCallback(() => {
     setIsPanelOpen((prev) => !prev);

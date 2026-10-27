@@ -12,7 +12,7 @@ vi.mock('../api/chartsearchai', () => ({
 const mockSubmitFeedback = submitFeedback as Mock;
 
 const defaultProps = {
-  auditLogId: 42,
+  questionId: 'q-123',
 };
 
 beforeEach(() => {
@@ -39,7 +39,7 @@ describe('AiFeedback', () => {
     });
 
     expect(mockSubmitFeedback).toHaveBeenCalledWith({
-      questionId: '42',
+      questionId: 'q-123',
       rating: 'positive',
     });
   });
@@ -69,7 +69,7 @@ describe('AiFeedback', () => {
     });
 
     expect(mockSubmitFeedback).toHaveBeenCalledWith({
-      questionId: '42',
+      questionId: 'q-123',
       rating: 'negative',
       comment: 'Answer was inaccurate',
     });
@@ -87,13 +87,13 @@ describe('AiFeedback', () => {
     });
 
     expect(mockSubmitFeedback).toHaveBeenCalledWith({
-      questionId: '42',
+      questionId: 'q-123',
       rating: 'negative',
       comment: undefined,
     });
   });
 
-  it('shows an error and does not claim success if the API call fails', async () => {
+  it('shows thanks even if the API call fails', async () => {
     mockSubmitFeedback.mockRejectedValueOnce(new Error('Network error'));
     const user = userEvent.setup();
     render(<AiFeedback {...defaultProps} />);
@@ -101,9 +101,7 @@ describe('AiFeedback', () => {
     await user.click(screen.getByRole('button', { name: /^helpful$/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent('Feedback could not be saved. Please try again.');
+      expect(screen.getByText('Thanks for your feedback')).toBeInTheDocument();
     });
-    expect(screen.queryByText('Thanks for your feedback')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Helpful' })).toBeInTheDocument();
   });
 });

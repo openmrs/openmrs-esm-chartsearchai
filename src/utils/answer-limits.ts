@@ -30,19 +30,20 @@ export const NO_ANSWER_LIMITS: MessageAnswerLimits = {
 };
 
 /**
- * Carries the answer-limit measurements from one event of a turn (`answer_done`, the trailing
- * `evidence_updated`, or `turn_done`) onto what the message already holds.
+ * Carries the answer-limit measurements from a response — or from the trailing `grounded` event —
+ * onto what the message already holds.
  *
- * Falls back to the previous value rather than assigning outright, because `answer_done` can state
- * nulls for every measurement taken after the answer and a later event supplies them, while
- * `conditionRuleCoverage` is already final on `answer_done` and merely re-sent. So a null or absent
+ * Falls back to the previous value rather than assigning outright, because under
+ * `chartsearchai.grounding.async=true` the early `done` event states nulls for every measurement
+ * taken after the answer and the trailing `grounded` event supplies them, while
+ * `conditionRuleCoverage` is already final on `done` and merely re-sent. So a null or absent
  * value never erases one already stated, whichever order a given server states them in. A stated
  * value DOES replace an earlier one — including `[]` replacing null, which is the whole
  * distinction between "the check ran and named none" and "no measurement stated".
  *
  * One of two enumerations of these keys — {@link NO_ANSWER_LIMITS} above is the other — and
- * those two are the WHOLE of the compile-time backstop. Verified with `tsc`: adding a key to
- * {@link AiAnswerLimits} reddens exactly these two functions and nothing else. It does NOT
+ * those two are the WHOLE of the compile-time backstop. Verified with `tsc`: adding a fifth key
+ * to {@link AiAnswerLimits} reddens exactly these two functions and nothing else. It does NOT
  * redden the `ChatMessage` literals or the hook, because each literal spreads
  * `...NO_ANSWER_LIMITS` and the hook goes through `mergeDisclosure` — this doc claimed all three
  * for a while, which overstated the safety net by two. Nor the panel, which reads its props by

@@ -5,53 +5,49 @@ import { type FeedbackRating, submitFeedback } from '../api/chartsearchai';
 import styles from './ai-feedback.scss';
 
 interface AiFeedbackProps {
-  auditLogId: number;
+  questionId: string;
   onComplete?: () => void;
 }
 
-const AiFeedback: React.FC<AiFeedbackProps> = ({ auditLogId, onComplete }) => {
+const AiFeedback: React.FC<AiFeedbackProps> = ({ questionId, onComplete }) => {
   const { t } = useTranslation();
   const [rating, setRating] = useState<FeedbackRating | null>(null);
   const [comment, setComment] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState(false);
 
   const handleRate = useCallback(
     async (selectedRating: FeedbackRating) => {
       setRating(selectedRating);
 
       if (selectedRating === 'positive') {
-        setSubmitError(false);
+        setSubmitted(true);
+        onComplete?.();
         try {
-          await submitFeedback({ questionId: String(auditLogId), rating: selectedRating });
-          setSubmitted(true);
-          onComplete?.();
+          await submitFeedback({ questionId, rating: selectedRating });
         } catch {
-          setSubmitError(true);
-          setRating(null);
+          // Silently fail — feedback is non-critical
         }
       }
     },
-    [auditLogId, onComplete],
+    [questionId, onComplete],
   );
 
   const handleCommentSubmit = useCallback(async () => {
     setIsSubmitting(true);
-    setSubmitError(false);
     try {
       await submitFeedback({
-        questionId: String(auditLogId),
+        questionId,
         rating: 'negative',
         comment: comment.trim() || undefined,
       });
-      setSubmitted(true);
-      onComplete?.();
     } catch {
-      setSubmitError(true);
+      // Silently fail
     }
     setIsSubmitting(false);
-  }, [auditLogId, comment, onComplete]);
+    setSubmitted(true);
+    onComplete?.();
+  }, [questionId, comment, onComplete]);
 
   const handleCommentKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -73,7 +69,6 @@ const AiFeedback: React.FC<AiFeedbackProps> = ({ auditLogId, onComplete }) => {
 
   return (
     <div className={styles.feedbackContainer}>
-      {submitError && <div role="alert">{t('feedbackFailed', 'Feedback could not be saved. Please try again.')}</div>}
       {!rating && (
         <div className={styles.ratingRow}>
           <span className={styles.promptText}>{t('wasThisHelpful', 'Was this helpful?')}</span>
