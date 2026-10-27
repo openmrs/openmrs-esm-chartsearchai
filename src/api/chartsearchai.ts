@@ -11,24 +11,8 @@ const BASE_PATH = `${restBaseUrl}/chartsearchai`;
  */
 export const SESSION_EXPIRED_ERROR_CODE = 'chartsearchai:session-expired';
 
-// Stable codes chatPatientChartStream emits via onError for its own transport failures, for the
-// same reason as SESSION_EXPIRED_ERROR_CODE: the conversation panel translates them. Problem codes
-// from a turn_error event and JSON error bodies from the controller pass through unchanged.
-/** The stream closed before {@code turn_done} or {@code turn_error}. */
-export const STREAM_INCOMPLETE_ERROR_CODE = 'chartsearchai:stream-incomplete';
-/** An event could not be parsed, or broke the canonical lifecycle order or capability gating. */
-export const STREAM_INVALID_ERROR_CODE = 'chartsearchai:stream-invalid';
-/** The response has no readable body stream. */
-export const STREAMING_UNSUPPORTED_ERROR_CODE = 'chartsearchai:streaming-unsupported';
-/** The server refused the request with a non-auth status and no JSON error body. */
-export const STREAM_REQUEST_FAILED_ERROR_CODE = 'chartsearchai:request-failed';
-/** The request could not be sent, or the connection broke while the stream was open. */
-export const STREAM_CONNECTION_FAILED_ERROR_CODE = 'chartsearchai:connection-failed';
-
 export interface AiReference {
   index: number;
-  /** Stable evidence-ledger id supplied by med-agent-hub. */
-  sourceId?: string;
   resourceType: string;
   /**
    * OpenMRS UUID of the cited record (the backend serializes this field as `resourceUuid`).
@@ -36,15 +20,6 @@ export interface AiReference {
    */
   resourceUuid: string;
   date: string;
-  /** Resolved source record text, when supplied by the hub staged path. */
-  sourceText?: string;
-  /** Human-readable source title supplied by the evidence ledger. */
-  title?: string;
-  /** Whether the citation index resolved to a record in this turn's evidence ledger. */
-  resolutionStatus?: 'resolved' | 'unresolved';
-  /** Answer, In-Depth, or table locations that used this source. */
-  usage?: Array<{ location: string; text: string; path?: string }>;
-
   /**
    * Citation grounding verdict from the backend: true = the cited record
    * supports the claim, false = it does not, null/absent = unverified.
@@ -73,24 +48,6 @@ export interface AiReference {
    * certifiable. So do not render any null as evidence that the module tried.
    */
   grounded?: boolean | null;
-  /**
-   * Lifecycle/status for citation grounding. `checking` means the backend has resolved
-   * the source record but final support verification is still running.
-   */
-  groundingStatus?: 'checking' | 'verified' | 'unsupported' | 'unchecked' | 'mixed';
-  /** Whether support was evaluated from this record alone or a cited source set. */
-  groundingScope?: 'record' | 'source_set';
-  /** Citation indices evaluated together when groundingScope is source_set. */
-  groundingGroup?: number[];
-  /** Claim/path-level verdicts retained when one record is used more than once. */
-  groundingChecks?: Array<{
-    status: 'verified' | 'unsupported' | 'unchecked';
-    claim: string;
-    location: string;
-    path?: string;
-    source_indices: number[];
-  }>;
-
   /**
    * Which corpus the cited record came from: `chart` = the patient's own record,
    * `reference` = module-supplied reference material (a drug-reference entry, a
@@ -376,133 +333,11 @@ export interface AiActiveOrderClaims {
   uncited: number;
 }
 
-/**
- * Honest drug-safety check state: `checked` = the full check ran against real reference data and
- * a real patient context; `limited` = only a subset of checks ran; `unavailable` = the check could
- * not run at all (no patient context, or the policy has drug safety disabled). An empty
- * `safetyWarnings` list must never be read as `checked` on its own.
- */
-export type AiSafetyStatus = 'checked' | 'limited' | 'unavailable';
-
-export interface AiSafetyReferencePackage {
-  id?: string;
-  source_format?: string;
-  version?: string;
-  provenance?: unknown;
-  review_state?: 'proposed' | 'evidence_curated' | 'clinically_approved' | 'retired' | string;
-  issues?: string[];
-}
-
-/** Provenance and coverage for the deterministic medication-safety pass. */
-export interface AiSafetyCheck {
-  schema_version?: 'drug_safety.v1' | string;
-  status: AiSafetyStatus;
-  warnings?: AiSafetyWarning[];
-  package?: AiSafetyReferencePackage & {
-    cross_reactivity_review_state?: string;
-    cross_reactivity?: AiSafetyReferencePackage;
-  };
-  coverage?: {
-    mapping_complete?: boolean;
-    exposure_complete?: boolean;
-    execution_complete?: boolean;
-    active_order_count?: number;
-    mapped_active_order_count?: number;
-  };
-  identity_confidence?: 'high' | 'limited' | 'unavailable' | string;
-  issues?: string[];
-}
-
-export interface AiCell {
-  text: string;
-  refs?: number[];
-}
-
-export interface AiTableColumn {
-  key: string;
-  label: string;
-}
-
-export interface AiTableBlock {
-  kind: 'table';
-  title?: string;
-  columns: AiTableColumn[];
-  rows: Array<{ cells: Record<string, AiCell> }>;
-}
-
-export type AiBlock = AiTableBlock;
-
-/** One section's validator confidence: a traffic-light level + an optional caveat note. */
-export interface AiConfidenceSection {
-  level: 'green' | 'yellow' | 'red';
-  note?: string;
-}
-
-/**
- * Per-section confidence metadata emitted by the selected med-agent-hub profile.
- */
-export interface AiConfidence {
-  answer?: AiConfidenceSection;
-  in_depth?: AiConfidenceSection;
-}
-
-export interface AiInDepth {
-  status: 'pending' | 'complete' | 'failed' | 'needs_review';
-  answer?: string;
-  error?: string;
-  validation?: {
-    status?: 'checked' | 'edited' | 'needs_review' | 'unavailable';
-    review_status?: 'checked' | 'edited' | 'needs_review' | 'unavailable';
-    summary?: string;
-    [key: string]: unknown;
-  };
-  /** Pre-check model claims rendered for review. Never the shipped answer. */
-  reviewDraft?: string;
-  /** References resolved specifically for reviewDraft; kept separate from final answer evidence. */
-  reviewReferences?: AiReference[];
-}
-
-type AiInDepthEvent = Partial<AiSearchResponse> & { messageId?: string; inDepth: AiInDepth };
-
-export type AiAnswerValidationStatus = 'checking' | 'checked' | 'edited' | 'needs_review' | 'unavailable';
-
-export interface AiAnswerValidation {
-  status: AiAnswerValidationStatus;
-  label?: string;
-  summary?: string;
-  issues?: unknown[];
-  completedAt?: string;
-  originalAnswer?: string;
-  /** References resolved for originalAnswer; never substitute the final answer's references. */
-  originalReferences?: AiReference[];
-  /** Pre-check table/list blocks. Review-only and never part of the shipped answer blocks. */
-  originalBlocks?: AiBlock[];
-}
-
 export interface AiSearchResponse {
   answer: string;
   references: AiReference[];
   /** Empty/absent unless the optional drug-reference feature is enabled on the server. */
   safetyWarnings?: AiSafetyWarning[];
-  /** checked/limited/unavailable — present alongside safetyWarnings, even when it's empty. */
-  safetyStatus?: AiSafetyStatus;
-  /** Canonical safety result with source identity, coverage, and limitation reasons. */
-  safetyCheck?: AiSafetyCheck;
-  blocks?: AiBlock[];
-  /** Numeric OpenMRS audit row id used only for feedback. */
-  auditLogId?: number;
-  /** Server-side conversation handle. Present on chat responses only. */
-  session?: string;
-  /** Server-assigned uuid for the assistant message row. Present on chat responses only. */
-  messageId?: string;
-  /** Product profile id that produced this answer. */
-  resolvedModel?: string;
-  /** Per-section check confidence (green/yellow/red + note) from checked hub profiles. */
-  confidence?: AiConfidence;
-  /** Clinician-facing answer check lifecycle for staged checked responses. */
-  answerValidation?: AiAnswerValidation;
-  /** In-Depth analysis attached after the direct answer settles. */
-  inDepth?: AiInDepth;
   /**
    * Citation indices the answer offered as evidence of an active drug order that CANNOT be
    * one — a condition, a visit, an encounter, or an order the chart says is no longer in
@@ -561,9 +396,8 @@ export interface AiSearchResponse {
    * The citation indexes of the safety findings the answer cites whose record says the
    * interaction's clinical significance is unknown, where the answer says nothing of the kind
    * (backend ADR Decision 136). The finding's own caveat the answer left out, never a correction of
-   * its rating. `[]` is not a certificate; `null` or absent is no measurement, which an early
-   * `answer_done` always is. An answer that was already final, such as a cached one, arrives whole on
-   * `answer_done` and may carry it.
+   * its rating. `[]` is not a certificate; `null` or absent is no measurement, which the early
+   * `done` always is.
    */
   unstatedSignificanceQualifiers?: number[] | null;
   /** @see AiInteractionPairs */
@@ -577,7 +411,7 @@ export interface AiSearchResponse {
    *
    * An absent entry is never a claim that a cited order is still in force — an order can be out of
    * force with no end date anywhere — so `[]` is not a certificate of anything. `null` is no
-   * measurement. Final on `answer_done`; later events of the turn re-send it.
+   * measurement. Final on the early `done` under async grounding; the `grounded` event re-sends it.
    */
   orderStopDates?: AiOrderStopDate[] | null;
   /**
@@ -625,12 +459,13 @@ export interface AiSearchResponse {
  * on the wire type, and referenced by the chat message and the panel props so the three cannot
  * drift — in particular the reading that an empty array is not a certificate.
  *
- * `activeOrderClaims` is not optional among them: it is the key that separates the two readings of
- * `misattributedOrderCitations: []`, so leaving it out would leave an already-rendered field
+ * FIVE now, not four. `activeOrderClaims` was added to the backend after this client's work on
+ * the other four began, and it is not a sixth nice-to-have: it is the key that separates the two
+ * readings of `misattributedOrderCitations: []`, so leaving it out left an already-rendered field
  * ambiguous in exactly the way that field's own doc warns about.
  *
  * `orderStopDates` is here too, though it states a date rather than a limit: it reaches the panel
- * by the same path, and riding this merge delivers it from whichever turn event states it.
+ * by the same path, and riding this merge is what delivers it from `done` and `grounded` alike.
  */
 export type AiAnswerLimits = Pick<
   AiSearchResponse,
@@ -652,12 +487,30 @@ export type AiAnswerLimits = Pick<
   | 'asksWhetherSheHasTakenADrug'
 >;
 
+/**
+ * What the trailing `grounded` SSE event re-sends. Under `chartsearchai.grounding.async=true`
+ * the `done` event is emitted before validation runs, so it carries `safetyWarnings: []` and a
+ * null for each measurement taken AFTER the answer — `interactionPairs`,
+ * `misattributedOrderCitations`, `unstatedFindingSeverities` — and those arrive only here.
+ *
+ * Two exceptions to that, both of which a client must not gate on this event.
+ * `conditionRuleCoverage` is read off the dataset load before the model is called, so it is
+ * already final on the early `done` and is merely re-sent here. And on an answer-cache hit no
+ * early `done` is emitted at all: the single `done` carries the replayed final answer, so every
+ * field reads as the original request measured it and no `grounded` event follows.
+ */
+export type AiGroundedUpdate = Pick<AiSearchResponse, 'references' | 'safetyWarnings'> & AiAnswerLimits;
+
 export type FeedbackRating = 'positive' | 'negative';
 
 export interface AiFeedback {
   questionId: string;
   rating: FeedbackRating;
   comment?: string;
+}
+
+export interface AiSearchError {
+  error: string;
 }
 
 /**
@@ -694,108 +547,85 @@ export async function submitFeedback(feedback: AiFeedback): Promise<void> {
   }
 }
 
-async function streamRequestError(response: Response): Promise<string> {
-  let bodyError: string | null = null;
-  try {
-    const body = await response.json();
-    if (body?.error) {
-      bodyError = body.error;
-    }
-  } catch {
-    // non-JSON body (a bare container/auth response, not a controller error)
+/**
+ * Sends a synchronous AI search request.
+ */
+export async function searchPatientChart(
+  patientUuid: string,
+  question: string,
+  abortController?: AbortController,
+): Promise<AiSearchResponse> {
+  const response = await openmrsFetch(`${BASE_PATH}/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ patient: patientUuid, question }),
+    signal: abortController?.signal,
+  });
+  if (!response.data?.answer) {
+    throw new Error('Unexpected response from server');
   }
-  if (bodyError) {
-    // The controller always serializes its errors as JSON, so a parseable error is a genuine
-    // server-side failure — surface it verbatim.
-    return bodyError;
-  }
-  if (response.status >= 500 || response.status === 401 || response.status === 403) {
-    // No JSON body means this came from OpenMRS's auth/session layer, not the controller:
-    // a 401/403, or a 500 that is really "sendRedirect() after the response was committed"
-    // (the SSE stream commits the response, so the expired-session login redirect can't fire
-    // and surfaces as a bare HTML 500). Treat all of these as session expiry — the same
-    // actionable cause as the opaque redirect the caller handles, rather than a cryptic 500.
-    return SESSION_EXPIRED_ERROR_CODE;
-  }
-  return STREAM_REQUEST_FAILED_ERROR_CODE;
+  return response.data as AiSearchResponse;
 }
 
-/** Canonical order of the delta streams; anything after them (answer_done onwards) ranks last. */
-const DELTA_STAGE: Record<string, number> = { preliminary_delta: 1, reasoning_delta: 2, answer_delta: 3 };
-const POST_DELTA_STAGE = 4;
-
 /**
- * Streaming variant for multi-turn chat. SSE (Server-Sent Events) stream, parsed via raw
- * fetch instead of openmrsFetch because openmrsFetch consumes the response body to parse
- * it as JSON, which prevents streaming — we need direct access to response.body (the
- * ReadableStream). The staged endpoint emits answer/validation/in-depth boundary events:
- *   - sends an optional {@code session} uuid so the server can reuse the
- *     prior conversation thread
- *   - forwards a supplied nonblank product profile; med-agent-hub requests require one
- *   - accepts the canonical {@code turn_started} session marker
+ * Opens an SSE (Server-Sent Events) stream for AI search.
  *
- * The server is the source of truth for conversation history — the client
- * sends only the new user message, not the rendered transcript.
+ * Uses raw fetch instead of openmrsFetch because openmrsFetch consumes
+ * the response body to parse it as JSON, which prevents streaming.
+ * We need direct access to response.body (the ReadableStream).
  */
-export function chatPatientChartStream(
+export function searchPatientChartStream(
   patientUuid: string,
-  sessionUuid: string | null,
   question: string,
   callbacks: {
-    onSession: (uuid: string) => void;
-    onTurnStarted?: (meta: { session?: string; provider?: string; messageId?: string }) => void;
-    /**
-     * One `answer_delta` frame: a slice of the answer text from a provider that declares
-     * `token_streaming` (the bundled engine). Additive and provisional; `answer_done` restates the
-     * whole answer. A provider that streams no tokens (the hub) never fires it.
-     */
-    onToken?: (chunk: string) => void;
-    /** One `reasoning_delta` frame: committed reasoning, shown before any answer exists. */
-    onReasoning?: (chunk: string) => void;
-    /**
-     * One `preliminary_delta` frame: the optional progressive PREVIEW reasoning
-     * (`chartsearchai.progressiveReasoning.enabled`, default off). Provisional and separate from
-     * `onReasoning` for two reasons the text cannot carry: its `[N]` markers index an
-     * independently-numbered top-K chart rather than the records the answer cites, so they must be
-     * stripped; and committed reasoning REPLACES it rather than continuing it.
-     */
-    onPreliminary?: (chunk: string) => void;
-    onAnswerDone?: (response: AiSearchResponse) => void;
-    onAnswerValidation?: (response: AiSearchResponse) => void;
-    onEvidenceUpdated?: (response: AiSearchResponse) => void;
-    onInDepthPending?: (payload: AiInDepthEvent) => void;
-    onInDepthDone?: (payload: AiInDepthEvent) => void;
-    onInDepthError?: (payload: AiInDepthEvent) => void;
+    onToken: (token: string) => void;
     onDone: (response: AiSearchResponse) => void;
     onError: (error: string) => void;
+    /**
+     * Early citations, emitted by the server the moment the answer's references are
+     * known — before the (slower) grounding pass attaches verdicts. Lets the UI show
+     * the citations immediately as unverified; the {@code done} event then re-sends
+     * the same references with their grounding verdicts. Optional and best-effort: a
+     * missing or malformed event is ignored, since {@code done} is authoritative.
+     */
+    onReferences?: (references: AiReference[]) => void;
+    /**
+     * Trailing grounding verdicts, emitted only when the server runs with
+     * {@code chartsearchai.grounding.async=true}: in that mode {@code done} arrives as soon
+     * as the answer is complete (its references carry no verdicts) and this event re-sends
+     * the same references with their {@code grounded} verdicts once the (slower) Tier-2
+     * verification finishes. Best-effort like {@code onReferences}: when the server runs in
+     * classic mode the event never arrives and {@code done}'s references are already final;
+     * a malformed payload just leaves citations rendered as unverified.
+     *
+     * It carries more than the verdicts: the final {@code safetyWarnings} and the answer-limit
+     * measurements ({@code interactionPairs}, {@code misattributedOrderCitations},
+     * {@code unstatedFindingSeverities}) are all null/empty on the early {@code done} in that
+     * mode and arrive only here, so the whole payload is handed over rather than the
+     * references alone.
+     */
+    onGrounded?: (update: AiGroundedUpdate) => void;
+    /**
+     * Live reasoning ("thinking") chunks, streamed by the server before the answer so the
+     * UI can show progress and the model's rationale instead of a dead spinner during the
+     * reasoning phase. Scratchpad only — render distinctly (subdued, transient), never as
+     * the answer.
+     */
+    onThinking?: (chunk: string) => void;
+    /**
+     * Preliminary reasoning chunks from the optional progressive-reasoning preview pass (server
+     * GP {@code chartsearchai.progressiveReasoning.enabled}). Streamed before {@code onThinking}
+     * over only the top-K focused chart, so the UI can show reasoning almost immediately on a
+     * slow host. It is provisional and can be wrong until the committed full-chart reasoning
+     * arrives — render it distinctly (subdued/labelled as an in-progress preview, not the answer)
+     * and REPLACE it the moment the first {@code onThinking} (or {@code onToken}) chunk arrives.
+     * Never fires when the server GP is off.
+     */
+    onPreliminary?: (chunk: string) => void;
   },
-  abortController: AbortController | undefined,
-  profileId?: string,
-  providerId?: string,
-  /**
-   * The capabilities the selected provider advertises. When supplied, a delta event from a
-   * provider without {@code token_streaming} is rejected; when omitted, only the event order is
-   * checked.
-   */
-  providerCapabilities?: readonly string[],
+  abortController?: AbortController,
 ): void {
-  if (providerId === 'hub' && !profileId?.trim()) {
-    throw new Error('A product profile is required');
-  }
-
-  const url = `${window.openmrsBase}${BASE_PATH}/chat/stream`;
-  const body: Record<string, string> = { patient: patientUuid, question };
-  if (profileId?.trim()) {
-    body.profile = profileId;
-  }
-  // Provider is optional: when omitted the backend applies its configured
-  // default (bundled on a fresh install), never a silent cross-provider fallback.
-  if (providerId?.trim()) {
-    body.provider = providerId;
-  }
-  if (sessionUuid) {
-    body.session = sessionUuid;
-  }
+  const url = `${window.openmrsBase}${BASE_PATH}/search/stream`;
 
   window
     .fetch(url, {
@@ -805,7 +635,7 @@ export function chatPatientChartStream(
         Accept: 'text/event-stream',
         'Disable-WWW-Authenticate': 'true',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ patient: patientUuid, question }),
       credentials: 'include',
       redirect: 'manual',
       signal: abortController?.signal,
@@ -817,14 +647,36 @@ export function chatPatientChartStream(
       }
 
       if (!response.ok) {
-        callbacks.onError(await streamRequestError(response));
+        let bodyError: string | null = null;
+        try {
+          const body = await response.json();
+          if (body?.error) {
+            bodyError = body.error;
+          }
+        } catch {
+          // non-JSON body (a bare container/auth response, not a controller error)
+        }
+        if (bodyError) {
+          // The controller always serializes its errors as JSON, so a parseable error is a genuine
+          // server-side failure — surface it verbatim.
+          callbacks.onError(bodyError);
+        } else if (response.status >= 500 || response.status === 401 || response.status === 403) {
+          // No JSON body means this came from OpenMRS's auth/session layer, not the controller:
+          // a 401/403, or a 500 that is really "sendRedirect() after the response was committed"
+          // (the SSE stream commits the response, so the expired-session login redirect can't fire
+          // and surfaces as a bare HTML 500). Treat all of these as session expiry — the same
+          // actionable cause as the 302 handled above — rather than a cryptic "Server error: 500".
+          callbacks.onError(SESSION_EXPIRED_ERROR_CODE);
+        } else {
+          callbacks.onError(`Server error: ${response.status}`);
+        }
         return;
       }
 
       const reader = response.body;
 
       if (!reader || typeof reader.getReader !== 'function') {
-        callbacks.onError(STREAMING_UNSUPPORTED_ERROR_CODE);
+        callbacks.onError('Streaming not supported by this browser.');
         return;
       }
 
@@ -834,33 +686,6 @@ export function chatPatientChartStream(
       let eventType = '';
       let dataLines: string[] = [];
       let streamFinalized = false;
-      let highestStage = 0;
-
-      const failStream = (message: string) => {
-        streamFinalized = true;
-        callbacks.onError(message);
-      };
-
-      // The lifecycle rules a client can check event by event: the preview may not resume once
-      // committed reasoning began, reasoning ends once answer tokens begin, no delta follows the
-      // answer, and deltas require token_streaming when the caller supplied the capabilities. A
-      // preview out of order or a delta from a provider without token_streaming ends the turn, as
-      // the conformance fixture requires; a late reasoning or answer delta is dropped instead, since
-      // answer_done and turn_done still carry the answer (the bundled repair pass streams its
-      // reasoning after the first pass's answer tokens).
-      const lifecycleVerdict = (event: string): 'accept' | 'drop' | 'reject' => {
-        const deltaStage = DELTA_STAGE[event];
-        if (deltaStage === undefined) {
-          if (event !== 'turn_started' && event !== 'heartbeat' && event !== '') {
-            highestStage = POST_DELTA_STAGE;
-          }
-          return 'accept';
-        }
-        if (providerCapabilities && !providerCapabilities.includes('token_streaming')) return 'reject';
-        if (deltaStage < highestStage) return event === 'preliminary_delta' ? 'reject' : 'drop';
-        highestStage = deltaStage;
-        return 'accept';
-      };
 
       function dispatchEvent() {
         if (dataLines.length === 0) {
@@ -868,308 +693,90 @@ export function chatPatientChartStream(
           return;
         }
         const data = dataLines.join('\n');
-        if (streamFinalized) {
-          eventType = '';
-          dataLines = [];
-          return;
-        }
-        const verdict = lifecycleVerdict(eventType);
-        if (verdict !== 'accept') {
-          if (verdict === 'reject') failStream(STREAM_INVALID_ERROR_CODE);
-          eventType = '';
-          dataLines = [];
-          return;
-        }
-        if (eventType === 'preliminary_delta') {
+        if (eventType === 'token') {
+          callbacks.onToken(data);
+        } else if (eventType === 'thinking') {
+          callbacks.onThinking?.(data);
+        } else if (eventType === 'preliminary') {
           callbacks.onPreliminary?.(data);
-        } else if (eventType === 'answer_delta') {
-          // Raw text, not JSON: the server frames each token as one `data:` line per text line.
-          callbacks.onToken?.(data);
-        } else if (eventType === 'reasoning_delta') {
-          callbacks.onReasoning?.(data);
-        } else if (eventType === 'answer_done') {
+        } else if (eventType === 'references') {
+          // Pre-grounding citations: best-effort, so a malformed payload is ignored rather
+          // than failing the stream — the authoritative references arrive with `done`.
           try {
-            const raw = JSON.parse(data) as AiSearchResponse & { model?: string };
-            callbacks.onAnswerDone?.({ ...raw, resolvedModel: raw.resolvedModel ?? raw.model });
+            const parsed = JSON.parse(data);
+            callbacks.onReferences?.(parsed.references ?? []);
           } catch {
-            failStream(STREAM_INVALID_ERROR_CODE);
+            // ignore; `done` is authoritative
           }
-        } else if (eventType === 'answer_validation') {
+        } else if (eventType === 'grounded') {
+          // Post-done verdicts (async grounding). Best-effort: a malformed payload leaves
+          // the citations unverified rather than erroring an already-complete answer.
           try {
-            const raw = JSON.parse(data) as AiSearchResponse & { model?: string };
-            callbacks.onAnswerValidation?.({ ...raw, resolvedModel: raw.resolvedModel ?? raw.model });
+            const parsed = JSON.parse(data);
+            callbacks.onGrounded?.({ ...parsed, references: parsed.references ?? [] });
           } catch {
-            failStream(STREAM_INVALID_ERROR_CODE);
+            // ignore; citations simply stay unverified
           }
-        } else if (eventType === 'evidence_updated') {
-          try {
-            const raw = JSON.parse(data) as AiSearchResponse & { model?: string };
-            callbacks.onEvidenceUpdated?.({ ...raw, resolvedModel: raw.resolvedModel ?? raw.model });
-          } catch {
-            failStream(STREAM_INVALID_ERROR_CODE);
-          }
-        } else if (eventType === 'indepth_pending') {
-          try {
-            const raw = JSON.parse(data) as AiInDepthEvent;
-            if (!raw.inDepth || typeof raw.inDepth !== 'object') throw new Error('missing inDepth');
-            callbacks.onInDepthPending?.(raw);
-          } catch {
-            failStream(STREAM_INVALID_ERROR_CODE);
-          }
-        } else if (eventType === 'indepth_done') {
-          try {
-            const raw = JSON.parse(data) as AiInDepthEvent;
-            if (!raw.inDepth || typeof raw.inDepth !== 'object') throw new Error('missing inDepth');
-            callbacks.onInDepthDone?.(raw);
-          } catch {
-            failStream(STREAM_INVALID_ERROR_CODE);
-          }
-        } else if (eventType === 'indepth_error') {
-          try {
-            const raw = JSON.parse(data) as AiInDepthEvent;
-            if (!raw.inDepth || typeof raw.inDepth !== 'object') throw new Error('missing inDepth');
-            callbacks.onInDepthError?.(raw);
-          } catch {
-            failStream(STREAM_INVALID_ERROR_CODE);
-          }
-        } else if (eventType === 'turn_started') {
-          // Lifecycle marker carrying {session, messageId, provider}. The
-          // canonical stream does not set the session response header, so this
-          // is the earliest point the client can pin the conversation uuid.
-          try {
-            const raw = JSON.parse(data) as { session?: string; provider?: string; messageId?: string };
-            if (raw.session) {
-              callbacks.onSession(raw.session);
-            }
-            callbacks.onTurnStarted?.(raw);
-          } catch {
-            // A malformed marker is not fatal; the session also arrives on
-            // answer_done and turn_done.
-          }
-        } else if (eventType === 'turn_done') {
+        } else if (eventType === 'done') {
           streamFinalized = true;
           try {
-            // The terminal event carries the final envelope so a late safety,
-            // validation, evidence, or In-Depth correction reaches the live UI.
-            const raw = JSON.parse(data) as AiSearchResponse & { model?: string };
-            if (typeof raw.answer !== 'string') throw new Error('missing final answer');
-            callbacks.onDone({ ...raw, resolvedModel: raw.resolvedModel ?? raw.model });
+            const parsed: AiSearchResponse = JSON.parse(data);
+            callbacks.onDone(parsed);
           } catch {
-            failStream(STREAM_INVALID_ERROR_CODE);
+            callbacks.onError('Failed to parse final response');
           }
-        } else if (eventType === 'turn_error') {
+        } else if (eventType === 'error') {
           streamFinalized = true;
-          try {
-            const raw = JSON.parse(data) as { problemCode?: string };
-            callbacks.onError(raw.problemCode ?? data);
-          } catch {
-            callbacks.onError(data);
-          }
+          callbacks.onError(data);
         }
         eventType = '';
         dataLines = [];
       }
 
-      try {
-        while (!streamFinalized) {
-          const { done, value } = await streamReader.read();
-          if (done) break;
+      while (true) {
+        const { done, value } = await streamReader.read();
+        if (done) break;
 
-          buffer += textDecoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() ?? '';
+        buffer += textDecoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
 
-          for (const rawLine of lines) {
-            const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
-            if (line === '') {
-              dispatchEvent();
-              if (streamFinalized) break;
-            } else if (line.startsWith('event:')) {
-              eventType = line.slice(6).trim();
-            } else if (line.startsWith('data:')) {
-              const raw = line.slice(5);
-              dataLines.push(raw.startsWith(' ') ? raw.slice(1) : raw);
-            }
+        for (const line of lines) {
+          if (line === '') {
+            dispatchEvent();
+          } else if (line.startsWith('event:')) {
+            eventType = line.slice(6).trim();
+          } else if (line.startsWith('data:')) {
+            const raw = line.slice(5);
+            dataLines.push(raw.startsWith(' ') ? raw.slice(1) : raw);
           }
         }
+      }
 
-        if (!streamFinalized && buffer) {
-          for (const rawLine of buffer.split('\n')) {
-            const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
-            if (line === '') {
-              dispatchEvent();
-              if (streamFinalized) break;
-            } else if (line.startsWith('event:')) {
-              eventType = line.slice(6).trim();
-            } else if (line.startsWith('data:')) {
-              const raw = line.slice(5);
-              dataLines.push(raw.startsWith(' ') ? raw.slice(1) : raw);
-            }
+      // Process any remaining lines in the buffer (stream ended without trailing newline)
+      if (buffer) {
+        for (const line of buffer.split('\n')) {
+          if (line === '') {
+            dispatchEvent();
+          } else if (line.startsWith('event:')) {
+            eventType = line.slice(6).trim();
+          } else if (line.startsWith('data:')) {
+            const raw = line.slice(5);
+            dataLines.push(raw.startsWith(' ') ? raw.slice(1) : raw);
           }
         }
+      }
 
-        dispatchEvent();
+      // Flush any event accumulated in the loop but not yet dispatched
+      dispatchEvent();
 
-        if (!streamFinalized) {
-          callbacks.onError(STREAM_INCOMPLETE_ERROR_CODE);
-        }
-      } finally {
-        try {
-          if (streamFinalized) await streamReader.cancel();
-        } catch {
-          // Cleanup cannot replace an already delivered terminal result with another error.
-        } finally {
-          streamReader.releaseLock();
-        }
+      if (!streamFinalized) {
+        callbacks.onError('Stream ended unexpectedly without a response');
       }
     })
     .catch((err) => {
-      // A failed send or a broken connection; the browser's own message is not shown to clinicians.
-      if (err?.name !== 'AbortError') {
-        callbacks.onError(STREAM_CONNECTION_FAILED_ERROR_CODE);
+      if (err.name !== 'AbortError') {
+        callbacks.onError(err?.message ?? 'An unknown error occurred');
       }
     });
-}
-
-export interface ChatHistoryMessage extends Partial<AiAnswerLimits> {
-  messageId: string;
-  auditLogId?: number;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  /** Null on an assistant row whose turn has not finished, such as a checked answer whose In-Depth tail
-   *  runs. */
-  terminalState?: 'turn_done' | 'turn_error' | null;
-  problemCode?: string | null;
-  references?: AiReference[];
-  blocks?: AiBlock[];
-  /**
-   * Deterministic safety advisories persisted with the answer: the module's own drug-reference
-   * chips on a bundled turn, the selected Hub profile's on a Hub turn.
-   */
-  safetyWarnings?: AiSafetyWarning[];
-  /** checked/limited/unavailable — present alongside safetyWarnings, even when it's empty. */
-  safetyStatus?: AiSafetyStatus;
-  /** Canonical safety result, persisted with the assistant row for reload and review. */
-  safetyCheck?: AiSafetyCheck;
-  confidence?: AiConfidence;
-  answerValidation?: AiAnswerValidation;
-  inDepth?: AiInDepth;
-  /** The Hub product profile that produced the answer; older rows name it {@link model}. */
-  resolvedModel?: string;
-  model?: string;
-  /** Absent on an assistant row whose turn has not finished. */
-  createdAt?: number;
-}
-
-export interface ChatHistoryResponse {
-  session: string | null;
-  /** The provider that produced this conversation (bundled/hub). Null or absent when there is no
-   *  conversation yet (empty history). */
-  provider?: string | null;
-  /** The provider's chart mode for this conversation. Null or absent when there is no conversation. */
-  mode?: string | null;
-  messages: ChatHistoryMessage[];
-}
-
-/**
- * Fetch the active conversation's history for the panel to hydrate from. Returns the session and
- * its message list in chronological order. If no conversation exists, the server returns a null
- * session and an empty message list without creating one.
- */
-export async function fetchChatHistory(
-  patientUuid: string,
-  abortController?: AbortController,
-): Promise<ChatHistoryResponse> {
-  const response = await openmrsFetch(`${BASE_PATH}/chat?patient=${encodeURIComponent(patientUuid)}`, {
-    signal: abortController?.signal,
-  });
-  return response.data as ChatHistoryResponse;
-}
-
-/**
- * Close the current active chat session for this (patient, user) pair and open a fresh one.
- * Returns the new conversation as a history response with its session and an empty message list.
- */
-export async function startNewChat(
-  patientUuid: string,
-  providerId?: string,
-  abortController?: AbortController,
-): Promise<ChatHistoryResponse> {
-  const body: Record<string, string> = { patient: patientUuid };
-  if (providerId?.trim()) {
-    body.provider = providerId;
-  }
-  const response = await openmrsFetch(`${BASE_PATH}/chat/new`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    signal: abortController?.signal,
-  });
-  return response.data as ChatHistoryResponse;
-}
-
-export interface HubProfileMetadata {
-  id: string;
-  label: string;
-  staged: boolean;
-  validation: boolean;
-  temporal_enforcement: 'off' | 'warn' | 'enforce' | string;
-  available: boolean;
-  default: boolean;
-  selection_priority: number;
-  topology: 'single' | 'team' | string;
-  visibility: 'product' | 'internal' | 'experimental' | string;
-  stages: string[];
-  required_models: string[];
-  context_window: number | null;
-  exact_tokenizer: boolean;
-  unavailable_reasons: string[];
-}
-
-export interface HubProfileListResponse {
-  object: 'list' | string;
-  data: HubProfileMetadata[];
-}
-
-/**
- * Relay med-agent-hub's authoritative profile metadata through ChartSearchAI.
- */
-export async function fetchProfiles(abortController?: AbortController): Promise<HubProfileListResponse> {
-  const response = await openmrsFetch(`${BASE_PATH}/models`, {
-    signal: abortController?.signal,
-  });
-  return response.data as HubProfileListResponse;
-}
-
-/**
- * A clinical-answer provider (bundled local inference or the med-agent-hub
- * relay) as advertised by ChartSearchAI's provider registry.
- */
-export interface ClinicalProviderDescriptor {
-  id: string;
-  label: string;
-  enabled: boolean;
-  ready: boolean;
-  default: boolean;
-  modes: string[];
-  capabilities: string[];
-  unavailableReason: string | null;
-}
-
-export interface ProviderListResponse {
-  defaultProvider: string;
-  /** True only when more than one provider is configured — drives picker visibility. */
-  pickerVisible: boolean;
-  providers: ClinicalProviderDescriptor[];
-}
-
-/**
- * List the clinical-answer providers ChartSearchAI has configured. Bundled is
- * the fresh-install default; the hub appears only when it is configured.
- */
-export async function fetchProviders(abortController?: AbortController): Promise<ProviderListResponse> {
-  const response = await openmrsFetch(`${BASE_PATH}/providers`, {
-    signal: abortController?.signal,
-  });
-  return response.data as ProviderListResponse;
 }
