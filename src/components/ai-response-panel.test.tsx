@@ -2489,8 +2489,8 @@ describe('AiResponsePanel reference-citation text', () => {
 // `answerSummary`, and the rest of the answer is collapsed under it the way the safety box is.
 describe('an answer that opens with its bottom line', () => {
   const SUMMARY =
-    'No drug allergies are recorded for this patient. This check does not list other drugs to avoid.\n' +
-    'No rated interaction found. To review: 3 possible duplicate therapies. See details for what was not checked.';
+    'No drug allergies are recorded for this patient; no rated interactions; 3 possible duplicate therapies ' +
+    '(this check does not list other drugs to avoid).';
   const DETAILS =
     "Possible duplicate therapy — each in more than one of this patient's active orders: Lamivudine; Nevirapine; " +
     'Stavudine.\n' +
@@ -2513,14 +2513,12 @@ describe('an answer that opens with its bottom line', () => {
 
   it('shows the bottom line and collapses the rest until opened', () => {
     renderAnswer(SUMMARY + '\n' + DETAILS, SUMMARY);
-    expect(
-      screen.getByText(/No rated interaction found\. To review: 3 possible duplicate therapies\./),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/This check does not list other drugs to avoid\./)).toBeInTheDocument();
+    expect(screen.getByText(/no rated interactions; 3 possible duplicate therapies/)).toBeInTheDocument();
     expect(screen.queryByText(/Possible duplicate therapy/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Not checked:/)).not.toBeInTheDocument();
 
-    const toggle = screen.getByRole('button', { name: 'Show details' });
+    // The label says what is under it, what was not checked among it (backend ADR Decision 515).
+    const toggle = screen.getByRole('button', { name: 'Show details and what was not checked' });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(toggle);
     expect(screen.getByText(/Possible duplicate therapy/)).toBeInTheDocument();
@@ -2531,13 +2529,13 @@ describe('an answer that opens with its bottom line', () => {
   it('shows the whole answer where there is no bottom line', () => {
     renderAnswer(SUMMARY + '\n' + DETAILS, null);
     expect(screen.getByText(/Possible duplicate therapy/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Show details' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show details and what was not checked' })).not.toBeInTheDocument();
   });
 
   it('shows the whole answer where it does not open with the bottom line it was sent', () => {
     renderAnswer(DETAILS, SUMMARY);
     expect(screen.getByText(/Possible duplicate therapy/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Show details' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show details and what was not checked' })).not.toBeInTheDocument();
   });
 
   it('carries the bottom line through the message merge', () => {

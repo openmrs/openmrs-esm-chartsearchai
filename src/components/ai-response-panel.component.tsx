@@ -542,7 +542,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     [answer, references, safetyWarnings, unstatedFindingSeverities],
   );
 
-  // The bottom line a module-composed screen opens with (backend ADR Decision 512): shown, with
+  // The bottom line a module-composed answer opens with (backend ADR Decisions 512, 515): shown, with
   // the rest of the answer collapsed under it as the safety box is. Only where the answer still
   // opens with exactly those lines, and never while streaming; anything else shows the whole
   // answer as before.
@@ -920,7 +920,9 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                   aria-expanded={detailsOpen}
                   onClick={() => setDetailsOpen((open) => !open)}
                 >
-                  {detailsOpen ? t('hideDetails', 'Hide details') : t('showDetails', 'Show details')}
+                  {detailsOpen
+                    ? t('hideDetails', 'Hide details')
+                    : t('showAnswerDetails', 'Show details and what was not checked')}
                 </button>
               </p>
               {detailsOpen && <p className={styles.answerText}>{renderedAnswer}</p>}
