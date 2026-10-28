@@ -440,6 +440,13 @@ export interface AiSearchResponse {
    */
   answeredByTheModule?: boolean | null;
   /**
+   * The lines a module-composed answer opens with that a client shows, with the rest of `answer`
+   * collapsed under them (backend `answerSummary`, ADR Decision 512): a screen's bottom line, and any
+   * lead its question takes above it. Always `answer`'s own first lines; `null` where the answer
+   * opens with no bottom line, which is every answer a model wrote. `answer` stays the whole answer.
+   */
+  answerSummary?: string | null;
+  /**
    * The record numbers of the findings the module's own sentence after a model's answer states
    * (backend ADR Decision 147) — a sentence citing no marker, so this is how a chip is joined to
    * it. `[]` stated none; `null` is no measurement, which is every answer the module wrote.
@@ -483,6 +490,7 @@ export type AiAnswerLimits = Pick<
   | 'cautionLedOverWithholding'
   | 'interactionClaimPairs'
   | 'answeredByTheModule'
+  | 'answerSummary'
   | 'findingsStatedByTheModule'
   | 'asksWhetherSheHasTakenADrug'
 >;

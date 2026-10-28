@@ -468,6 +468,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   unsupportedEndedOrderClaims,
   unstatedSignificanceQualifiers,
   answeredByTheModule,
+  answerSummary,
   findingsStatedByTheModule,
   asksWhetherSheHasTakenADrug,
   questionId,
@@ -541,6 +542,17 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     [answer, references, safetyWarnings, unstatedFindingSeverities],
   );
 
+  // The bottom line a module-composed screen opens with (backend ADR Decision 512): shown, with
+  // the rest of the answer collapsed under it as the safety box is. Only where the answer still
+  // opens with exactly those lines, and never while streaming; anything else shows the whole
+  // answer as before.
+  const bottomLine = useMemo(() => {
+    if (isLoading || !answer || typeof answerSummary !== 'string' || !answerSummary) return null;
+    if (!answer.startsWith(answerSummary + '\n')) return null;
+    return { summary: answerSummary, details: answer.slice(answerSummary.length + 1) };
+  }, [answer, answerSummary, isLoading]);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
   const renderedAnswer = useMemo(() => {
     if (!answer) return null;
     if (isLoading) return answer;
@@ -549,8 +561,25 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
         Number.isInteger(index),
       ),
     );
-    return renderAnswerWithCitations(answer, { references, misattributed, severities, qualified, patientUuid, t });
-  }, [answer, references, misattributed, severities, unstatedSignificanceQualifiers, patientUuid, isLoading, t]);
+    return renderAnswerWithCitations(bottomLine ? bottomLine.details : answer, {
+      references,
+      misattributed,
+      severities,
+      qualified,
+      patientUuid,
+      t,
+    });
+  }, [
+    answer,
+    bottomLine,
+    references,
+    misattributed,
+    severities,
+    unstatedSignificanceQualifiers,
+    patientUuid,
+    isLoading,
+    t,
+  ]);
 
   const handleCopy = useCallback(() => {
     navigator.clipboard?.writeText(stripCitations(answer));
@@ -881,7 +910,24 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     <div className={styles.responseContainer}>
       {answer && (
         <div className={styles.answerSection}>
-          <p className={styles.answerText}>{renderedAnswer}</p>
+          {bottomLine ? (
+            <>
+              <p className={styles.answerText}>
+                {bottomLine.summary}{' '}
+                <button
+                  type="button"
+                  className={styles.detailsToggle}
+                  aria-expanded={detailsOpen}
+                  onClick={() => setDetailsOpen((open) => !open)}
+                >
+                  {detailsOpen ? t('hideDetails', 'Hide details') : t('showDetails', 'Show details')}
+                </button>
+              </p>
+              {detailsOpen && <p className={styles.answerText}>{renderedAnswer}</p>}
+            </>
+          ) : (
+            <p className={styles.answerText}>{renderedAnswer}</p>
+          )}
           {/* An order the answer says has ended that no record it was built from says so (backend ADR
               Decision 135). Said under the answer rather than inside it: the key names drugs, not the
               sentence, and a second reading of which sentence claims which drug is the backend's to make.
