@@ -2,6 +2,7 @@ import React from 'react';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import AiResponsePanel from './ai-response-panel.component';
+import { mergeDisclosure, NO_ANSWER_LIMITS } from '../utils/answer-limits';
 import { highlightReference } from '../utils/highlight-reference';
 import { SESSION_EXPIRED_ERROR_CODE, type AiReference, type AiSafetyWarning } from '../api/chartsearchai';
 import { ASPIRIN_CHIP_THE_ANSWER_CITES } from '../__fixtures__/aspirin-response';
@@ -2481,5 +2482,67 @@ describe('AiResponsePanel reference-citation text', () => {
     renderPanel();
     expect(screen.queryByRole('button', { name: '[3] Drug reference' })).not.toBeInTheDocument();
     expect(screen.getByText('[3] Drug reference').tagName).toBe('SPAN');
+  });
+});
+
+// Backend ADR Decision 512: a module-composed screen opens with its bottom line, sent apart as
+// `answerSummary`, and the rest of the answer is collapsed under it the way the safety box is.
+describe('an answer that opens with its bottom line', () => {
+  const SUMMARY =
+    'No drug allergies are recorded for this patient. This check does not list other drugs to avoid.\n' +
+    'No rated interaction found. To review: 3 possible duplicate therapies. See details for what was not checked.';
+  const DETAILS =
+    "Possible duplicate therapy — each in more than one of this patient's active orders: Lamivudine; Nevirapine; " +
+    'Stavudine.\n' +
+    "Not checked: this patient's conditions (no drug-condition rules are loaded).";
+
+  function renderAnswer(answer: string, answerSummary: string | null, isLoading = false) {
+    return render(
+      <AiResponsePanel
+        answer={answer}
+        answerSummary={answerSummary}
+        references={[]}
+        safetyWarnings={[]}
+        questionId="q"
+        error={null}
+        isLoading={isLoading}
+        patientUuid={patientUuid}
+      />,
+    );
+  }
+
+  it('shows the bottom line and collapses the rest until opened', () => {
+    renderAnswer(SUMMARY + '\n' + DETAILS, SUMMARY);
+    expect(
+      screen.getByText(/No rated interaction found\. To review: 3 possible duplicate therapies\./),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/This check does not list other drugs to avoid\./)).toBeInTheDocument();
+    expect(screen.queryByText(/Possible duplicate therapy/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Not checked:/)).not.toBeInTheDocument();
+
+    const toggle = screen.getByRole('button', { name: 'Show details' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    expect(screen.getByText(/Possible duplicate therapy/)).toBeInTheDocument();
+    expect(screen.getByText(/Not checked: this patient's conditions/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hide details' })).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('shows the whole answer where there is no bottom line', () => {
+    renderAnswer(SUMMARY + '\n' + DETAILS, null);
+    expect(screen.getByText(/Possible duplicate therapy/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show details' })).not.toBeInTheDocument();
+  });
+
+  it('shows the whole answer where it does not open with the bottom line it was sent', () => {
+    renderAnswer(DETAILS, SUMMARY);
+    expect(screen.getByText(/Possible duplicate therapy/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show details' })).not.toBeInTheDocument();
+  });
+
+  it('carries the bottom line through the message merge', () => {
+    const merged = mergeDisclosure(NO_ANSWER_LIMITS, { answerSummary: SUMMARY });
+    expect(merged.answerSummary).toBe(SUMMARY);
+    expect(mergeDisclosure(merged, { answerSummary: null }).answerSummary).toBe(SUMMARY);
   });
 });

@@ -656,6 +656,7 @@ describe('useChartSearchAi answer-limit measurements', () => {
     unsupportedEndedOrderClaims: ['Nevirapine'],
     unstatedSignificanceQualifiers: [46],
     answeredByTheModule: true,
+    answerSummary: 'No rated interaction found. See details for what was not checked.',
     findingsStatedByTheModule: [55],
     asksWhetherSheHasTakenADrug: true,
   };
