@@ -469,6 +469,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
   unstatedSignificanceQualifiers,
   answeredByTheModule,
   answerSummary,
+  answerDetailsStateLimits,
   findingsStatedByTheModule,
   asksWhetherSheHasTakenADrug,
   questionId,
@@ -542,14 +543,16 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     [answer, references, safetyWarnings, unstatedFindingSeverities],
   );
 
-  // The bottom line a module-composed answer opens with (backend ADR Decisions 512, 515): shown, with
-  // the rest of the answer collapsed under it as the safety box is. Only where the answer still
-  // opens with exactly those lines, and never while streaming; anything else shows the whole
-  // answer as before.
+  // The bottom line of a module-composed answer (backend ADR Decisions 512, 517, 519): shown, with
+  // the rest of the answer collapsed under it as the safety box is. Never while streaming; with
+  // no summary the whole answer is shown as before.
   const bottomLine = useMemo(() => {
     if (isLoading || !answer || typeof answerSummary !== 'string' || !answerSummary) return null;
-    if (!answer.startsWith(answerSummary + '\n')) return null;
-    return { summary: answerSummary, details: answer.slice(answerSummary.length + 1) };
+    // The answer's own first line, the rest under it; or a sentence apart from its words (backend
+    // ADR Decision 519), the whole answer under it.
+    return answer.startsWith(answerSummary + '\n')
+      ? { summary: answerSummary, details: answer.slice(answerSummary.length + 1) }
+      : { summary: answerSummary, details: answer };
   }, [answer, answerSummary, isLoading]);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
@@ -922,7 +925,9 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                 >
                   {detailsOpen
                     ? t('hideDetails', 'Hide details')
-                    : t('showAnswerDetails', 'Show details and what was not checked')}
+                    : answerDetailsStateLimits === true
+                      ? t('showAnswerDetails', 'Show details and limits')
+                      : t('showDetails', 'Show details')}
                 </button>
               </p>
               {detailsOpen && <p className={styles.answerText}>{renderedAnswer}</p>}

@@ -447,6 +447,12 @@ export interface AiSearchResponse {
    */
   answerSummary?: string | null;
   /**
+   * `true` where what is collapsed under `answerSummary` includes a line saying what the check did
+   * not cover (backend `answerDetailsStateLimits`, ADR Decision 519), so the toggle may say "and
+   * limits"; `false` where it does not, and wherever there is no summary.
+   */
+  answerDetailsStateLimits?: boolean | null;
+  /**
    * The record numbers of the findings the module's own sentence after a model's answer states
    * (backend ADR Decision 147) — a sentence citing no marker, so this is how a chip is joined to
    * it. `[]` stated none; `null` is no measurement, which is every answer the module wrote.
@@ -491,6 +497,7 @@ export type AiAnswerLimits = Pick<
   | 'interactionClaimPairs'
   | 'answeredByTheModule'
   | 'answerSummary'
+  | 'answerDetailsStateLimits'
   | 'findingsStatedByTheModule'
   | 'asksWhetherSheHasTakenADrug'
 >;
