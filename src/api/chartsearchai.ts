@@ -583,6 +583,25 @@ export async function searchPatientChart(
 }
 
 /**
+ * Resolves to the session-expired code when the server says the session is no longer
+ * authenticated, and to {@code fallback} otherwise — including when the check itself fails, since a
+ * server that cannot answer it is not evidence of a logged-out user. Raw fetch rather than
+ * openmrsFetch, which reacts to an unauthenticated response on its own.
+ */
+async function sessionExpiredOr(fallback: string): Promise<string> {
+  try {
+    const response = await window.fetch(`${window.openmrsBase}${restBaseUrl}/session?v=custom:(authenticated)`, {
+      credentials: 'include',
+      headers: { 'Disable-WWW-Authenticate': 'true' },
+    });
+    const session = await response.json();
+    return session?.authenticated === false ? SESSION_EXPIRED_ERROR_CODE : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
  * Opens an SSE (Server-Sent Events) stream for AI search.
  *
  * Uses raw fetch instead of openmrsFetch because openmrsFetch consumes
@@ -657,7 +676,7 @@ export function searchPatientChartStream(
     })
     .then(async (response) => {
       if (response.type === 'opaqueredirect' || response.status === 0) {
-        callbacks.onError(SESSION_EXPIRED_ERROR_CODE);
+        callbacks.onError(await sessionExpiredOr('Server error: unexpected redirect'));
         return;
       }
 
@@ -676,12 +695,10 @@ export function searchPatientChartStream(
           // server-side failure — surface it verbatim.
           callbacks.onError(bodyError);
         } else if (response.status >= 500 || response.status === 401 || response.status === 403) {
-          // No JSON body means this came from OpenMRS's auth/session layer, not the controller:
-          // a 401/403, or a 500 that is really "sendRedirect() after the response was committed"
-          // (the SSE stream commits the response, so the expired-session login redirect can't fire
-          // and surfaces as a bare HTML 500). Treat all of these as session expiry — the same
-          // actionable cause as the 302 handled above — rather than a cryptic "Server error: 500".
-          callbacks.onError(SESSION_EXPIRED_ERROR_CODE);
+          // No JSON body means this came from the container or OpenMRS's auth layer, not the
+          // controller, and the status alone cannot say why: a timed-out session and a logged-in
+          // request to a failing endpoint both answer a bare HTML 500. Ask the server.
+          callbacks.onError(await sessionExpiredOr(`Server error: ${response.status}`));
         } else {
           callbacks.onError(`Server error: ${response.status}`);
         }
