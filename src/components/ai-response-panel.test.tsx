@@ -2496,11 +2496,17 @@ describe('an answer that opens with its bottom line', () => {
     'Stavudine.\n' +
     "Not checked: this patient's conditions (no drug-condition rules are loaded).";
 
-  function renderAnswer(answer: string, answerSummary: string | null, isLoading = false) {
+  function renderAnswer(
+    answer: string,
+    answerSummary: string | null,
+    isLoading = false,
+    answerDetailsStateLimits = true,
+  ) {
     return render(
       <AiResponsePanel
         answer={answer}
         answerSummary={answerSummary}
+        answerDetailsStateLimits={answerDetailsStateLimits}
         references={[]}
         safetyWarnings={[]}
         questionId="q"
@@ -2517,8 +2523,8 @@ describe('an answer that opens with its bottom line', () => {
     expect(screen.queryByText(/Possible duplicate therapy/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Not checked:/)).not.toBeInTheDocument();
 
-    // The label says what is under it, what was not checked among it (backend ADR Decision 515).
-    const toggle = screen.getByRole('button', { name: 'Show details and what was not checked' });
+    // The label says what is under it, what was not checked among it (backend ADR Decisions 517, 519).
+    const toggle = screen.getByRole('button', { name: 'Show details and limits' });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(toggle);
     expect(screen.getByText(/Possible duplicate therapy/)).toBeInTheDocument();
@@ -2529,18 +2535,32 @@ describe('an answer that opens with its bottom line', () => {
   it('shows the whole answer where there is no bottom line', () => {
     renderAnswer(SUMMARY + '\n' + DETAILS, null);
     expect(screen.getByText(/Possible duplicate therapy/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Show details and what was not checked' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show details and limits' })).not.toBeInTheDocument();
   });
 
-  it('shows the whole answer where it does not open with the bottom line it was sent', () => {
+  // Backend ADR Decision 519: a sentence apart from the answer's words, the whole answer collapsed
+  // under it.
+  it('collapses the whole answer under a bottom line it does not open with', () => {
     renderAnswer(DETAILS, SUMMARY);
+    expect(screen.getByText(/no rated interactions; 3 possible duplicate therapies/)).toBeInTheDocument();
+    expect(screen.queryByText(/Possible duplicate therapy/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show details and limits' }));
     expect(screen.getByText(/Possible duplicate therapy/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Show details and what was not checked' })).not.toBeInTheDocument();
+  });
+
+  // Backend ADR Decision 519: where nothing under the sentence says what was not checked, the
+  // label promises no limits.
+  it('labels the details plainly where they state no limits', () => {
+    renderAnswer(SUMMARY + '\n' + DETAILS, SUMMARY, false, false);
+    expect(screen.queryByRole('button', { name: 'Show details and limits' })).not.toBeInTheDocument();
+    const toggle = screen.getByRole('button', { name: 'Show details' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('carries the bottom line through the message merge', () => {
     const merged = mergeDisclosure(NO_ANSWER_LIMITS, { answerSummary: SUMMARY });
     expect(merged.answerSummary).toBe(SUMMARY);
     expect(mergeDisclosure(merged, { answerSummary: null }).answerSummary).toBe(SUMMARY);
+    expect(mergeDisclosure(NO_ANSWER_LIMITS, { answerDetailsStateLimits: true }).answerDetailsStateLimits).toBe(true);
   });
 });
