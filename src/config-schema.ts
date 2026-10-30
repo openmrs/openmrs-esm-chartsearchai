@@ -14,13 +14,19 @@ export const configSchema = {
   useStreaming: {
     _type: Type.Boolean,
     _default: true,
-    _description: 'Whether to use the streaming SSE endpoint for AI responses',
+    _description:
+      'Whether to display answer tokens and reasoning incrementally. When false, the selected conversation provider delivers the completed answer without incremental output.',
   },
   showReasoning: {
     _type: Type.Boolean,
     _default: true,
     _description:
-      "Whether the model's reasoning is shown at all: streamed live while the model thinks, then kept behind a collapsed disclosure under the answer. When false it is neither shown nor retained. Only the streaming endpoint emits reasoning, so this has no effect when useStreaming is false.",
+      "Whether the model's reasoning is shown at all: streamed live while the model thinks, then kept behind a collapsed disclosure above the answer. When false it is neither shown nor retained. With streaming disabled, any supplied reasoning is shown only after the complete answer arrives. A provider that emits no reasoning still delivers its answer.",
+  },
+  showModelPicker: {
+    _type: Type.Boolean,
+    _default: true,
+    _description: 'Show the med-agent-hub product-profile picker in the chat panel footer.',
   },
   chatLaunchMode: {
     _type: Type.String,
@@ -31,6 +37,7 @@ export const configSchema = {
 };
 
 export interface ChartSearchAiConfig {
+  showModelPicker: boolean;
   aiSearchPlaceholder: string;
   maxQuestionLength: number;
   useStreaming: boolean;
