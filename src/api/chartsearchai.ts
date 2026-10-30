@@ -3,11 +3,11 @@ import { openmrsFetch, restBaseUrl } from '@openmrs/esm-framework';
 const BASE_PATH = `${restBaseUrl}/chartsearchai`;
 
 /**
- * Error code emitted via {@code onError} for every way an expired session surfaces on the SSE
- * endpoint: the 302 opaque redirect, a bare 401/403, and the committed-redirect 500. It is a stable
- * code, NOT a display string — user-facing text must be localized in a component (the translation
- * extractor only scans {@code *.component.tsx}). {@code AiResponsePanel} maps this to a translated
- * message.
+ * Error code emitted via {@code onError} when the SSE request fails without a controller error and
+ * the server's own session check says the session is no longer authenticated: a redirect to login,
+ * or a bare 401/403/5xx. It is a stable code, NOT a display string — user-facing text must be
+ * localized in a component (the translation extractor only scans {@code *.component.tsx}).
+ * {@code AiResponsePanel} maps this to a translated message.
  */
 export const SESSION_EXPIRED_ERROR_CODE = 'chartsearchai:session-expired';
 
@@ -20,7 +20,7 @@ export const STREAM_INCOMPLETE_ERROR_CODE = 'chartsearchai:stream-incomplete';
 export const STREAM_INVALID_ERROR_CODE = 'chartsearchai:stream-invalid';
 /** The response has no readable body stream. */
 export const STREAMING_UNSUPPORTED_ERROR_CODE = 'chartsearchai:streaming-unsupported';
-/** The server refused the request with a non-auth status and no JSON error body. */
+/** The server refused the request with no JSON error body, and the session is not known to have ended. */
 export const STREAM_REQUEST_FAILED_ERROR_CODE = 'chartsearchai:request-failed';
 /** The request could not be sent, or the connection broke while the stream was open. */
 export const STREAM_CONNECTION_FAILED_ERROR_CODE = 'chartsearchai:connection-failed';
@@ -709,6 +709,25 @@ export async function submitFeedback(feedback: AiFeedback): Promise<void> {
   }
 }
 
+/**
+ * Resolves to the session-expired code when the server says the session is no longer
+ * authenticated, and to {@code fallback} otherwise — including when the check itself fails, since a
+ * server that cannot answer it is not evidence of a logged-out user. Raw fetch rather than
+ * openmrsFetch, which reacts to an unauthenticated response on its own.
+ */
+async function sessionExpiredOr(fallback: string): Promise<string> {
+  try {
+    const response = await window.fetch(`${window.openmrsBase}${restBaseUrl}/session?v=custom:(authenticated)`, {
+      credentials: 'include',
+      headers: { 'Disable-WWW-Authenticate': 'true' },
+    });
+    const session = await response.json();
+    return session?.authenticated === false ? SESSION_EXPIRED_ERROR_CODE : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 async function streamRequestError(response: Response): Promise<string> {
   let bodyError: string | null = null;
   try {
@@ -725,12 +744,10 @@ async function streamRequestError(response: Response): Promise<string> {
     return bodyError;
   }
   if (response.status >= 500 || response.status === 401 || response.status === 403) {
-    // No JSON body means this came from OpenMRS's auth/session layer, not the controller:
-    // a 401/403, or a 500 that is really "sendRedirect() after the response was committed"
-    // (the SSE stream commits the response, so the expired-session login redirect can't fire
-    // and surfaces as a bare HTML 500). Treat all of these as session expiry — the same
-    // actionable cause as the opaque redirect the caller handles, rather than a cryptic 500.
-    return SESSION_EXPIRED_ERROR_CODE;
+    // No JSON body means this came from the container or OpenMRS's auth layer, not the
+    // controller, and the status alone cannot say why: a timed-out session and a logged-in
+    // request to a failing endpoint both answer a bare HTML 500. Ask the server.
+    return sessionExpiredOr(STREAM_REQUEST_FAILED_ERROR_CODE);
   }
   return STREAM_REQUEST_FAILED_ERROR_CODE;
 }
@@ -827,7 +844,7 @@ export function chatPatientChartStream(
     })
     .then(async (response) => {
       if (response.type === 'opaqueredirect' || response.status === 0) {
-        callbacks.onError(SESSION_EXPIRED_ERROR_CODE);
+        callbacks.onError(await sessionExpiredOr(STREAM_REQUEST_FAILED_ERROR_CODE));
         return;
       }
 

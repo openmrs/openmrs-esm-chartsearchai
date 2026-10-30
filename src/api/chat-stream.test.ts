@@ -257,34 +257,61 @@ describe('chatPatientChartStream', () => {
     expect(window.fetch).not.toHaveBeenCalled();
   });
 
-  it('emits the localizable session-expired code for an authentication redirect', async () => {
+  // A response that is not a controller error (no JSON body, or a redirect) does not say why it
+  // failed: on chartsearchai.openmrs.org a timed-out session and a logged-in request to a failing
+  // endpoint both answer a bare HTML 500. Only the server's own session check tells them apart.
+  const bare = (status: number) =>
+    ({ ok: false, status, body: null, json: () => Promise.reject(new Error('no body')) }) as unknown as Response;
+  const redirect = { type: 'opaqueredirect', ok: false, status: 0, body: null } as unknown as Response;
+  const session = (authenticated: boolean) =>
+    ({ ok: true, status: 200, json: () => Promise.resolve({ authenticated }) }) as unknown as Response;
+
+  it.each([
+    ['a bare 500', bare(500)],
+    ['a bare 401', bare(401)],
+    ['a bare 403', bare(403)],
+    ['a redirect (302 to login)', redirect],
+  ])('emits the session-expired code for %s when the session check says the user is logged out', async (_, resp) => {
     const cb = makeCallbacks();
-    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce({
-      type: 'opaqueredirect',
-      status: 0,
-    } as Response);
+    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(resp).mockResolvedValueOnce(session(false));
 
     chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled');
     await flushPromises();
 
+    expect(fetchSpy).toHaveBeenLastCalledWith(
+      '/openmrs/ws/rest/v1/session?v=custom:(authenticated)',
+      expect.objectContaining({ credentials: 'include' }),
+    );
     expect(cb.onError).toHaveBeenCalledWith(SESSION_EXPIRED_ERROR_CODE);
     expect(cb.onDone).not.toHaveBeenCalled();
   });
 
-  it('treats a non-JSON 500 as session expiry (sendRedirect-after-commit)', async () => {
+  it.each([
+    ['a bare 500', bare(500)],
+    ['a bare 403', bare(403)],
+    ['a redirect', redirect],
+  ])('emits the request-failed code, not session expiry, for %s while the user is still logged in', async (_, resp) => {
     const cb = makeCallbacks();
-    const resp = {
-      ok: false,
-      status: 500,
-      body: null,
-      json: () => Promise.reject(new Error('no body')),
-    } as unknown as Response;
-    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(resp);
+    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(resp).mockResolvedValueOnce(session(true));
 
     chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled');
     await flushPromises();
 
-    expect(cb.onError).toHaveBeenCalledWith(SESSION_EXPIRED_ERROR_CODE);
+    expect(cb.onError).toHaveBeenCalledWith(STREAM_REQUEST_FAILED_ERROR_CODE);
+    expect(cb.onError).not.toHaveBeenCalledWith(SESSION_EXPIRED_ERROR_CODE);
+  });
+
+  it('emits the request-failed code, not session expiry, when the session check itself fails', async () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(bare(502))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled');
+    await flushPromises();
+
+    expect(cb.onError).toHaveBeenCalledWith(STREAM_REQUEST_FAILED_ERROR_CODE);
   });
 
   it('surfaces a JSON 500 error verbatim rather than as session expiry', async () => {
@@ -303,23 +330,7 @@ describe('chatPatientChartStream', () => {
     expect(cb.onError).toHaveBeenCalledWith('Internal error');
   });
 
-  it('treats a non-JSON 401 as session expiry', async () => {
-    const cb = makeCallbacks();
-    const resp = {
-      ok: false,
-      status: 401,
-      body: null,
-      json: () => Promise.reject(new Error('no body')),
-    } as unknown as Response;
-    fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValueOnce(resp);
-
-    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, undefined, 'bundled');
-    await flushPromises();
-
-    expect(cb.onError).toHaveBeenCalledWith(SESSION_EXPIRED_ERROR_CODE);
-  });
-
-  it('reports a request-failed code for a non-auth status with no JSON body', async () => {
+  it('reports a request-failed code for a non-auth status with no JSON body, without a session check', async () => {
     const cb = makeCallbacks();
     const resp = {
       ok: false,
@@ -333,6 +344,7 @@ describe('chatPatientChartStream', () => {
     await flushPromises();
 
     expect(cb.onError).toHaveBeenCalledWith(STREAM_REQUEST_FAILED_ERROR_CODE);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
   it("maps the answer_done event's `model` field onto resolvedModel", async () => {
