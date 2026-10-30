@@ -266,7 +266,12 @@
   }
 }
 
+// The shell styles every `p` as body-02 (16px), and an element rule beats what a paragraph would
+// inherit from `.markdownAnswer` — so a collapsed answer's details rendered larger than the one
+// sentence above them. Take the answer's type from its container instead.
 .answerParagraph {
+  font: inherit;
+  letter-spacing: inherit;
   margin: 0 0 layout.$spacing-03 0;
 }
 
