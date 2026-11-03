@@ -4,7 +4,10 @@
   position: fixed;
   bottom: calc(layout.$spacing-07 + 3.5rem);
   right: layout.$spacing-07;
-  z-index: 9000;
+  // Sits below Carbon's modal layer (z('modal') = 9000) so the model picker's
+  // Carbon Menu — which renders at z('modal') — always floats above the panel.
+  // Still above the app header (z('header') = 8000).
+  z-index: 8900;
   width: 28rem;
   max-width: calc(100vw - 2 * layout.$spacing-07);
 }
