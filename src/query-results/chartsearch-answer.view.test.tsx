@@ -540,7 +540,7 @@ describe('the Ask ChartSearch view', () => {
       'title',
       'The date this prescription stopped being in force — not the record’s own date shown beside it. The date is a calendar day in UTC, so it can be a day off the local date.',
     );
-    expect(within(cited).getByText(/^01.*Jun.*2026$/)).toBeInTheDocument();
+    expect(within(cited).getByText('2026-06-01')).toBeInTheDocument();
   });
 
   it('shows an answer that cites no records, and says to check the chart', async () => {

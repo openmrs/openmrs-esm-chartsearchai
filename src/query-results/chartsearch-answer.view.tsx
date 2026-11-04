@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, InlineLoading } from '@carbon/react';
-import { formatDate } from '@openmrs/esm-framework';
 import { SESSION_EXPIRED_ERROR_CODE, sessionExpiredOr } from '../api/chartsearchai';
 import { isServerUnreachable } from '../omnibar-contract/server-unreachable';
 import { type OmnibarViewProps, type OmnibarViewState } from '../omnibar-contract/types';
@@ -142,12 +141,6 @@ const humanize = (value: string) => {
   return words ? words.charAt(0).toLocaleUpperCase() + words.slice(1) : value;
 };
 
-const formatDay = (date: string | null | undefined) => {
-  if (!date) return null;
-  const parsed = new Date(/^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date}T00:00:00` : date);
-  return Number.isNaN(parsed.getTime()) ? null : formatDate(parsed, { time: false });
-};
-
 /** `yyyy-MM-dd` as the backend wrote it. A Date would shift the day off UTC. */
 const utcCalendarDay = (value: string | null | undefined) =>
   value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
@@ -277,7 +270,7 @@ const ChartSearchAnswerView: React.FC<OmnibarViewProps> = ({
   };
 
   const citation = (ref: ChartSearchReference, chart: boolean) => {
-    const date = formatDay(ref.date);
+    const date = utcCalendarDay(ref.date);
     const stopDate = utcCalendarDay(
       statements?.orderStopDates?.find((entry) => entry.citation === ref.index)?.stopDate,
     );
