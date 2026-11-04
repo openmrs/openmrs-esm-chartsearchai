@@ -535,7 +535,11 @@ describe('the Ask ChartSearch view', () => {
     await act(async () => stream.end());
 
     const cited = within(await screen.findByRole('list', { name: 'Records cited' })).getByRole('listitem');
-    expect(within(cited).getByText(/^Stopped .*2026$/)).toHaveTextContent(/23.*Sep/);
+    const stopped = within(cited).getByText('Stopped 2026-09-23');
+    expect(stopped).toHaveAttribute(
+      'title',
+      'The date this prescription stopped being in force — not the record’s own date shown beside it. The date is a calendar day in UTC, so it can be a day off the local date.',
+    );
     expect(within(cited).getByText(/^01.*Jun.*2026$/)).toBeInTheDocument();
   });
 

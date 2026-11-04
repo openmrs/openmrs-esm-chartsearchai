@@ -148,6 +148,10 @@ const formatDay = (date: string | null | undefined) => {
   return Number.isNaN(parsed.getTime()) ? null : formatDate(parsed, { time: false });
 };
 
+/** `yyyy-MM-dd` as the backend wrote it. A Date would shift the day off UTC. */
+const utcCalendarDay = (value: string | null | undefined) =>
+  value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+
 const ChartSearchAnswerView: React.FC<OmnibarViewProps> = ({
   query,
   context,
@@ -274,7 +278,9 @@ const ChartSearchAnswerView: React.FC<OmnibarViewProps> = ({
 
   const citation = (ref: ChartSearchReference, chart: boolean) => {
     const date = formatDay(ref.date);
-    const stopDate = formatDay(statements?.orderStopDates?.find((entry) => entry.citation === ref.index)?.stopDate);
+    const stopDate = utcCalendarDay(
+      statements?.orderStopDates?.find((entry) => entry.citation === ref.index)?.stopDate,
+    );
     const notes = caveats.get(ref.index) ?? [];
     return (
       <li key={`${ref.group}:${ref.index}`} className={styles.citation}>
@@ -283,7 +289,16 @@ const ChartSearchAnswerView: React.FC<OmnibarViewProps> = ({
           <span dir="auto">{humanize(ref.resourceType)}</span>
           {date && <span className={styles.citationDate}>{date}</span>}
           {stopDate && (
-            <span className={styles.citationMeta}>
+            <span
+              className={styles.citationMeta}
+              title={`${t(
+                'orderStopDateTitle',
+                'The date this prescription stopped being in force — not the record’s own date shown beside it.',
+              )} ${t(
+                'utcCalendarDayTitle',
+                'The date is a calendar day in UTC, so it can be a day off the local date.',
+              )}`}
+            >
               {t('orderStopDate', 'Stopped {{stopDate}}', { stopDate, interpolation: { escapeValue: false } })}
             </span>
           )}
