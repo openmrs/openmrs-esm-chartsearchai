@@ -594,7 +594,7 @@ describe('the Ask ChartSearch view', () => {
       within(warning).getByText('Clarithromycin interacts with active order Simvastatin. Major.'),
     ).toBeInTheDocument();
     expect(screen.getByText(/names a drug class, “macrolide”/)).toBeInTheDocument();
-    expect(screen.queryByText(/statements about active orders cite no chart record/)).not.toBeInTheDocument();
+    expect(screen.getByText('1 of 1 statements about active orders cite no chart record.')).toBeInTheDocument();
   });
 
   it('never shows ChartSearch’s own error text', async () => {

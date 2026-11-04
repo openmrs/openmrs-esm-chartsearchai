@@ -377,7 +377,7 @@ const ChartSearchAnswerView: React.FC<OmnibarViewProps> = ({
           {state.text && streaming && state.phase === 'answered' && (
             <InlineLoading description={t('checkingAnswer', 'Checking the answer')} />
           )}
-          {!unsourced && statements && <AnswerNotes statements={statements} />}
+          {statements && <AnswerNotes statements={statements} />}
 
           {/* ChartSearch's own findings, which an answer citing nothing doesn't take with it. */}
           {statements && <Statements statements={statements} headingId={headingId} />}
