@@ -800,7 +800,7 @@ describe('prompt-cache warmup', () => {
   describe('with a provider selected', () => {
     afterEach(() => chatSessionStore.setState(initialChatSessionState()));
 
-    it('sends no warmup while Hub is selected, since only the bundled provider has a cache to warm', () => {
+    it('sends no warmup while Hub is selected, since it warms for any provider that is not Hub', () => {
       chatSessionStore.setState({ selectedProviderId: 'hub' });
       render(<AiChatContent mode="floating" />);
       expect(warmupCalls()).toHaveLength(0);
