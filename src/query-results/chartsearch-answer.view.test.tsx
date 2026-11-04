@@ -465,6 +465,34 @@ describe('the Ask ChartSearch view', () => {
     ).toBeInTheDocument();
   });
 
+  it('notes beside a cited finding the unknown significance its record states and the answer leaves out', async () => {
+    const user = userEvent.setup();
+    const stream = streamingResponse();
+    fetchMock.mockResolvedValue(stream.response);
+    renderView('is aspirin safe for her?');
+
+    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+    await act(async () =>
+      stream.write(
+        frame(
+          'done',
+          done({
+            answer: 'Aspirin interacts with active order Metoclopramide [46].',
+            references: [{ index: 46, resourceType: 'safety_finding', date: null, grounded: null, group: 'reference' }],
+            unstatedSignificanceQualifiers: [46],
+          }),
+        ),
+      ),
+    );
+    await act(async () => stream.end());
+
+    expect(
+      await screen.findByRole('list', { name: 'Reference material, not this patient’s record' }),
+    ).toHaveTextContent(
+      'The finding this cites says the clinical significance of the interaction is unknown. The answer leaves that out.',
+    );
+  });
+
   it('hides an answer that cites no records', async () => {
     const user = userEvent.setup();
     const stream = streamingResponse();

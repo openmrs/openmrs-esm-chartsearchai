@@ -243,6 +243,13 @@ const ChartSearchAnswerView: React.FC<OmnibarViewProps> = ({
         }),
       ),
     );
+    add(
+      statements?.unstatedSignificanceQualifiers,
+      t(
+        'significanceUnknownTitle',
+        'The finding this cites says the clinical significance of the interaction is unknown. The answer leaves that out.',
+      ),
+    );
     return byIndex;
   }, [statements, t]);
 

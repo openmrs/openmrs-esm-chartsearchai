@@ -175,6 +175,8 @@ export interface ChartSearchStatements {
   unfaithfullyRenderedCitations: Array<number> | null;
   misattributedOrderCitations: Array<number> | null;
   unstatedFindingSeverities: Array<ChartSearchCitedRating> | null;
+  /** Cited findings whose record calls the interaction's significance unknown, unsaid in the answer. */
+  unstatedSignificanceQualifiers: Array<number> | null;
   activeOrderClaims: { stated: number; uncited: number } | null;
   /** Drugs the answer says have an order no longer in force, where no record it read says so. */
   unsupportedEndedOrderClaims: Array<string> | null;
@@ -274,6 +276,7 @@ export function parseStatements(payload: Record<string, unknown>): ChartSearchSt
     unfaithfullyRenderedCitations: numbersOrNull(payload.unfaithfullyRenderedCitations),
     misattributedOrderCitations: numbersOrNull(payload.misattributedOrderCitations),
     unstatedFindingSeverities: citedRatingsOrNull(payload.unstatedFindingSeverities),
+    unstatedSignificanceQualifiers: numbersOrNull(payload.unstatedSignificanceQualifiers),
     activeOrderClaims:
       claims && wholeNumber(claims.stated) && wholeNumber(claims.uncited)
         ? { stated: claims.stated, uncited: claims.uncited }
