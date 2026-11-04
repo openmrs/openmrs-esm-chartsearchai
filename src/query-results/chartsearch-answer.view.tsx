@@ -353,17 +353,12 @@ const ChartSearchAnswerView: React.FC<OmnibarViewProps> = ({
       {state.phase !== 'ready' && !isFailure(state.phase) && (
         <section className={styles.answer} aria-live="polite" aria-busy={streaming}>
           {!state.text && streaming && <InlineLoading description={t('thinking', 'Working on an answer')} />}
-          {unsourced ? (
-            <p className={styles.note}>
-              {t('unsourcedAnswer', 'This answer is hidden because it didn’t cite any records.')}
+          {state.text && (
+            <p className={styles.answerText} dir="auto">
+              {state.text}
             </p>
-          ) : (
-            state.text && (
-              <p className={styles.answerText} dir="auto">
-                {state.text}
-              </p>
-            )
           )}
+          {unsourced && <p className={styles.note}>{t('citesNoRecords', 'Cites no records. Check the chart.')}</p>}
           {state.text && streaming && state.phase === 'answered' && (
             <InlineLoading description={t('checkingAnswer', 'Checking the answer')} />
           )}

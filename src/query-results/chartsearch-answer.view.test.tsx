@@ -539,7 +539,7 @@ describe('the Ask ChartSearch view', () => {
     expect(within(cited).getByText(/^01.*Jun.*2026$/)).toBeInTheDocument();
   });
 
-  it('hides an answer that cites no records', async () => {
+  it('shows an answer that cites no records, and says to check the chart', async () => {
     const user = userEvent.setup();
     const stream = streamingResponse();
     fetchMock.mockResolvedValue(stream.response);
@@ -549,11 +549,11 @@ describe('the Ask ChartSearch view', () => {
     await act(async () => stream.write(frame('done', done({ references: [] }))));
     await act(async () => stream.end());
 
-    expect(await screen.findByText('This answer is hidden because it didn’t cite any records.')).toBeInTheDocument();
-    expect(screen.queryByText(/ART started/)).not.toBeInTheDocument();
+    expect(await screen.findByText('ART started on 3 March 2024 [1].')).toBeInTheDocument();
+    expect(screen.getByText('Cites no records. Check the chart.')).toBeInTheDocument();
   });
 
-  it('keeps ChartSearch’s own safety findings beside an answer it hides for citing nothing', async () => {
+  it('keeps ChartSearch’s own safety findings beside an answer that cites nothing', async () => {
     const user = userEvent.setup();
     const stream = streamingResponse();
     fetchMock.mockResolvedValue(stream.response);
@@ -583,8 +583,8 @@ describe('the Ask ChartSearch view', () => {
     );
     await act(async () => stream.end());
 
-    expect(await screen.findByText('This answer is hidden because it didn’t cite any records.')).toBeInTheDocument();
-    expect(screen.queryByText('Clarithromycin can be given.')).not.toBeInTheDocument();
+    expect(await screen.findByText('Clarithromycin can be given.')).toBeInTheDocument();
+    expect(screen.getByText('Cites no records. Check the chart.')).toBeInTheDocument();
     const warning = within(screen.getByRole('list', { name: 'Safety findings' })).getByRole('listitem');
     expect(
       within(warning).getByText('Clarithromycin interacts with active order Simvastatin. Major.'),
