@@ -815,5 +815,12 @@ describe('prompt-cache warmup', () => {
       act(() => chatSessionStore.setState({ selectedProviderId: 'bundled' }));
       expect(warmupCalls()).toHaveLength(2);
     });
+
+    it('keeps one warmup when the provider resolves to the bundled default', () => {
+      render(<AiChatContent mode="floating" />);
+      act(() => chatSessionStore.setState({ selectedProviderId: 'bundled' }));
+      expect(warmupCalls()).toHaveLength(1);
+      expect(warmupCalls()[0][1].signal.aborted).toBe(false);
+    });
   });
 });
