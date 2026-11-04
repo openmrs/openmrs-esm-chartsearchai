@@ -420,6 +420,26 @@ describe('the Ask ChartSearch view', () => {
     ).toEqual(issues);
   });
 
+  it('says a bare unavailable check is unavailable only once the answer is final, not while grounding runs', async () => {
+    const user = userEvent.setup();
+    const stream = streamingResponse();
+    fetchMock.mockResolvedValue(stream.response);
+    renderView();
+
+    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+    await act(async () =>
+      stream.write(
+        frame('done', done({ safetyStatus: 'unavailable', safetyCheck: { status: 'unavailable', issues: [] } })),
+      ),
+    );
+    expect(await screen.findByText('ART started on 3 March 2024 [1].')).toBeInTheDocument();
+    expect(screen.getByText('Checking the answer')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Safety check unavailable' })).not.toBeInTheDocument();
+
+    await act(async () => stream.end());
+    expect(await screen.findByRole('heading', { name: 'Safety check unavailable' })).toBeInTheDocument();
+  });
+
   it.each([
     ['a clean check', { safetyStatus: 'checked', safetyCheck: { status: 'checked', issues: [] } }],
     [
