@@ -63,8 +63,19 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
+/**
+ * Catalogue keys no `t()` call names, which the extractor must keep anyway: the omnibar reads
+ * `omnibarCommand.<id>.aliases|label|description` from this module's catalogue. The same pattern
+ * as `keepRemoved` in `tools/i18next-parser.config.js`, which the pinned i18next-parser 6.6.0
+ * reads only as true or false, so it keeps every unread key, and the check below has to catch
+ * the stale ones instead.
+ */
+const keptUnread = /(^|:)omnibarCommand(\.|$)/;
+
 const occurrences = new Map<string, Occurrence[]>();
 const pluralKeys = new Set<string>();
+/** Every catalogue key a call reads, with a default or without one. */
+const readKeys = new Set<string>();
 for (const file of sourceFiles(__dirname)) {
   const source = fs.readFileSync(file, 'utf8');
   for (const entry of new JsxLexer().extract(source, file) as Array<{
@@ -73,6 +84,9 @@ for (const file of sourceFiles(__dirname)) {
     count?: unknown;
     defaultValue_other?: string;
   }>) {
+    for (const [catalogueKey] of catalogueEntries({ ...entry, defaultValue: entry.defaultValue ?? '' })) {
+      readKeys.add(catalogueKey);
+    }
     if (entry.defaultValue === undefined) continue;
     if (entry.count !== undefined) pluralKeys.add(entry.key);
     for (const [catalogueKey, text] of catalogueEntries({ ...entry, defaultValue: entry.defaultValue })) {
@@ -107,6 +121,12 @@ describe('translations/en.json', () => {
       .filter(([key, found]) => key in catalogue && found.some((entry) => catalogue[key] !== entry.text))
       .map(([key, found]) => `${key} (${found[0].file})\n  en.json: ${catalogue[key]}\n  code:    ${found[0].text}`);
     expect(drift).toEqual([]);
+  });
+
+  it('has no catalogue entry nothing reads, apart from the omnibar’s command strings', () => {
+    // The extractor keeps every unread key now, so a key whose last call was removed would ship
+    // forever without this.
+    expect(Object.keys(catalogue).filter((key) => !readKeys.has(key) && !keptUnread.test(key))).toEqual([]);
   });
 
   it('has a catalogue entry for every key the UI asks for', () => {

@@ -4,7 +4,7 @@ module.exports = {
   defaultNamespace: 'default',
   defaultValue: '',
   indentation: 2,
-  keepRemoved: false,
+  keepRemoved: [/(^|:)omnibarCommand(\.|$)/],
   keySeparator: false,
   lexers: {
     tsx: ['JsxLexer'],
