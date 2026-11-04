@@ -681,16 +681,18 @@ export interface AiFeedback {
  * AbortSignal to cancel an in-flight warmup when the user switches patients or closes
  * the chat before the previous warmup finished.
  */
-export function warmupPatient(patientUuid: string, signal?: AbortSignal) {
+export function warmupPatient(patientUuid: string, signal?: AbortSignal): Promise<void> {
   return openmrsFetch(`${BASE_PATH}/warmup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ patient: patientUuid }),
     signal,
-  }).catch(() => {
-    // ignore — the user does not depend on this completing, and aborts are expected on patient
-    // switch and on close
-  });
+  })
+    .then(() => undefined)
+    .catch(() => {
+      // ignore — the user does not depend on this completing, and aborts are expected on patient
+      // switch and on close
+    });
 }
 
 /**

@@ -56,8 +56,8 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
 
   // Pre-warm the server-side LLM prompt cache while the clinician types, so the first question
   // skips the full chart prefill. Fired when the chat opens, not when the chart does: every chart
-  // open used to spend a request, including charts where nobody asks anything. Only the bundled
-  // provider has a cache to warm, so nothing is sent while Hub is selected. Keyed on Hub-or-not
+  // open used to spend a request, including charts where nobody asks anything. It warms for any
+  // provider that is not Hub, and nothing is sent while Hub is selected. Keyed on Hub-or-not
   // rather than the provider id: the id starts null and the provider picker then records the
   // default, and a warmup the server has already queued cannot be recalled by aborting it. The
   // cleanup aborts an in-flight warmup on a patient switch, a switch to Hub, or when the chat closes.
