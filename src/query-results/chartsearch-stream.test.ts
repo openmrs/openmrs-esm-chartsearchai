@@ -107,6 +107,11 @@ describe('reading ChartSearch payloads', () => {
         activeOrderClaims: { stated: 4, uncited: -1 },
         unsupportedEndedOrderClaims: ['Nevirapine', ' ', 4],
         unstatedSignificanceQualifiers: [46, '47'],
+        orderStopDates: [
+          { citation: 3, stopDate: '2026-09-23' },
+          { citation: 4, stopDate: 'yesterday' },
+          { stopDate: '2026-09-23' },
+        ],
         conditionRuleCoverage: 'absent',
       }),
     ).toEqual({
@@ -128,6 +133,7 @@ describe('reading ChartSearch payloads', () => {
       activeOrderClaims: null,
       unsupportedEndedOrderClaims: ['Nevirapine'],
       unstatedSignificanceQualifiers: [46],
+      orderStopDates: [{ citation: 3, stopDate: '2026-09-23' }],
       conditionRuleCoverage: 'absent',
     });
   });

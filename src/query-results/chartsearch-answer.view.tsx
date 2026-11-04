@@ -142,7 +142,7 @@ const humanize = (value: string) => {
   return words ? words.charAt(0).toLocaleUpperCase() + words.slice(1) : value;
 };
 
-const formatDay = (date: string | null) => {
+const formatDay = (date: string | null | undefined) => {
   if (!date) return null;
   const parsed = new Date(/^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date}T00:00:00` : date);
   return Number.isNaN(parsed.getTime()) ? null : formatDate(parsed, { time: false });
@@ -274,6 +274,7 @@ const ChartSearchAnswerView: React.FC<OmnibarViewProps> = ({
 
   const citation = (ref: ChartSearchReference, chart: boolean) => {
     const date = formatDay(ref.date);
+    const stopDate = formatDay(statements?.orderStopDates?.find((entry) => entry.citation === ref.index)?.stopDate);
     const notes = caveats.get(ref.index) ?? [];
     return (
       <li key={`${ref.group}:${ref.index}`} className={styles.citation}>
@@ -281,6 +282,11 @@ const ChartSearchAnswerView: React.FC<OmnibarViewProps> = ({
         <span className={styles.citationText}>
           <span dir="auto">{humanize(ref.resourceType)}</span>
           {date && <span className={styles.citationDate}>{date}</span>}
+          {stopDate && (
+            <span className={styles.citationMeta}>
+              {t('orderStopDate', 'Stopped {{stopDate}}', { stopDate, interpolation: { escapeValue: false } })}
+            </span>
+          )}
           {chart ? (
             <span className={ref.grounded === false && final ? styles.verdictWarn : styles.verdict}>
               {verdictOf(ref)}

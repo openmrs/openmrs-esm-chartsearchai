@@ -177,6 +177,8 @@ export interface ChartSearchStatements {
   unstatedFindingSeverities: Array<ChartSearchCitedRating> | null;
   /** Cited findings whose record calls the interaction's significance unknown, unsaid in the answer. */
   unstatedSignificanceQualifiers: Array<number> | null;
+  /** The day each cited prescription stopped being in force, `yyyy-MM-dd`; no entry says nothing. */
+  orderStopDates: Array<{ citation: number; stopDate: string }> | null;
   activeOrderClaims: { stated: number; uncited: number } | null;
   /** Drugs the answer says have an order no longer in force, where no record it read says so. */
   unsupportedEndedOrderClaims: Array<string> | null;
@@ -188,6 +190,7 @@ const isString = (value: unknown): value is string => typeof value === 'string';
 const capped = (value: string, max = maxFieldCharacters) =>
   value.length > max ? `${value.slice(0, max - 1)}…` : value;
 const stringOrNull = (value: unknown) => (isString(value) ? capped(value) : null);
+const calendarDay = /^\d{4}-\d{2}-\d{2}$/;
 const wholeNumber = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0;
 const numbersOrNull = (value: unknown) => (Array.isArray(value) ? value.filter(wholeNumber) : null);
 const citedRatingsOrNull = (value: unknown): Array<ChartSearchCitedRating> | null =>
@@ -277,6 +280,14 @@ export function parseStatements(payload: Record<string, unknown>): ChartSearchSt
     misattributedOrderCitations: numbersOrNull(payload.misattributedOrderCitations),
     unstatedFindingSeverities: citedRatingsOrNull(payload.unstatedFindingSeverities),
     unstatedSignificanceQualifiers: numbersOrNull(payload.unstatedSignificanceQualifiers),
+    orderStopDates: Array.isArray(payload.orderStopDates)
+      ? payload.orderStopDates
+          .filter(
+            (entry) =>
+              entry && wholeNumber(entry.citation) && isString(entry.stopDate) && calendarDay.test(entry.stopDate),
+          )
+          .map((entry) => ({ citation: entry.citation, stopDate: entry.stopDate }))
+      : null,
     activeOrderClaims:
       claims && wholeNumber(claims.stated) && wholeNumber(claims.uncited)
         ? { stated: claims.stated, uncited: claims.uncited }

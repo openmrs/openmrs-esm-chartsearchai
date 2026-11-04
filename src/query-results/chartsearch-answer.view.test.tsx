@@ -493,6 +493,32 @@ describe('the Ask ChartSearch view', () => {
     );
   });
 
+  it('says beside a cited prescription the day it stopped, apart from the record’s own date', async () => {
+    const user = userEvent.setup();
+    const stream = streamingResponse();
+    fetchMock.mockResolvedValue(stream.response);
+    renderView('is he still on nevirapine?');
+
+    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+    await act(async () =>
+      stream.write(
+        frame(
+          'done',
+          done({
+            answer: 'Nevirapine was stopped [1].',
+            references: [{ index: 1, resourceType: 'drug_order', date: '2026-06-01', grounded: null, group: 'chart' }],
+            orderStopDates: [{ citation: 1, stopDate: '2026-09-23' }],
+          }),
+        ),
+      ),
+    );
+    await act(async () => stream.end());
+
+    const cited = within(await screen.findByRole('list', { name: 'Records cited' })).getByRole('listitem');
+    expect(within(cited).getByText(/^Stopped .*2026$/)).toHaveTextContent(/23.*Sep/);
+    expect(within(cited).getByText(/^01.*Jun.*2026$/)).toBeInTheDocument();
+  });
+
   it('hides an answer that cites no records', async () => {
     const user = userEvent.setup();
     const stream = streamingResponse();
