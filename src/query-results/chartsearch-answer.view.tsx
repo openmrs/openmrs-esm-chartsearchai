@@ -342,8 +342,10 @@ const ChartSearchAnswerView: React.FC<OmnibarViewProps> = ({
           {state.text && streaming && state.phase === 'answered' && (
             <InlineLoading description={t('checkingAnswer', 'Checking the answer')} />
           )}
+          {!unsourced && statements && <AnswerNotes statements={statements} />}
 
-          {!unsourced && statements && <Statements statements={statements} headingId={headingId} />}
+          {/* ChartSearch's own findings, which an answer citing nothing doesn't take with it. */}
+          {statements && <Statements statements={statements} headingId={headingId} />}
 
           {!unsourced && state.references.length > 0 && (
             <div className={styles.citations}>
@@ -385,7 +387,32 @@ const ChartSearchAnswerView: React.FC<OmnibarViewProps> = ({
   );
 };
 
-/** ChartSearch's statements about the answer: its drug-safety findings and the limits of its checks. */
+/** What ChartSearch says about the answer's own claims, drawn only with the answer. */
+const AnswerNotes: React.FC<{ statements: ChartSearchStatements }> = ({ statements }) => {
+  const { t } = useTranslation();
+  const { activeOrderClaims } = statements;
+  const lines: Array<string> = [];
+  if (activeOrderClaims && activeOrderClaims.stated > 0 && activeOrderClaims.uncited > 0) {
+    lines.push(
+      t('activeOrderClaimsUncited', '{{uncited}} of {{stated}} statements about active orders cite no chart record.', {
+        uncited: activeOrderClaims.uncited,
+        stated: activeOrderClaims.stated,
+        interpolation: { escapeValue: false },
+      }),
+    );
+  }
+  return (
+    <>
+      {lines.map((line) => (
+        <p key={line} className={styles.note} dir="auto">
+          {line}
+        </p>
+      ))}
+    </>
+  );
+};
+
+/** ChartSearch's own statements: its drug-safety findings and the limits of its checks. */
 const Statements: React.FC<{ statements: ChartSearchStatements; headingId: string }> = ({ statements, headingId }) => {
   const { t } = useTranslation();
   const typeLabel = (type: string) => {
@@ -400,23 +427,13 @@ const Statements: React.FC<{ statements: ChartSearchStatements; headingId: strin
         return type ? humanize(type) : t('safetyFinding', 'Safety finding');
     }
   };
-  const { safetyWarnings, interactionPairs, activeOrderClaims, unresolvedDrugClass, conditionRuleCoverage } =
-    statements;
+  const { safetyWarnings, interactionPairs, unresolvedDrugClass, conditionRuleCoverage } = statements;
   const lines: Array<string> = [];
   if (interactionPairs && interactionPairs.found > interactionPairs.reported) {
     lines.push(
       t('interactionPairsShown', '{{reported}} of {{found}} interaction pairs are shown.', {
         reported: interactionPairs.reported,
         found: interactionPairs.found,
-        interpolation: { escapeValue: false },
-      }),
-    );
-  }
-  if (activeOrderClaims && activeOrderClaims.stated > 0 && activeOrderClaims.uncited > 0) {
-    lines.push(
-      t('activeOrderClaimsUncited', '{{uncited}} of {{stated}} statements about active orders cite no chart record.', {
-        uncited: activeOrderClaims.uncited,
-        stated: activeOrderClaims.stated,
         interpolation: { escapeValue: false },
       }),
     );

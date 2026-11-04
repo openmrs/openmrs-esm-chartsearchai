@@ -395,6 +395,46 @@ describe('the Ask ChartSearch view', () => {
     expect(screen.queryByText(/ART started/)).not.toBeInTheDocument();
   });
 
+  it('keeps ChartSearch’s own safety findings beside an answer it hides for citing nothing', async () => {
+    const user = userEvent.setup();
+    const stream = streamingResponse();
+    fetchMock.mockResolvedValue(stream.response);
+    renderView('can I give him clarithromycin?');
+
+    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+    await act(async () =>
+      stream.write(
+        frame(
+          'done',
+          done({
+            answer: 'Clarithromycin can be given.',
+            references: [],
+            safetyWarnings: [
+              {
+                type: 'interaction',
+                drug: 'Clarithromycin',
+                detail: 'Clarithromycin interacts with active order Simvastatin. Major.',
+                severity: 'Major',
+              },
+            ],
+            unresolvedDrugClass: 'macrolide',
+            activeOrderClaims: { stated: 1, uncited: 1 },
+          }),
+        ),
+      ),
+    );
+    await act(async () => stream.end());
+
+    expect(await screen.findByText('This answer is hidden because it didn’t cite any records.')).toBeInTheDocument();
+    expect(screen.queryByText('Clarithromycin can be given.')).not.toBeInTheDocument();
+    const warning = within(screen.getByRole('list', { name: 'Safety findings' })).getByRole('listitem');
+    expect(
+      within(warning).getByText('Clarithromycin interacts with active order Simvastatin. Major.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/names a drug class, “macrolide”/)).toBeInTheDocument();
+    expect(screen.queryByText(/statements about active orders cite no chart record/)).not.toBeInTheDocument();
+  });
+
   it('never shows ChartSearch’s own error text', async () => {
     const user = userEvent.setup();
     const stream = streamingResponse();
