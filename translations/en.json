@@ -34,7 +34,7 @@
   "cancel": "Cancel",
   "caveatMisattributed": "This citation can’t be the active order the answer names.",
   "caveatUnfaithful": "The answer’s wording of this citation isn’t the record’s wording.",
-  "caveatUnstatedSeverity": "The answer doesn’t state this finding’s rating.",
+  "caveatUnstatedRating": "Rated {{rating}}. The answer doesn’t state this rating.",
   "chartSearchFailed": "ChartSearch couldn’t answer this question.",
   "chartSearchHeading": "ChartSearch",
   "chartSearchSignedOut": "Your session has ended. Log in again, then ask again.",

@@ -160,6 +160,12 @@ export interface ChartSearchSafetyCheck {
   issues: Array<string>;
 }
 
+/** A cited safety finding and the rating its record gives it. */
+export interface ChartSearchCitedRating {
+  citation: number;
+  rating: string;
+}
+
 /** The statements ChartSearch makes about its answer, from `done` and, later, `grounded`. */
 export interface ChartSearchStatements {
   safetyWarnings: Array<ChartSearchSafetyWarning>;
@@ -168,7 +174,7 @@ export interface ChartSearchStatements {
   unresolvedDrugClass: string | null;
   unfaithfullyRenderedCitations: Array<number> | null;
   misattributedOrderCitations: Array<number> | null;
-  unstatedFindingSeverities: Array<number> | null;
+  unstatedFindingSeverities: Array<ChartSearchCitedRating> | null;
   activeOrderClaims: { stated: number; uncited: number } | null;
   conditionRuleCoverage: string | null;
 }
@@ -180,6 +186,12 @@ const capped = (value: string, max = maxFieldCharacters) =>
 const stringOrNull = (value: unknown) => (isString(value) ? capped(value) : null);
 const wholeNumber = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0;
 const numbersOrNull = (value: unknown) => (Array.isArray(value) ? value.filter(wholeNumber) : null);
+const citedRatingsOrNull = (value: unknown): Array<ChartSearchCitedRating> | null =>
+  Array.isArray(value)
+    ? value
+        .filter((entry) => entry && wholeNumber(entry.citation) && isString(entry.rating) && entry.rating.trim())
+        .map((entry) => ({ citation: entry.citation, rating: capped(entry.rating.trim()) }))
+    : null;
 
 export function parseReferences(value: unknown): Array<ChartSearchReference> | null {
   if (!Array.isArray(value)) {
@@ -259,7 +271,7 @@ export function parseStatements(payload: Record<string, unknown>): ChartSearchSt
     unresolvedDrugClass: stringOrNull(payload.unresolvedDrugClass),
     unfaithfullyRenderedCitations: numbersOrNull(payload.unfaithfullyRenderedCitations),
     misattributedOrderCitations: numbersOrNull(payload.misattributedOrderCitations),
-    unstatedFindingSeverities: numbersOrNull(payload.unstatedFindingSeverities),
+    unstatedFindingSeverities: citedRatingsOrNull(payload.unstatedFindingSeverities),
     activeOrderClaims:
       claims && wholeNumber(claims.stated) && wholeNumber(claims.uncited)
         ? { stated: claims.stated, uncited: claims.uncited }

@@ -228,9 +228,14 @@ const ChartSearchAnswerView: React.FC<OmnibarViewProps> = ({
       statements?.misattributedOrderCitations,
       t('caveatMisattributed', 'This citation can’t be the active order the answer names.'),
     );
-    add(
-      statements?.unstatedFindingSeverities,
-      t('caveatUnstatedSeverity', 'The answer doesn’t state this finding’s rating.'),
+    statements?.unstatedFindingSeverities?.forEach(({ citation, rating }) =>
+      add(
+        [citation],
+        t('caveatUnstatedRating', 'Rated {{rating}}. The answer doesn’t state this rating.', {
+          rating,
+          interpolation: { escapeValue: false },
+        }),
+      ),
     );
     return byIndex;
   }, [statements, t]);

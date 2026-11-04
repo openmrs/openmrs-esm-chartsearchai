@@ -356,7 +356,7 @@ describe('the Ask ChartSearch view', () => {
             unresolvedDrugClass: 'NSAID',
             conditionRuleCoverage: 'absent',
             activeOrderClaims: { stated: 4, uncited: 2 },
-            unstatedFindingSeverities: [2],
+            unstatedFindingSeverities: [{ citation: 2, rating: 'Major' }],
           }),
         ),
       ),
@@ -377,7 +377,7 @@ describe('the Ask ChartSearch view', () => {
     const reference = screen.getByRole('list', { name: 'Reference material, not this patient’s record' });
     expect(reference).toHaveTextContent('Safety finding');
     expect(reference).toHaveTextContent('Source: DDInter 2.0');
-    expect(reference).toHaveTextContent('The answer doesn’t state this finding’s rating.');
+    expect(reference).toHaveTextContent('Rated Major. The answer doesn’t state this rating.');
     expect(reference).not.toHaveTextContent('Not checked');
   });
 

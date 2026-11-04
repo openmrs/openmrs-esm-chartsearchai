@@ -102,6 +102,7 @@ describe('reading ChartSearch payloads', () => {
         interactionPairs: { found: 18, reported: 10 },
         unresolvedDrugClass: 'NSAID',
         unfaithfullyRenderedCitations: [7, 'x'],
+        unstatedFindingSeverities: [{ citation: 350, rating: ' Major ' }, 351, { citation: 352 }, null],
         misattributedOrderCitations: null,
         activeOrderClaims: { stated: 4, uncited: -1 },
         conditionRuleCoverage: 'absent',
@@ -121,7 +122,7 @@ describe('reading ChartSearch payloads', () => {
       unresolvedDrugClass: 'NSAID',
       unfaithfullyRenderedCitations: [7],
       misattributedOrderCitations: null,
-      unstatedFindingSeverities: null,
+      unstatedFindingSeverities: [{ citation: 350, rating: 'Major' }],
       activeOrderClaims: null,
       conditionRuleCoverage: 'absent',
     });
