@@ -191,6 +191,7 @@
   "teamProfiles": "Team profiles",
   "thinkingEllipsis": "Thinking...",
   "unavailable": "unavailable",
+  "uncorroboratedChartMatch": "The module could not confirm this against the chart.",
   "unratedConfidence": "Unrated",
   "unstatedSeverityTitle": "Rated by the reference dataset. This answer may not state the rating — it is shown here so the findings can be ranked.",
   "unsupportedEndedOrderClaim_one": "No record says the {{drugs}} order has ended — the answer states it without one.",
