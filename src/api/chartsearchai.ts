@@ -681,8 +681,8 @@ export interface AiFeedback {
  * AbortSignal to cancel an in-flight warmup when the user switches patients or closes
  * the chat before the previous warmup finished.
  */
-export function warmupPatient(patientUuid: string, signal?: AbortSignal): void {
-  openmrsFetch(`${BASE_PATH}/warmup`, {
+export function warmupPatient(patientUuid: string, signal?: AbortSignal) {
+  return openmrsFetch(`${BASE_PATH}/warmup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ patient: patientUuid }),

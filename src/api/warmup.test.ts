@@ -26,8 +26,6 @@ describe('warmupPatient', () => {
   it('swallows a failed or aborted warmup', async () => {
     mockFetch.mockRejectedValueOnce(new DOMException('The operation was aborted.', 'AbortError'));
 
-    expect(() => warmupPatient('uuid-1')).not.toThrow();
-    // An unhandled rejection here would fail the run.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await expect(warmupPatient('uuid-1')).resolves.toBeUndefined();
   });
 });
