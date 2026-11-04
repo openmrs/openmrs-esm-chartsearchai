@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useReducer, useRef } from 'reac
 import { useTranslation } from 'react-i18next';
 import { Button, InlineLoading } from '@carbon/react';
 import { formatDate } from '@openmrs/esm-framework';
+import { SESSION_EXPIRED_ERROR_CODE, sessionExpiredOr } from '../api/chartsearchai';
 import { isServerUnreachable } from '../omnibar-contract/server-unreachable';
 import { type OmnibarViewProps, type OmnibarViewState } from '../omnibar-contract/types';
 import { safetyIssueText, safetyStatusTag, SUPPRESSED_SAFETY_ISSUES } from '../utils/safety-check-wording';
@@ -127,10 +128,13 @@ const isFailure = (phase: Phase): phase is Failure =>
 const maxDisclaimerCharacters = 1_000;
 
 /** How a failed request is told: the server out of reach, the session ended, or anything else. */
-function failureOf(error: unknown): Failure {
+async function failureOf(error: unknown): Promise<Failure> {
   if (isServerUnreachable(error)) return 'unavailable';
   // A raw fetch doesn't send the user to the login page as openmrsFetch would, so the page says why.
-  return (error as { response?: { status?: number } })?.response?.status === 401 ? 'signedOut' : 'failed';
+  if ((error as { response?: { status?: number } })?.response?.status === 401) return 'signedOut';
+  // An ended session rarely answers 401: a timed-out one gets an HTML 500 and a logged-out one the
+  // login page, so the server is asked.
+  return (await sessionExpiredOr('failed')) === SESSION_EXPIRED_ERROR_CODE ? 'signedOut' : 'failed';
 }
 
 const humanize = (value: string) => {
@@ -187,7 +191,9 @@ const ChartSearchAnswerView: React.FC<OmnibarViewProps> = ({
     dispatch({ type: 'ask' });
     streamChartSearch(patientUuid, question, (event) => dispatch({ type: 'event', event }), current.signal).then(
       () => current.signal.aborted || dispatch({ type: 'end' }),
-      (error) => current.signal.aborted || dispatch({ type: 'fail', phase: failureOf(error) }),
+      (error) =>
+        current.signal.aborted ||
+        failureOf(error).then((phase) => current.signal.aborted || dispatch({ type: 'fail', phase })),
     );
   }, [offered, patientUuid, question, signal]);
 

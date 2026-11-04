@@ -71,6 +71,10 @@ function streamingResponse(init: { status?: number; contentType?: string } = {})
   };
 }
 
+/** The server's answer to `GET /session`, which the page asks when a request fails for no stated reason. */
+const sessionResponse = (authenticated: boolean) => ({ ok: true, status: 200, json: async () => ({ authenticated }) });
+const isSessionCheck = (url: string) => url.includes('/session?');
+
 const done = (overrides: Record<string, unknown> = {}) => ({
   answer: 'ART started on 3 March 2024 [1].',
   disclaimer: 'This response is AI-generated and may not be accurate.',
@@ -531,6 +535,35 @@ describe('the Ask ChartSearch view', () => {
     expect(await screen.findByText(message)).toBeInTheDocument();
   });
 
+  it.each([
+    ['a bare HTML 500', { status: 500, contentType: 'text/html' }],
+    ['the login page it was redirected to', { contentType: 'text/html' }],
+  ])('says the session has ended when ChartSearch answers %s and the server says so', async (_, init) => {
+    const user = userEvent.setup();
+    fetchMock.mockImplementation((url: string) =>
+      Promise.resolve(isSessionCheck(url) ? sessionResponse(false) : streamingResponse(init).response),
+    );
+    renderView();
+
+    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+    expect(await screen.findByText('Your session has ended. Log in again, then ask again.')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/ws/rest/v1/session?'), expect.anything());
+  });
+
+  it.each([
+    ['says the session is live', () => Promise.resolve(sessionResponse(true))],
+    ['can’t be asked', () => Promise.reject(new TypeError('Failed to fetch'))],
+  ])('says only that ChartSearch couldn’t answer when a 500’s session check %s', async (_, check) => {
+    const user = userEvent.setup();
+    fetchMock.mockImplementation((url: string) =>
+      isSessionCheck(url) ? check() : Promise.resolve(streamingResponse({ status: 500 }).response),
+    );
+    renderView();
+
+    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+    expect(await screen.findByText('ChartSearch couldn’t answer this question.')).toBeInTheDocument();
+  });
+
   it('refuses a response that isn’t an event stream', async () => {
     const user = userEvent.setup();
     fetchMock.mockResolvedValue(streamingResponse({ contentType: 'text/html' }).response);
@@ -615,10 +648,12 @@ describe('the Ask ChartSearch view', () => {
     try {
       const user = userEvent.setup();
       const stream = streamingResponse();
-      fetchMock
+      const asks = vi
+        .fn()
         .mockResolvedValueOnce(stream.response)
         .mockResolvedValueOnce(streamingResponse({ status: 500 }).response)
         .mockRejectedValueOnce(new TypeError('Failed to fetch'));
+      fetchMock.mockImplementation((url: string) => (isSessionCheck(url) ? sessionResponse(true) : asks()));
       renderView();
 
       await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
@@ -627,7 +662,7 @@ describe('the Ask ChartSearch view', () => {
       expect(await screen.findByText('ChartSearch couldn’t answer this question.')).toBeInTheDocument();
 
       await user.click(screen.getByRole('button', { name: 'Try again' }));
-      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(asks).toHaveBeenCalledTimes(2));
       expect(await screen.findByText('ChartSearch couldn’t answer this question.')).toBeInTheDocument();
 
       await user.click(screen.getByRole('button', { name: 'Try again' }));
