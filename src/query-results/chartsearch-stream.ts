@@ -176,6 +176,8 @@ export interface ChartSearchStatements {
   misattributedOrderCitations: Array<number> | null;
   unstatedFindingSeverities: Array<ChartSearchCitedRating> | null;
   activeOrderClaims: { stated: number; uncited: number } | null;
+  /** Drugs the answer says have an order no longer in force, where no record it read says so. */
+  unsupportedEndedOrderClaims: Array<string> | null;
   conditionRuleCoverage: string | null;
 }
 
@@ -276,6 +278,9 @@ export function parseStatements(payload: Record<string, unknown>): ChartSearchSt
       claims && wholeNumber(claims.stated) && wholeNumber(claims.uncited)
         ? { stated: claims.stated, uncited: claims.uncited }
         : null,
+    unsupportedEndedOrderClaims: Array.isArray(payload.unsupportedEndedOrderClaims)
+      ? payload.unsupportedEndedOrderClaims.filter((drug) => isString(drug) && drug.trim()).map((drug) => capped(drug))
+      : null,
     conditionRuleCoverage: stringOrNull(payload.conditionRuleCoverage),
   };
 }

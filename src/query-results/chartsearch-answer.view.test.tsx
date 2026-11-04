@@ -440,6 +440,31 @@ describe('the Ask ChartSearch view', () => {
     expect(screen.queryByRole('heading', { name: /safety check|safety details/i })).not.toBeInTheDocument();
   });
 
+  it('says so under the answer when it claims an order ended that no record says has', async () => {
+    const user = userEvent.setup();
+    const stream = streamingResponse();
+    fetchMock.mockResolvedValue(stream.response);
+    renderView('is it safe to give rifampicin?');
+
+    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+    await act(async () =>
+      stream.write(
+        frame(
+          'done',
+          done({
+            answer: 'Nevirapine’s order is no longer in force, but it interacts with Rifampicin [1].',
+            unsupportedEndedOrderClaims: ['Nevirapine'],
+          }),
+        ),
+      ),
+    );
+    await act(async () => stream.end());
+
+    expect(
+      await screen.findByText('No record says the Nevirapine order has ended — the answer states it without one.'),
+    ).toBeInTheDocument();
+  });
+
   it('hides an answer that cites no records', async () => {
     const user = userEvent.setup();
     const stream = streamingResponse();

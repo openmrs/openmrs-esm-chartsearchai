@@ -402,8 +402,22 @@ const ChartSearchAnswerView: React.FC<OmnibarViewProps> = ({
 /** What ChartSearch says about the answer's own claims, drawn only with the answer. */
 const AnswerNotes: React.FC<{ statements: ChartSearchStatements }> = ({ statements }) => {
   const { t } = useTranslation();
-  const { activeOrderClaims } = statements;
+  const { activeOrderClaims, unsupportedEndedOrderClaims } = statements;
   const lines: Array<string> = [];
+  if (unsupportedEndedOrderClaims?.length) {
+    lines.push(
+      t(
+        'unsupportedEndedOrderClaim',
+        'No record says the {{drugs}} order has ended — the answer states it without one.',
+        {
+          drugs: unsupportedEndedOrderClaims.join(', '),
+          count: unsupportedEndedOrderClaims.length,
+          defaultValue_other: 'No record says the {{drugs}} orders have ended — the answer states it without one.',
+          interpolation: { escapeValue: false },
+        },
+      ),
+    );
+  }
   if (activeOrderClaims && activeOrderClaims.stated > 0 && activeOrderClaims.uncited > 0) {
     lines.push(
       t('activeOrderClaimsUncited', '{{uncited}} of {{stated}} statements about active orders cite no chart record.', {

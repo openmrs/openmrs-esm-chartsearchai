@@ -105,6 +105,7 @@ describe('reading ChartSearch payloads', () => {
         unstatedFindingSeverities: [{ citation: 350, rating: ' Major ' }, 351, { citation: 352 }, null],
         misattributedOrderCitations: null,
         activeOrderClaims: { stated: 4, uncited: -1 },
+        unsupportedEndedOrderClaims: ['Nevirapine', ' ', 4],
         conditionRuleCoverage: 'absent',
       }),
     ).toEqual({
@@ -124,6 +125,7 @@ describe('reading ChartSearch payloads', () => {
       misattributedOrderCitations: null,
       unstatedFindingSeverities: [{ citation: 350, rating: 'Major' }],
       activeOrderClaims: null,
+      unsupportedEndedOrderClaims: ['Nevirapine'],
       conditionRuleCoverage: 'absent',
     });
   });
