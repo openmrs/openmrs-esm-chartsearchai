@@ -1,4 +1,5 @@
 import { makeUrl, restBaseUrl } from '@openmrs/esm-framework';
+import { type AiSafetyStatus } from '../api/chartsearchai';
 
 /**
  * Reads ChartSearch's streaming answer (`POST chartsearchai/search/stream`, server-sent events) for
@@ -153,9 +154,16 @@ export interface ChartSearchSafetyWarning {
   chartOrderBridges: Array<{ substance: string; orderDisplay: string }>;
 }
 
+/** Whether the drug-safety check ran, and its limitation codes. `checked` never says a drug is safe. */
+export interface ChartSearchSafetyCheck {
+  status: AiSafetyStatus;
+  issues: Array<string>;
+}
+
 /** The statements ChartSearch makes about its answer, from `done` and, later, `grounded`. */
 export interface ChartSearchStatements {
   safetyWarnings: Array<ChartSearchSafetyWarning>;
+  safetyCheck: ChartSearchSafetyCheck | null;
   interactionPairs: { found: number; reported: number } | null;
   unresolvedDrugClass: string | null;
   unfaithfullyRenderedCitations: Array<number> | null;
@@ -217,11 +225,33 @@ function parseWarnings(value: unknown): Array<ChartSearchSafetyWarning> {
     }));
 }
 
+const safetyStatuses: ReadonlyArray<unknown> = ['checked', 'limited', 'unavailable'] satisfies Array<AiSafetyStatus>;
+const isSafetyStatus = (value: unknown): value is AiSafetyStatus => safetyStatuses.includes(value);
+
+/** `safetyCheck` where it states a status, else the older `safetyStatus`, as the chat reads them. */
+function parseSafetyCheck(payload: Record<string, unknown>): ChartSearchSafetyCheck | null {
+  const check =
+    payload.safetyCheck && typeof payload.safetyCheck === 'object'
+      ? (payload.safetyCheck as { status?: unknown; issues?: unknown })
+      : null;
+  const status = isSafetyStatus(check?.status)
+    ? check.status
+    : isSafetyStatus(payload.safetyStatus)
+      ? payload.safetyStatus
+      : null;
+  if (!status) {
+    return null;
+  }
+  const issues = Array.isArray(check?.issues) ? check.issues.filter(isString).map((issue) => capped(issue)) : [];
+  return { status, issues: Array.from(new Set(issues)) };
+}
+
 export function parseStatements(payload: Record<string, unknown>): ChartSearchStatements {
   const pairs = payload.interactionPairs as { found?: unknown; reported?: unknown } | null;
   const claims = payload.activeOrderClaims as { stated?: unknown; uncited?: unknown } | null;
   return {
     safetyWarnings: parseWarnings(payload.safetyWarnings),
+    safetyCheck: parseSafetyCheck(payload),
     interactionPairs:
       pairs && wholeNumber(pairs.found) && wholeNumber(pairs.reported)
         ? { found: pairs.found, reported: pairs.reported }

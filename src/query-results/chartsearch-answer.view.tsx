@@ -4,6 +4,7 @@ import { Button, InlineLoading } from '@carbon/react';
 import { formatDate } from '@openmrs/esm-framework';
 import { isServerUnreachable } from '../omnibar-contract/server-unreachable';
 import { type OmnibarViewProps, type OmnibarViewState } from '../omnibar-contract/types';
+import { safetyIssueText, safetyStatusTag, SUPPRESSED_SAFETY_ISSUES } from '../utils/safety-check-wording';
 import { useChartSearchOffer } from './chartsearch-offer';
 import {
   type ChartSearchReference,
@@ -427,7 +428,18 @@ const Statements: React.FC<{ statements: ChartSearchStatements; headingId: strin
         return type ? humanize(type) : t('safetyFinding', 'Safety finding');
     }
   };
-  const { safetyWarnings, interactionPairs, unresolvedDrugClass, conditionRuleCoverage } = statements;
+  const { safetyWarnings, safetyCheck, interactionPairs, unresolvedDrugClass, conditionRuleCoverage } = statements;
+  // As the chat does: codes it deliberately leaves unreported, such as a check switched off, say
+  // nothing on their own, and a check that ran clean says nothing either.
+  const issues = (safetyCheck?.issues ?? []).filter((issue) => !SUPPRESSED_SAFETY_ISSUES.has(issue));
+  const onlySuppressedIssues = Boolean(safetyCheck?.issues.length) && !issues.length;
+  const status = onlySuppressedIssues ? null : safetyCheck?.status;
+  const checkHeading =
+    status && status !== 'checked'
+      ? safetyStatusTag(status, t).label
+      : issues.length
+        ? t('safetyCheckDetails', 'Medication safety details')
+        : null;
   const lines: Array<string> = [];
   if (interactionPairs && interactionPairs.found > interactionPairs.reported) {
     lines.push(
@@ -455,7 +467,7 @@ const Statements: React.FC<{ statements: ChartSearchStatements; headingId: strin
       ),
     );
   }
-  if (!safetyWarnings.length && !lines.length) {
+  if (!safetyWarnings.length && !checkHeading && !lines.length) {
     return null;
   }
   return (
@@ -491,6 +503,22 @@ const Statements: React.FC<{ statements: ChartSearchStatements; headingId: strin
               </li>
             ))}
           </ul>
+        </>
+      )}
+      {checkHeading && (
+        <>
+          <h4 className={styles.subheading} id={`${headingId}-check`}>
+            {checkHeading}
+          </h4>
+          {issues.length > 0 && (
+            <ul aria-labelledby={`${headingId}-check`}>
+              {issues.map((issue) => (
+                <li key={issue} className={styles.note} dir="auto">
+                  {safetyIssueText(issue, t)}
+                </li>
+              ))}
+            </ul>
+          )}
         </>
       )}
       {lines.map((line) => (

@@ -97,6 +97,8 @@ describe('reading ChartSearch payloads', () => {
           },
           { type: 'overdose' },
         ],
+        safetyStatus: 'unavailable',
+        safetyCheck: { status: 'limited', issues: ['weight_unavailable', 3, 'weight_unavailable'] },
         interactionPairs: { found: 18, reported: 10 },
         unresolvedDrugClass: 'NSAID',
         unfaithfullyRenderedCitations: [7, 'x'],
@@ -114,6 +116,7 @@ describe('reading ChartSearch payloads', () => {
           chartOrderBridges: [{ substance: 'Ibuprofen', orderDisplay: 'Advil 400mg' }],
         },
       ],
+      safetyCheck: { status: 'limited', issues: ['weight_unavailable'] },
       interactionPairs: { found: 18, reported: 10 },
       unresolvedDrugClass: 'NSAID',
       unfaithfullyRenderedCitations: [7],
@@ -122,5 +125,14 @@ describe('reading ChartSearch payloads', () => {
       activeOrderClaims: null,
       conditionRuleCoverage: 'absent',
     });
+  });
+
+  it('reads the safety check from safetyCheck, falling back to safetyStatus, and never invents one', () => {
+    expect(parseStatements({ safetyCheck: { status: 'unknown' }, safetyStatus: 'checked' }).safetyCheck).toEqual({
+      status: 'checked',
+      issues: [],
+    });
+    expect(parseStatements({ safetyCheck: 'limited', safetyStatus: 'clean' }).safetyCheck).toBeNull();
+    expect(parseStatements({}).safetyCheck).toBeNull();
   });
 });

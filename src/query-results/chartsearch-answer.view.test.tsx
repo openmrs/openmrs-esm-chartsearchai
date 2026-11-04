@@ -381,6 +381,61 @@ describe('the Ask ChartSearch view', () => {
     expect(reference).not.toHaveTextContent('Not checked');
   });
 
+  it.each([
+    [
+      'a limited check',
+      { safetyStatus: 'limited', safetyCheck: { status: 'limited', issues: ['weight_unavailable'] } },
+      'Limited safety check',
+      ['A weight-based dose check could not run because the patient weight was unavailable.'],
+    ],
+    [
+      'a failed check',
+      { safetyStatus: 'unavailable', safetyCheck: { status: 'unavailable', issues: ['execution_failed'] } },
+      'Safety check unavailable',
+      ['The medication-safety check did not complete.'],
+    ],
+    ['a limited check stated only by safetyStatus', { safetyStatus: 'limited' }, 'Limited safety check', []],
+  ])('says so when ChartSearch reports %s, rather than look clean', async (_, check, heading, issues) => {
+    const user = userEvent.setup();
+    const stream = streamingResponse();
+    fetchMock.mockResolvedValue(stream.response);
+    renderView();
+
+    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+    await act(async () => stream.write(frame('done', done(check))));
+    await act(async () => stream.end());
+
+    expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
+    const list = screen.queryByRole('list', { name: heading });
+    expect(
+      list
+        ? within(list)
+            .getAllByRole('listitem')
+            .map((item) => item.textContent)
+        : [],
+    ).toEqual(issues);
+  });
+
+  it.each([
+    ['a clean check', { safetyStatus: 'checked', safetyCheck: { status: 'checked', issues: [] } }],
+    [
+      'a check switched off',
+      { safetyStatus: 'unavailable', safetyCheck: { status: 'unavailable', issues: ['check_disabled'] } },
+    ],
+  ])('says nothing of the safety check for %s', async (_, check) => {
+    const user = userEvent.setup();
+    const stream = streamingResponse();
+    fetchMock.mockResolvedValue(stream.response);
+    renderView();
+
+    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+    await act(async () => stream.write(frame('done', done(check))));
+    await act(async () => stream.end());
+
+    expect(await screen.findByText('Not checked')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /safety check|safety details/i })).not.toBeInTheDocument();
+  });
+
   it('hides an answer that cites no records', async () => {
     const user = userEvent.setup();
     const stream = streamingResponse();
