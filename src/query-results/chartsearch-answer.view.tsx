@@ -284,13 +284,10 @@ const ChartSearchAnswerView: React.FC<OmnibarViewProps> = ({
           {stopDate && (
             <span
               className={styles.citationMeta}
-              title={`${t(
+              title={t(
                 'orderStopDateTitle',
                 'The date this prescription stopped being in force — not the record’s own date shown beside it.',
-              )} ${t(
-                'utcCalendarDayTitle',
-                'The date is a calendar day in UTC, so it can be a day off the local date.',
-              )}`}
+              )}
             >
               {t('orderStopDate', 'Stopped {{stopDate}}', { stopDate, interpolation: { escapeValue: false } })}
             </span>

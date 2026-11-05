@@ -625,7 +625,7 @@ describe('the Ask ChartSearch view', () => {
     const stopped = within(cited).getByText('Stopped 2026-09-23');
     expect(stopped).toHaveAttribute(
       'title',
-      'The date this prescription stopped being in force — not the record’s own date shown beside it. The date is a calendar day in UTC, so it can be a day off the local date.',
+      'The date this prescription stopped being in force — not the record’s own date shown beside it.',
     );
     expect(within(cited).getByText('2026-06-01')).toBeInTheDocument();
   });
