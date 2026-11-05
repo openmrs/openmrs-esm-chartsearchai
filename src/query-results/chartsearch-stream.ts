@@ -152,6 +152,19 @@ export interface ChartSearchSafetyWarning {
   detail: string;
   severity: string | null;
   chartOrderBridges: Array<{ substance: string; orderDisplay: string }>;
+  /** Only `true` is kept. `false` does not say she is off the drug. */
+  aboutACurrentMedication?: true;
+  /** Orders she already has for this drug, named as the chart displays them. */
+  currentMedicationOrders: Array<{ orderDisplay?: string; orderUuid?: string }>;
+  /** Only `true` is kept. The chart holds this drug only as an ended order. */
+  aboutAnEndedOrder?: true;
+  /** The day that ended order stopped, `yyyy-MM-dd`, or null when it names none. */
+  endedOrderStopDate: string | null;
+  /**
+   * Only `true` is kept. This finding is about another of her medications, so the
+   * already-prescribed tag stays off it.
+   */
+  aboutAnotherOfHerMedications?: true;
 }
 
 /** Whether the drug-safety check ran, and its limitation codes. `checked` never says a drug is safe. */
@@ -219,29 +232,59 @@ export function parseReferences(value: unknown): Array<ChartSearchReference> | n
     }));
 }
 
+/** Orders behind a current-medication finding: a capped display, and a uuid when sent. */
+function parseMedicationOrders(value: unknown): Array<{ orderDisplay?: string; orderUuid?: string }> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((order: { orderDisplay?: unknown; orderUuid?: unknown } | null) => {
+    if (!order || typeof order !== 'object') {
+      return [];
+    }
+    const display = isString(order.orderDisplay) ? order.orderDisplay.trim() : '';
+    if (!display) {
+      return [];
+    }
+    const uuid = isString(order.orderUuid) ? order.orderUuid.trim() : '';
+    return [{ orderDisplay: capped(display), ...(uuid ? { orderUuid: capped(uuid) } : {}) }];
+  });
+}
+
 function parseWarnings(value: unknown): Array<ChartSearchSafetyWarning> {
   if (!Array.isArray(value)) {
     return [];
   }
   return value
     .filter((chip) => chip && typeof chip === 'object' && isString(chip.detail))
-    .map((chip) => ({
-      type: isString(chip.type) ? capped(chip.type) : '',
-      drug: isString(chip.drug) ? capped(chip.drug) : '',
-      detail: capped(chip.detail, maxDetailCharacters),
-      severity: isString(chip.severity) && chip.severity.trim() ? capped(chip.severity.trim()) : null,
-      chartOrderBridges: Array.isArray(chip.chartOrderBridges)
-        ? chip.chartOrderBridges
-            .filter(
-              (bridge: { substance?: unknown; orderDisplay?: unknown } | null) =>
-                bridge && isString(bridge.substance) && isString(bridge.orderDisplay),
-            )
-            .map((bridge: { substance: string; orderDisplay: string }) => ({
-              substance: capped(bridge.substance),
-              orderDisplay: capped(bridge.orderDisplay),
-            }))
-        : [],
-    }));
+    .map((chip) => {
+      const warning: ChartSearchSafetyWarning = {
+        type: isString(chip.type) ? capped(chip.type) : '',
+        drug: isString(chip.drug) ? capped(chip.drug) : '',
+        detail: capped(chip.detail, maxDetailCharacters),
+        severity: isString(chip.severity) && chip.severity.trim() ? capped(chip.severity.trim()) : null,
+        chartOrderBridges: Array.isArray(chip.chartOrderBridges)
+          ? chip.chartOrderBridges
+              .filter(
+                (bridge: { substance?: unknown; orderDisplay?: unknown } | null) =>
+                  bridge && isString(bridge.substance) && isString(bridge.orderDisplay),
+              )
+              .map((bridge: { substance: string; orderDisplay: string }) => ({
+                substance: capped(bridge.substance),
+                orderDisplay: capped(bridge.orderDisplay),
+              }))
+          : [],
+        currentMedicationOrders: parseMedicationOrders(chip.currentMedicationOrders),
+        endedOrderStopDate:
+          isString(chip.endedOrderStopDate) && calendarDay.test(chip.endedOrderStopDate)
+            ? chip.endedOrderStopDate
+            : null,
+      };
+      // Only `true` is a claim. `false`, and a backend that sends nothing, say nothing.
+      if (chip.aboutACurrentMedication === true) warning.aboutACurrentMedication = true;
+      if (chip.aboutAnEndedOrder === true) warning.aboutAnEndedOrder = true;
+      if (chip.aboutAnotherOfHerMedications === true) warning.aboutAnotherOfHerMedications = true;
+      return warning;
+    });
 }
 
 const safetyStatuses: ReadonlyArray<unknown> = ['checked', 'limited', 'unavailable'] satisfies Array<AiSafetyStatus>;

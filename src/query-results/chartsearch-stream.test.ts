@@ -122,6 +122,8 @@ describe('reading ChartSearch payloads', () => {
           detail: 'Aspirin interacts with active order Warfarin.',
           severity: 'Major',
           chartOrderBridges: [{ substance: 'Ibuprofen', orderDisplay: 'Advil 400mg' }],
+          currentMedicationOrders: [],
+          endedOrderStopDate: null,
         },
       ],
       safetyCheck: { status: 'limited', issues: ['weight_unavailable'] },
@@ -135,6 +137,76 @@ describe('reading ChartSearch payloads', () => {
       unstatedSignificanceQualifiers: [46],
       orderStopDates: [{ citation: 3, stopDate: '2026-09-23' }],
       conditionRuleCoverage: 'absent',
+    });
+  });
+
+  it('keeps a current medication and an ended order on a finding, and drops what is not one', () => {
+    const [own, ended, proposed] = parseStatements({
+      safetyWarnings: [
+        {
+          type: 'contraindication',
+          drug: 'Ibuprofen',
+          detail: 'The patient has a recorded allergy to Ibuprofen.',
+          aboutACurrentMedication: true,
+          aboutAnotherOfHerMedications: true,
+          currentMedicationOrders: [
+            { orderDisplay: ' Advil 400mg ', orderUuid: ' uuid-advil ' },
+            { orderDisplay: 'Lidocaine' },
+            { orderDisplay: 'L'.repeat(600), orderUuid: 'u'.repeat(600) },
+            { orderDisplay: '   ', orderUuid: 'no-name' },
+            { orderUuid: 'only-uuid' },
+            null,
+            'nope',
+          ],
+          endedOrderStopDate: null,
+        },
+        {
+          type: 'interaction',
+          drug: 'Rifampicin',
+          detail: 'Rifampicin interacts with active order Nevirapine.',
+          aboutAnEndedOrder: true,
+          aboutACurrentMedication: 'true',
+          endedOrderStopDate: '2026-09-23',
+          currentMedicationOrders: 'nope',
+        },
+        {
+          type: 'contraindication',
+          drug: 'Aspirin',
+          detail: 'The patient has a recorded allergy to Aspirin.',
+          aboutACurrentMedication: false,
+          aboutAnEndedOrder: false,
+          aboutAnotherOfHerMedications: false,
+          endedOrderStopDate: 'yesterday',
+          currentMedicationOrders: [{ orderDisplay: 1 }],
+        },
+      ],
+    }).safetyWarnings;
+
+    expect(own).toMatchObject({
+      aboutACurrentMedication: true,
+      currentMedicationOrders: [
+        { orderDisplay: 'Advil 400mg', orderUuid: 'uuid-advil' },
+        { orderDisplay: 'Lidocaine' },
+        { orderDisplay: `${'L'.repeat(499)}…`, orderUuid: `${'u'.repeat(499)}…` },
+      ],
+      aboutAnotherOfHerMedications: true,
+      endedOrderStopDate: null,
+    });
+    expect(own).not.toHaveProperty('aboutAnEndedOrder');
+    expect(ended).toMatchObject({
+      aboutAnEndedOrder: true,
+      endedOrderStopDate: '2026-09-23',
+      currentMedicationOrders: [],
+    });
+    expect(ended).not.toHaveProperty('aboutACurrentMedication');
+    expect(proposed).toEqual({
+      type: 'contraindication',
+      drug: 'Aspirin',
+      detail: 'The patient has a recorded allergy to Aspirin.',
+      severity: null,
+      chartOrderBridges: [],
+      currentMedicationOrders: [],
+      endedOrderStopDate: null,
     });
   });
 
