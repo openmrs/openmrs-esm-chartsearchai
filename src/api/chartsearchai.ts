@@ -275,6 +275,11 @@ export interface AiSafetyWarning {
    * Read by the compact chip, which names the partner on one line where the detail is collapsed.
    */
   namedPartners?: string[] | null;
+  /**
+   * Whether the chip is the finding that a substance is in her own active orders, whose
+   * namedPartners are those orders rather than another drug (backend ADR Decision 590).
+   */
+  aboutItsOwnOrders?: boolean;
 }
 
 /** One rating the backend found attached to, or missing from, a cited safety finding. */

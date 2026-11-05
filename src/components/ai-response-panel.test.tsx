@@ -2635,6 +2635,34 @@ describe('AiResponsePanel chip the answer already cites', () => {
     expect(within(chip).getByRole('button', { name: 'Show details' })).toHaveAttribute('aria-expanded', 'false');
   });
 
+  it('draws a finding about her own orders as a duplicate order, never as an interaction with itself', () => {
+    // The backend marks the finding that a substance is in her own orders `aboutItsOwnOrders`
+    // (chartsearchai ADR Decision 590); its namedPartners are her own orders, so the interaction's
+    // "drug — partner" line read "Lamivudine — Lamivudine" under an Interaction tag.
+    const [aspirin] = ASPIRIN_CHIP_THE_ANSWER_CITES.safetyWarnings;
+    renderAspirin({
+      safetyWarnings: [
+        {
+          ...aspirin,
+          type: 'interaction',
+          aboutItsOwnOrders: true,
+          drug: 'Lamivudine',
+          detail: 'Lamivudine is in active orders Lamivudine (3 orders) — possible duplicate therapy',
+          severity: null,
+          namedPartners: ['Lamivudine'],
+          aboutACurrentMedication: true,
+          findingCitation: 46,
+        },
+      ],
+    });
+    openSafetyChecks();
+    const chip = chipItems()[0];
+    expect(chip).toHaveTextContent('Duplicate order');
+    expect(chip).toHaveTextContent("Lamivudine — already in this patient's active orders");
+    expect(chip).not.toHaveTextContent('Interaction');
+    expect(chip).not.toHaveTextContent('Lamivudine — Lamivudine');
+  });
+
   it('names every marker the answer cites the finding at, in order', () => {
     const finding = ASPIRIN_CHIP_THE_ANSWER_CITES.references.find((ref) => ref.resourceType === 'safety_finding');
     expect(finding?.index).toBe(46);

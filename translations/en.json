@@ -131,6 +131,8 @@
   "safetyCrossReactivitySourceUnavailable": "No cross-reactivity reference source was available.",
   "safetyDoseNotAssessable": "The answer did not supply a dose and schedule that this check could assess.",
   "safetyDrugResolutionFailed": "A named medication could not be matched to the configured reference source.",
+  "safetyDuplicateOrder": "Duplicate order",
+  "safetyDuplicateOrderLine": "already in this patient's active orders",
   "safetyExecutionFailed": "The medication-safety check did not complete.",
   "safetyExposureIncomplete": "Medication, allergy, or condition context may be incomplete for this check.",
   "safetyFindingCitation": "The module’s own safety finding, computed from this patient’s chart — not a chart record to open.",

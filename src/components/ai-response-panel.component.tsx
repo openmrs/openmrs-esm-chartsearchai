@@ -1138,7 +1138,12 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
 
   // One chip as the safety box draws it, in either of its two lists.
   const renderWarning = (warning: AiSafetyWarning, i: number) => {
-    const { tagType, label } = safetyWarningTag(warning.type, t);
+    // A substance in her own orders relates no pair: its namedPartners are those orders
+    // (backend ADR Decision 590).
+    const ownOrders = warning.aboutItsOwnOrders === true;
+    const { tagType, label } = ownOrders
+      ? { tagType: 'magenta' as const, label: t('safetyDuplicateOrder', 'Duplicate order') }
+      : safetyWarningTag(warning.type, t);
     const endedOn = calendarDay(warning.endedOrderStopDate);
     const absent = !compactWarnings.has(warning) && absentWarnings.has(warning);
     const reworded = !compactWarnings.has(warning) && rewordedWarnings.has(warning);
@@ -1163,7 +1168,9 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
           {collapsed ? (
             <>
               {oneLineSubject}
-              {partners.length > 0 && ` — ${partners.join(', ')}`}
+              {ownOrders
+                ? ` — ${t('safetyDuplicateOrderLine', "already in this patient's active orders")}`
+                : partners.length > 0 && ` — ${partners.join(', ')}`}
               {severity && ` (${severity})`}
             </>
           ) : (
