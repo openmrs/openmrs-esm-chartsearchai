@@ -469,7 +469,7 @@ const Statements: React.FC<{ statements: ChartSearchStatements; headingId: strin
         return type ? humanize(type) : t('safetyFinding', 'Safety finding');
     }
   };
-  const { safetyWarnings, safetyCheck, interactionPairs, unresolvedDrugClass, conditionRuleCoverage } = statements;
+  const { safetyWarnings, safetyCheck, interactionPairs, unresolvedDrugClass } = statements;
   // As the chat does: codes it deliberately leaves unreported, such as a check switched off, say
   // nothing on their own, and a check that ran clean says nothing either.
   const issues = (safetyCheck?.issues ?? []).filter((issue) => !SUPPRESSED_SAFETY_ISSUES.has(issue));
@@ -497,14 +497,6 @@ const Statements: React.FC<{ statements: ChartSearchStatements; headingId: strin
         'unresolvedDrugClass',
         'The question names a drug class, “{{drugClass}}”. Reference entries are listed by individual drug, so the class wasn’t matched to any of them. Ask about a specific drug by name.',
         { drugClass: unresolvedDrugClass, interpolation: { escapeValue: false } },
-      ),
-    );
-  }
-  if (conditionRuleCoverage === 'absent') {
-    lines.push(
-      t(
-        'conditionRulesAbsent',
-        'The patient’s recorded conditions weren’t screened against contraindication rules: the loaded drug reference has none.',
       ),
     );
   }

@@ -376,7 +376,7 @@ describe('the Ask ChartSearch view', () => {
     expect(screen.getByText('10 of 18 interaction pairs are shown.')).toBeInTheDocument();
     expect(screen.getByText('2 of 4 statements about active orders cite no chart record.')).toBeInTheDocument();
     expect(screen.getByText(/names a drug class, “NSAID”/)).toBeInTheDocument();
-    expect(screen.getByText(/conditions weren’t screened/)).toBeInTheDocument();
+    expect(screen.queryByText(/conditions weren’t screened/)).not.toBeInTheDocument();
     expect(screen.getByText('Added by ChartSearch from a safety finding')).toBeInTheDocument();
     const reference = screen.getByRole('list', { name: 'Reference material, not this patient’s record' });
     expect(reference).toHaveTextContent('Safety finding');

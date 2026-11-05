@@ -54,7 +54,6 @@
   "citedReference": "Reference material, not this patient’s record",
   "citesNoRecords": "Cites no records. Check the chart.",
   "close": "Close",
-  "conditionRulesAbsent": "The patient’s recorded conditions weren’t screened against contraindication rules: the loaded drug reference has none.",
   "connectionFailedError": "Could not reach the server. Check the connection and try again.",
   "copy": "Copy",
   "crossReactivityFindings_one": "{{count}} possible cross-reactivity finding",
