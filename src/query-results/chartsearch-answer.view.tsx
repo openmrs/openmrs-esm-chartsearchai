@@ -519,30 +519,73 @@ const Statements: React.FC<{ statements: ChartSearchStatements; headingId: strin
             {t('safetyFindings', 'Safety findings')}
           </h4>
           <ul aria-labelledby={`${headingId}-safety`}>
-            {safetyWarnings.map((warning, index) => (
-              <li key={index} className={styles.warning}>
-                <span className={styles.warningType}>
-                  {typeLabel(warning.type)}
-                  {warning.severity && (
-                    <span className={styles.severity} dir="auto">
-                      {warning.severity}
+            {safetyWarnings.map((warning, index) => {
+              const orders = warning.currentMedicationOrders
+                .map((order) => (typeof order.orderDisplay === 'string' ? order.orderDisplay.trim() : ''))
+                .filter((name) => name.length > 0);
+              // The chip's words do not say she already takes the drug. Not on an interaction,
+              // whose words already say "active order", and not on another of her medications.
+              const showPrescribed =
+                warning.aboutACurrentMedication === true &&
+                warning.type === 'contraindication' &&
+                warning.aboutAnotherOfHerMedications !== true;
+              return (
+                <li key={index} className={styles.warning}>
+                  <span className={styles.warningType}>
+                    {typeLabel(warning.type)}
+                    {warning.severity && (
+                      <span className={styles.severity} dir="auto">
+                        {warning.severity}
+                      </span>
+                    )}
+                  </span>
+                  <span className={styles.warningDetail} dir="auto">
+                    {warning.detail}
+                  </span>
+                  {showPrescribed && (
+                    <span
+                      className={styles.currentMedicationTag}
+                      title={t(
+                        'alreadyPrescribedTitle',
+                        'The patient has an active order for this drug, so this finding is about a medication already prescribed, not one being proposed. The drug shown is the substance the module matched that order to, which the order itself may name differently — a brand name, for example.',
+                      )}
+                    >
+                      {orders.length > 0
+                        ? t('alreadyPrescribedOrders', 'Already prescribed: {{orders}}', {
+                            orders: orders.join(', '),
+                            interpolation: { escapeValue: false },
+                          })
+                        : t('alreadyPrescribed', 'Already prescribed')}
                     </span>
                   )}
-                </span>
-                <span className={styles.warningDetail} dir="auto">
-                  {warning.detail}
-                </span>
-                {warning.chartOrderBridges.map((bridge, bridgeIndex) => (
-                  <span key={bridgeIndex} className={styles.citationMeta} dir="auto">
-                    {t('resolvedFromOrder', '{{substance}} was resolved from the order “{{order}}”', {
-                      substance: bridge.substance,
-                      order: bridge.orderDisplay,
-                      interpolation: { escapeValue: false },
-                    })}
-                  </span>
-                ))}
-              </li>
-            ))}
+                  {warning.aboutAnEndedOrder === true && (
+                    <span
+                      className={styles.endedOrderTag}
+                      title={t(
+                        'aboutAnEndedOrderTitle',
+                        'The chart records this drug only as an order no longer in force, so the finding is about what giving it again would mean — not about a medication the patient is taking now.',
+                      )}
+                    >
+                      {warning.endedOrderStopDate
+                        ? t('aboutAnEndedOrderOn', 'About an order no longer in force, ended {{stopDate}}', {
+                            stopDate: warning.endedOrderStopDate,
+                            interpolation: { escapeValue: false },
+                          })
+                        : t('aboutAnEndedOrder', 'About an order no longer in force')}
+                    </span>
+                  )}
+                  {warning.chartOrderBridges.map((bridge, bridgeIndex) => (
+                    <span key={bridgeIndex} className={styles.citationMeta} dir="auto">
+                      {t('resolvedFromOrder', '{{substance}} was resolved from the order “{{order}}”', {
+                        substance: bridge.substance,
+                        order: bridge.orderDisplay,
+                        interpolation: { escapeValue: false },
+                      })}
+                    </span>
+                  ))}
+                </li>
+              );
+            })}
           </ul>
         </>
       )}

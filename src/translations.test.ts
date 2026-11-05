@@ -104,7 +104,8 @@ describe('translations/en.json', () => {
     // A sweep that discovered nothing would make every assertion below pass while examining
     // nothing — the failure mode this whole file exists to catch, one level up.
     expect(occurrences.size).toBeGreaterThan(20);
-    expect(occurrences.get('aboutAnEndedOrder')?.length).toBe(1);
+    // The chat and the query-results page each draw this tag.
+    expect(occurrences.get('aboutAnEndedOrder')?.length).toBe(2);
   });
 
   it('states one default per key, however many call sites use it', () => {

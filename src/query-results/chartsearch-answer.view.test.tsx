@@ -385,6 +385,93 @@ describe('the Ask ChartSearch view', () => {
     expect(reference).not.toHaveTextContent('Not checked');
   });
 
+  it('marks a contraindication about a drug she already takes, and an order no longer in force', async () => {
+    const user = userEvent.setup();
+    const stream = streamingResponse();
+    fetchMock.mockResolvedValue(stream.response);
+    renderView('is her lidocaine safe given her allergies?');
+
+    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+    await act(async () =>
+      stream.write(
+        frame(
+          'done',
+          done({
+            answer: 'The patient has a recorded allergy to Lidocaine [1].',
+            safetyWarnings: [
+              {
+                type: 'contraindication',
+                drug: 'Lidocaine',
+                detail: 'The patient has a recorded allergy to Lidocaine.',
+                aboutACurrentMedication: true,
+                currentMedicationOrders: [{ orderDisplay: 'Lidocaine', orderUuid: 'uuid-lidocaine' }],
+                aboutAnotherOfHerMedications: false,
+              },
+              {
+                type: 'contraindication',
+                drug: 'Ibuprofen',
+                detail: 'The patient has a recorded allergy to Ibuprofen.',
+                aboutACurrentMedication: true,
+                currentMedicationOrders: [],
+              },
+              {
+                type: 'interaction',
+                drug: 'Lidocaine',
+                detail: 'Lidocaine interacts with active order Metoclopramide.',
+                aboutACurrentMedication: true,
+                currentMedicationOrders: [{ orderDisplay: 'Lidocaine' }],
+              },
+              {
+                type: 'contraindication',
+                drug: 'Tiotropium',
+                detail: 'The patient has a recorded allergy to Tiotropium.',
+                aboutACurrentMedication: true,
+                aboutAnotherOfHerMedications: true,
+                currentMedicationOrders: [{ orderDisplay: 'Tiotropium' }],
+              },
+              {
+                type: 'interaction',
+                drug: 'Rifampicin',
+                detail: 'Rifampicin interacts with active order Nevirapine.',
+                aboutAnEndedOrder: true,
+                endedOrderStopDate: '2026-09-23',
+              },
+              {
+                type: 'interaction',
+                drug: 'Stavudine',
+                detail: 'Stavudine interacts with active order Nevirapine.',
+                aboutAnEndedOrder: true,
+                endedOrderStopDate: 'yesterday',
+              },
+            ],
+          }),
+        ),
+      ),
+    );
+    await act(async () => stream.end());
+
+    const findings = within(await screen.findByRole('list', { name: 'Safety findings' })).getAllByRole('listitem');
+    const prescribedTitle =
+      'The patient has an active order for this drug, so this finding is about a medication already prescribed, not one being proposed. The drug shown is the substance the module matched that order to, which the order itself may name differently — a brand name, for example.';
+    const endedTitle =
+      'The chart records this drug only as an order no longer in force, so the finding is about what giving it again would mean — not about a medication the patient is taking now.';
+
+    const named = within(findings[0]).getByText('Already prescribed: Lidocaine');
+    expect(named).toHaveAttribute('title', prescribedTitle);
+    expect(named).toHaveClass('currentMedicationTag');
+    expect(within(findings[1]).getByText('Already prescribed')).toHaveAttribute('title', prescribedTitle);
+    expect(within(findings[2]).queryByText(/^Already prescribed/)).not.toBeInTheDocument();
+    expect(within(findings[3]).queryByText(/^Already prescribed/)).not.toBeInTheDocument();
+
+    const endedOn = within(findings[4]).getByText('About an order no longer in force, ended 2026-09-23');
+    expect(endedOn).toHaveAttribute('title', endedTitle);
+    expect(endedOn).toHaveClass('endedOrderTag');
+    expect(endedOn.getAttribute('title')).not.toMatch(/day off/);
+    const ended = within(findings[5]).getByText('About an order no longer in force');
+    expect(ended).toHaveAttribute('title', endedTitle);
+    expect(ended.getAttribute('title')).not.toMatch(/day off/);
+  });
+
   it.each([
     [
       'a limited check',
@@ -581,6 +668,7 @@ describe('the Ask ChartSearch view', () => {
             ],
             unresolvedDrugClass: 'macrolide',
             activeOrderClaims: { stated: 1, uncited: 1 },
+            unsupportedEndedOrderClaims: ['Nevirapine'],
           }),
         ),
       ),
@@ -595,6 +683,9 @@ describe('the Ask ChartSearch view', () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/names a drug class, “macrolide”/)).toBeInTheDocument();
     expect(screen.getByText('1 of 1 statements about active orders cite no chart record.')).toBeInTheDocument();
+    expect(
+      screen.getByText('No record says the Nevirapine order has ended — the answer states it without one.'),
+    ).toBeInTheDocument();
   });
 
   it('never shows ChartSearch’s own error text', async () => {

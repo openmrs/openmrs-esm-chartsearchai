@@ -1,3 +1,4 @@
+@use '@carbon/colors';
 @use '@carbon/layout';
 @use '@carbon/type';
 @use '@carbon/themes';
@@ -126,4 +127,33 @@
   @include type.type-style(body-compact-01);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+// A finding about a medication she already takes. Teal, as in the chat: it says what
+// the finding is about, not how serious it is.
+.currentMedicationTag {
+  @include type.type-style(label-01);
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  padding: 0 layout.$spacing-02;
+  border-radius: 0.25rem;
+  background-color: colors.$teal-10;
+  color: colors.$teal-70;
+  cursor: help;
+}
+
+// A finding about an order no longer in force. Cool grey, so it does not look like the
+// teal tag above. It wraps: the sentence, with its date, is longer than the other tags.
+.endedOrderTag {
+  @include type.type-style(label-01);
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  padding: 0 layout.$spacing-02;
+  border-radius: 0.25rem;
+  background-color: colors.$cool-gray-10;
+  color: colors.$cool-gray-70;
+  cursor: help;
+  white-space: normal;
 }
