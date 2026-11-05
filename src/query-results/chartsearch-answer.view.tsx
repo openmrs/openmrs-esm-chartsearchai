@@ -513,11 +513,9 @@ const Statements: React.FC<{ statements: ChartSearchStatements; headingId: strin
                 .map((order) => (typeof order.orderDisplay === 'string' ? order.orderDisplay.trim() : ''))
                 .filter((name) => name.length > 0);
               // The chip's words do not say she already takes the drug. Not on an interaction,
-              // whose words already say "active order", and not on another of her medications.
-              const showPrescribed =
-                warning.aboutACurrentMedication === true &&
-                warning.type === 'contraindication' &&
-                warning.aboutAnotherOfHerMedications !== true;
+              // whose words already say "active order". Shown for another of her medications
+              // too: this page has no other-medications line, so the tag is what names her order.
+              const showPrescribed = warning.aboutACurrentMedication === true && warning.type === 'contraindication';
               return (
                 <li key={index} className={styles.warning}>
                   <span className={styles.warningType}>

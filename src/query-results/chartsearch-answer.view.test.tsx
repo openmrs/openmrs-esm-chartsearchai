@@ -461,7 +461,7 @@ describe('the Ask ChartSearch view', () => {
     expect(named).toHaveClass('currentMedicationTag');
     expect(within(findings[1]).getByText('Already prescribed')).toHaveAttribute('title', prescribedTitle);
     expect(within(findings[2]).queryByText(/^Already prescribed/)).not.toBeInTheDocument();
-    expect(within(findings[3]).queryByText(/^Already prescribed/)).not.toBeInTheDocument();
+    expect(within(findings[3]).getByText('Already prescribed: Tiotropium')).toHaveAttribute('title', prescribedTitle);
 
     const endedOn = within(findings[4]).getByText('About an order no longer in force, ended 2026-09-23');
     expect(endedOn).toHaveAttribute('title', endedTitle);

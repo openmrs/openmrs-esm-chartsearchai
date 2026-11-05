@@ -161,8 +161,8 @@ export interface ChartSearchSafetyWarning {
   /** The day that ended order stopped, `yyyy-MM-dd`, or null when it names none. */
   endedOrderStopDate: string | null;
   /**
-   * Only `true` is kept. This finding is about another of her medications, so the
-   * already-prescribed tag stays off it.
+   * Only `true` is kept. This finding is about another of her medications. The
+   * already-prescribed tag still shows: this page has no other-medications line.
    */
   aboutAnotherOfHerMedications?: true;
 }
