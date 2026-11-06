@@ -731,7 +731,7 @@ export async function submitFeedback(feedback: AiFeedback): Promise<void> {
  * server that cannot answer it is not evidence of a logged-out user. Raw fetch rather than
  * openmrsFetch, which reacts to an unauthenticated response on its own.
  */
-async function sessionExpiredOr(fallback: string): Promise<string> {
+export async function sessionExpiredOr(fallback: string): Promise<string> {
   try {
     const response = await window.fetch(`${window.openmrsBase}${restBaseUrl}/session?v=custom:(authenticated)`, {
       credentials: 'include',

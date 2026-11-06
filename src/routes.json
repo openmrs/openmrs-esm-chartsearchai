@@ -11,6 +11,21 @@
       "slot": "patient-banner-tags-slot",
       "privilege": "AI Query Patient Data",
       "order": 100
+    },
+    {
+      "name": "chartsearch-query-results-view",
+      "component": "chartSearchQueryResultsView",
+      "slot": "omnibar-query-results-slot",
+      "privileges": ["AI Query Patient Data"],
+      "meta": {
+        "scopes": ["patient"],
+        "order": 100,
+        "contract": 1,
+        "skipIdentifierQueries": true,
+        "asksModel": "ChartSearch",
+        "commandAsksModel": true,
+        "command": { "id": "ask", "aliases": ["ask", "question"] }
+      }
     }
   ],
   "workspaces2": [

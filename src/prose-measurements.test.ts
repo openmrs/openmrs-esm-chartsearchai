@@ -28,10 +28,13 @@ const EXTRA_PROSE = ['README.md'];
  */
 const SELF = 'prose-measurements.test.ts';
 
+/** A byte-for-byte copy of the omnibar's contract folder: its prose is that repo's, never edited here. */
+const VENDORED = 'omnibar-contract';
+
 function sourceFiles(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) return sourceFiles(full);
+    if (entry.isDirectory()) return entry.name === VENDORED ? [] : sourceFiles(full);
     return /\.tsx?$/.test(full) ? [full] : [];
   });
 }
