@@ -280,6 +280,11 @@ export interface AiSafetyWarning {
    * namedPartners are those orders rather than another drug (backend ADR Decision 590).
    */
   aboutItsOwnOrders?: boolean;
+  /**
+   * Whether the chip's only evidence is that two drugs share a classification, with no rule
+   * relating them: a possible duplicate therapy rather than an interaction (backend ADR Decision 604).
+   */
+  restsOnSharedClassificationAlone?: boolean;
 }
 
 /** One rating the backend found attached to, or missing from, a cited safety finding. */

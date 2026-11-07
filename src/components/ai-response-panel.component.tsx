@@ -1030,9 +1030,14 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     // A substance in her own orders relates no pair: its namedPartners are those orders
     // (backend ADR Decision 590).
     const ownOrders = warning.aboutItsOwnOrders === true;
+    // Two drugs sharing a class, with no rule relating them, are a possible duplicate therapy
+    // rather than an interaction (backend ADR Decision 604).
+    const sharedClassOnly = !ownOrders && warning.restsOnSharedClassificationAlone === true;
     const { tagType, label } = ownOrders
       ? { tagType: 'magenta' as const, label: t('safetyDuplicateOrder', 'Duplicate order') }
-      : safetyWarningTag(warning.type, t);
+      : sharedClassOnly
+        ? { tagType: 'magenta' as const, label: t('safetyDuplicateTherapy', 'Duplicate therapy') }
+        : safetyWarningTag(warning.type, t);
     const endedOn = calendarDay(warning.endedOrderStopDate);
     const absent = !compactWarnings.has(warning) && absentWarnings.has(warning);
     const reworded = !compactWarnings.has(warning) && rewordedWarnings.has(warning);

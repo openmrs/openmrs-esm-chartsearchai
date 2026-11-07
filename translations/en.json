@@ -162,6 +162,7 @@
   "safetyDrugResolutionFailed": "A named medication could not be matched to the configured reference source.",
   "safetyDuplicateOrder": "Duplicate order",
   "safetyDuplicateOrderLine": "already in this patient's active orders",
+  "safetyDuplicateTherapy": "Duplicate therapy",
   "safetyExecutionFailed": "The medication-safety check did not complete.",
   "safetyExposureIncomplete": "Medication, allergy, or condition context may be incomplete for this check.",
   "safetyFinding": "Safety finding",

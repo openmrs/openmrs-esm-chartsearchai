@@ -2663,6 +2663,32 @@ describe('AiResponsePanel chip the answer already cites', () => {
     expect(chip).not.toHaveTextContent('Lamivudine — Lamivudine');
   });
 
+  it('tags a finding resting on a shared classification alone as a duplicate therapy', () => {
+    // The backend marks the finding that two drugs share a class, with no rule relating them,
+    // `restsOnSharedClassificationAlone` (chartsearchai ADR Decision 604); its sentence says
+    // "possible duplicate therapy", and an Interaction tag said otherwise.
+    const [aspirin] = ASPIRIN_CHIP_THE_ANSWER_CITES.safetyWarnings;
+    renderAspirin({
+      safetyWarnings: [
+        {
+          ...aspirin,
+          type: 'interaction',
+          restsOnSharedClassificationAlone: true,
+          drug: 'Stavudine',
+          detail: 'Stavudine is in the same ATC class (J05AF) as active order Lamivudine — possible duplicate therapy',
+          severity: null,
+          namedPartners: ['Lamivudine'],
+          findingCitation: 46,
+        },
+      ],
+    });
+    openSafetyChecks();
+    const chip = chipItems()[0];
+    expect(chip).toHaveTextContent('Duplicate therapy');
+    expect(chip).toHaveTextContent('Stavudine — Lamivudine');
+    expect(chip).not.toHaveTextContent('Interaction');
+  });
+
   it('names every marker the answer cites the finding at, in order', () => {
     const finding = ASPIRIN_CHIP_THE_ANSWER_CITES.references.find((ref) => ref.resourceType === 'safety_finding');
     expect(finding?.index).toBe(46);
