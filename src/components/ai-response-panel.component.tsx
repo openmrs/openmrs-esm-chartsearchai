@@ -1074,6 +1074,12 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                 : warning.detail}
             </>
           )}
+          {warning.restsOnAnUncorroboratedChartMatch === true && (
+            <>
+              {' '}
+              <span>{t('uncorroboratedChartMatch', 'The module could not confirm this against the chart.')}</span>
+            </>
+          )}
           {compact && (
             <>
               {' '}

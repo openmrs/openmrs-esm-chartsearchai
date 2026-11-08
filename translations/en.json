@@ -227,6 +227,7 @@
   "thinkingEllipsis": "Thinking...",
   "tryAgain": "Try again",
   "unavailable": "unavailable",
+  "uncorroboratedChartMatch": "The module could not confirm this against the chart.",
   "unratedConfidence": "Unrated",
   "unresolvedDrugClass": "The question names a drug class, “{{drugClass}}”. Reference entries are listed by individual drug, so the class wasn’t matched to any of them. Ask about a specific drug by name.",
   "unstatedSeverityTitle": "Rated by the reference dataset. This answer may not state the rating — it is shown here so the findings can be ranked.",
