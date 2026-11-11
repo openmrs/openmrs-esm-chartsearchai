@@ -210,6 +210,41 @@ describe('reading ChartSearch payloads', () => {
     });
   });
 
+  it('keeps an unconfirmed chart match only when the chip says true', () => {
+    const [kept, denied, missing, stringTrue] = parseStatements({
+      safetyWarnings: [
+        {
+          type: 'contraindication',
+          drug: 'liver',
+          detail: 'Contraindicated with liver disease.',
+          restsOnAnUncorroboratedChartMatch: true,
+        },
+        {
+          type: 'contraindication',
+          drug: 'liver',
+          detail: 'Contraindicated with liver disease.',
+          restsOnAnUncorroboratedChartMatch: false,
+        },
+        {
+          type: 'contraindication',
+          drug: 'liver',
+          detail: 'Contraindicated with liver disease.',
+        },
+        {
+          type: 'contraindication',
+          drug: 'liver',
+          detail: 'Contraindicated with liver disease.',
+          restsOnAnUncorroboratedChartMatch: 'true',
+        },
+      ],
+    }).safetyWarnings;
+
+    expect(kept.restsOnAnUncorroboratedChartMatch).toBe(true);
+    expect(denied).not.toHaveProperty('restsOnAnUncorroboratedChartMatch');
+    expect(missing).not.toHaveProperty('restsOnAnUncorroboratedChartMatch');
+    expect(stringTrue).not.toHaveProperty('restsOnAnUncorroboratedChartMatch');
+  });
+
   it('reads the safety check from safetyCheck, falling back to safetyStatus, and never invents one', () => {
     expect(parseStatements({ safetyCheck: { status: 'unknown' }, safetyStatus: 'checked' }).safetyCheck).toEqual({
       status: 'checked',

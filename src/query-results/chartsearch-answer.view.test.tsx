@@ -472,6 +472,55 @@ describe('the Ask ChartSearch view', () => {
     expect(ended.getAttribute('title')).not.toMatch(/day off/);
   });
 
+  it('qualifies a contraindication the module could not confirm against the chart, and still shows the finding', async () => {
+    const user = userEvent.setup();
+    const stream = streamingResponse();
+    fetchMock.mockResolvedValue(stream.response);
+    renderView('is rifampicin safe given delivery?');
+
+    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+    await act(async () =>
+      stream.write(
+        frame(
+          'done',
+          done({
+            answer: 'Rifampicin is contraindicated with liver disease.',
+            safetyWarnings: [
+              {
+                type: 'contraindication',
+                drug: 'liver',
+                detail: 'Contraindicated with liver disease.',
+                restsOnAnUncorroboratedChartMatch: true,
+              },
+              {
+                type: 'contraindication',
+                drug: 'Aspirin',
+                detail: 'The patient has a recorded allergy to Aspirin.',
+                restsOnAnUncorroboratedChartMatch: false,
+              },
+              {
+                type: 'contraindication',
+                drug: 'Ibuprofen',
+                detail: 'The patient has a recorded allergy to Ibuprofen.',
+              },
+            ],
+          }),
+        ),
+      ),
+    );
+    await act(async () => stream.end());
+
+    const findings = within(await screen.findByRole('list', { name: 'Safety findings' })).getAllByRole('listitem');
+    const qualification = 'The module could not confirm this against the chart';
+    const unconfirmed = within(findings[0]).getByText(qualification);
+    expect(unconfirmed).toHaveClass('caveat');
+    expect(within(findings[0]).getByText('Contraindicated with liver disease.')).toBeInTheDocument();
+    expect(within(findings[1]).getByText('The patient has a recorded allergy to Aspirin.')).toBeInTheDocument();
+    expect(within(findings[1]).queryByText(qualification)).not.toBeInTheDocument();
+    expect(within(findings[2]).queryByText(qualification)).not.toBeInTheDocument();
+    expect(screen.queryByText(/coincidence|spelling accident/)).not.toBeInTheDocument();
+  });
+
   it.each([
     [
       'a limited check',
