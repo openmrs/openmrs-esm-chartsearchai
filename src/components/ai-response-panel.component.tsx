@@ -1182,10 +1182,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
           {warning.aboutAnEndedOrder === true && (
             <>
               {' '}
-              <span
-                className={styles.endedOrderTag}
-                title={endedOrderTitle}
-              >
+              <span className={styles.endedOrderTag} title={endedOrderTitle}>
                 {endedOn
                   ? t('aboutAnEndedOrderOn', 'About an order no longer in force, ended {{stopDate}}', {
                       stopDate: endedOn,
