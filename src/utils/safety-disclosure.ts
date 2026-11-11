@@ -1,4 +1,4 @@
-import type { AiReference, AiSafetyWarning } from '../api/chartsearchai';
+import type { AiCitedRating, AiReference, AiSafetyWarning } from '../api/chartsearchai';
 
 /**
  * Resource types the backend classifies as module-supplied reference material rather than as
@@ -117,20 +117,17 @@ export function parseCitationIndices(group: string): number[] {
 // -----------------------------------------------------------------------------------------------
 // WHY THIS FILE EXISTS, AND WHAT WOULD DELETE IT.
 //
-// The backend publishes `unstatedFindingSeverities` as a list of citation indices and publishes
-// the ratings on `safetyWarnings[]`, with no key joining the two: a chip carries no citation index
-// and `(type, drug)` does not identify one, because a single screening question raises several
+// The backend publishes `unstatedFindingSeverities` as citation indexes or, since
+// openmrs-module-chartsearchai#387, as `{ citation, rating }`. This module reads the indexes.
+// It still takes the ratings from `safetyWarnings[]`. A chip carries no citation index and
+// `(type, drug)` does not identify one, because a single screening question raises several
 // findings sharing it — five on the demo chart, all `(interaction, Clarithromycin)`. So everything
 // below reconstructs that join from the model's prose and refuses wherever the reading is
 // ambiguous.
 //
-// The backend already HAS the join. `SafetyFindingSeverityFidelityCheck` builds a
-// `Map<citation index, rating>` in order to decide what to publish, and then publishes the key set
-// while dropping the values. Publishing them per citation is filed as
-// openmrs-module-chartsearchai#387, and that is the change that lets this file be DELETED rather
-// than maintained — every refusal below, and the 18 ratings they cost, exists only because the
-// values are dropped on the wire. Read that issue before extending anything here; a new rule is
-// worth adding only if it is worth adding to code with a known exit.
+// #387 sends the rating beside each citation. The chat does not render that rating. The join
+// below stays, because a chip still has no citation index. Rendering that rating is what
+// deletes this file. Read #387 before extending anything here.
 // -----------------------------------------------------------------------------------------------
 
 // -----------------------------------------------------------------------------------------------
@@ -1363,7 +1360,7 @@ export function resolveFindingSeverities(
   answer: string,
   references: AiReference[],
   safetyWarnings: AiSafetyWarning[],
-  unstatedFindingSeverities: number[] | null | undefined,
+  unstatedFindingSeverities: ReadonlyArray<number | AiCitedRating> | null | undefined,
 ): Map<number, string> {
   // Array.isArray on both: guarding one member of this family is not guarding the family, and a
   // non-iterable would throw inside a render memo with no error boundary above it.
@@ -1371,27 +1368,30 @@ export function resolveFindingSeverities(
   if (!Array.isArray(unstatedFindingSeverities) || !Array.isArray(safetyWarnings)) return new Map();
   if (unstatedFindingSeverities.length === 0 || safetyWarnings.length === 0) return new Map();
 
-  const ownIndices = new Set(unstatedFindingSeverities);
+  // Marker lookup compares indexes. An object left in that set never matches one, which is why
+  // `{ citation, rating }` used to render no ratings.
+  const citationIndexes: number[] = [];
+  for (const entry of unstatedFindingSeverities) {
+    const citation =
+      typeof entry === 'number' ? entry : entry != null && typeof entry === 'object' ? entry.citation : undefined;
+    if (typeof citation === 'number' && Number.isInteger(citation) && citation >= 0) citationIndexes.push(citation);
+  }
+
+  const ownIndices = new Set(citationIndexes);
   // Shared across all three readings on purpose: see {@link candidateSetFor}.
   const setCache = new Map<string, CandidateSet>();
   const trailing = readClaims(
     references,
     safetyWarnings,
-    unstatedFindingSeverities,
+    citationIndexes,
     claimTextByCitation(answer, 'trailing', ownIndices),
     setCache,
   );
-  const block = readClaims(
-    references,
-    safetyWarnings,
-    unstatedFindingSeverities,
-    claimTextByCitation(answer, 'block'),
-    setCache,
-  );
+  const block = readClaims(references, safetyWarnings, citationIndexes, claimTextByCitation(answer, 'block'), setCache);
   const blockLeading = readClaims(
     references,
     safetyWarnings,
-    unstatedFindingSeverities,
+    citationIndexes,
     claimTextByCitation(answer, 'block-leading'),
     setCache,
   );

@@ -528,14 +528,16 @@ export interface AiSearchResponse {
    */
   misattributedOrderCitations?: number[] | null;
   /**
-   * Citation indices of safety findings whose rating the answer states NOWHERE, leaving a
-   * clinician no way to rank a flat list of findings.
+   * Safety findings whose rating the answer states nowhere, leaving a clinician no way to rank
+   * a flat list of findings. Each entry is a citation index, or `{ citation, rating }`
+   * (`AiCitedRating`, backend #387). An older server sends the indexes alone.
    *
-   * The rating is NOT on this key, and the backend is explicit that it "cannot be joined to a
-   * chip: chips carry no citation index, and `(type, drug)` does not identify one — a screening
-   * question raises several findings sharing it". `resolveFindingSeverities` therefore
-   * narrows to that candidate set and requires the answer's own sentence to single one out,
-   * declining where it cannot.
+   * The rating on `{ citation, rating }` is not what the chat renders. The backend is explicit
+   * that a rating "cannot be joined to a chip: chips carry no citation index, and `(type, drug)`
+   * does not identify one. A screening question raises several findings sharing it."
+   * `resolveFindingSeverities` reads the citation index and still joins the rating from
+   * `safetyWarnings`. It narrows to that candidate set and requires the answer's own sentence
+   * to single one out, declining where it cannot.
    *
    * Render whatever it yields as a CAVEAT, never as a verdict: the backend documents three
    * measured cells where this key over-reports — a rating stated by synonym, a `minor` caution
@@ -546,7 +548,7 @@ export interface AiSearchResponse {
    * states the rating anywhere is silent here — which is why rendering is gated on this list
    * rather than on severity being present.
    */
-  unstatedFindingSeverities?: number[] | null;
+  unstatedFindingSeverities?: Array<number | AiCitedRating> | null;
   /** @see ConditionRuleCoverage */
   // `string & {}` rather than a bare `string`, which would collapse the union and discard the
   // literals — keeping them is what makes the renderer's switch checkable while still accepting
