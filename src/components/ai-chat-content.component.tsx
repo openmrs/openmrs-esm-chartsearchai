@@ -9,7 +9,7 @@ import { isAwaitingAnswer as isPhaseAwaiting } from '../hooks/turn-phase';
 import { answerLimitsOf } from '../utils/answer-limits';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { type ChartSearchAiConfig } from '../config-schema';
-import { chatSessionStore, requestProviderFor } from '../store/chat-session.store';
+import { chatSessionStore, historySettledFor, requestProviderFor } from '../store/chat-session.store';
 import AiReasoningDisclosure from './ai-reasoning-disclosure.component';
 import AiResponsePanel from './ai-response-panel.component';
 import ModelPicker from './model-picker.component';
@@ -52,21 +52,25 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
     }
   }, [isStartingSession, sessionError]);
 
-  const sendsToHub = requestProviderFor(useStore(chatSessionStore), patientUuid) === 'hub';
+  const sessionState = useStore(chatSessionStore);
+  const historySettled = historySettledFor(sessionState, patientUuid);
+  const sendsToHub = requestProviderFor(sessionState, patientUuid) === 'hub';
 
   // Pre-warm the server-side LLM prompt cache while the clinician types, so the first question
   // skips the full chart prefill. Fired when the chat opens, not when the chart does: every chart
   // open used to spend a request, including charts where nobody asks anything. It warms for any
   // provider that is not Hub, and nothing is sent while Hub is selected. Keyed on Hub-or-not
   // rather than the provider id: the id starts null and the provider picker then records the
-  // default, and a warmup the server has already queued cannot be recalled by aborting it. The
-  // cleanup aborts an in-flight warmup on a patient switch, a switch to Hub, or when the chat closes.
+  // default, and a warmup the server has already queued cannot be recalled by aborting it. It
+  // also waits until this patient's history has settled. Until the session key is written, a
+  // restored Hub conversation can still arrive. The cleanup aborts an in-flight warmup on a patient
+  // switch, a switch to Hub, or when the chat closes.
   useEffect(() => {
-    if (!patientUuid || sendsToHub) return;
+    if (!patientUuid || !historySettled || sendsToHub) return;
     const controller = new AbortController();
     warmupPatient(patientUuid, controller.signal);
     return () => controller.abort();
-  }, [patientUuid, sendsToHub]);
+  }, [patientUuid, historySettled, sendsToHub]);
 
   const questionRef = useRef(question);
   questionRef.current = question;
