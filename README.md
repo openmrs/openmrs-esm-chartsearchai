@@ -163,7 +163,7 @@ A chip whose `aboutAnEndedOrder` is `true` is marked _About an order no longer i
 
 `orderStopDates` (`[{ citation, stopDate }]`) says when each cited prescription stopped being in force. The panel shows _Stopped yyyy-MM-dd_ beside the reference chip whose `index` is `citation`, next to the record's own `date` and never in its place: the two are different facts. `[]`, `null` and a missing key render nothing — an absent entry is never a claim that a cited order is current, because an order can be out of force with no end date anywhere.
 
-Both dates are UTC calendar days, so either can be a day off the local date, and both tooltips say so. The panel shows them verbatim and never parses them into a `Date`, which would shift them again by the viewer's offset; a value that is not a `yyyy-MM-dd` day is withheld rather than trimmed, so nothing more exact than a day is shown.
+`endedOrderStopDate` and `orderStopDates[].stopDate` are each the calendar day on the server's clock. Backend ADR Decision 563 says that clock is the zone OpenMRS stores and the chart shows. The panel shows each `yyyy-MM-dd` string verbatim and never parses it into a `Date`, because the viewer's offset would shift the day. A value that is not a `yyyy-MM-dd` day is withheld rather than trimmed, so nothing more exact than a day is shown.
 
 ### Fields that state the answer's limits
 

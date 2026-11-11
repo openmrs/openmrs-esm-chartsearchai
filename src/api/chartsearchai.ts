@@ -257,8 +257,10 @@ export interface AiSafetyWarning {
   /**
    * The day the ended order behind {@link aboutAnEndedOrder} stopped being in force, `yyyy-MM-dd`,
    * or `null` — on every chip answering `false`, and on one whose ended records carry no stop date.
-   * Of several ended orders of the drug, the latest. A UTC calendar date, so it can be a day off
-   * the local one: never render it as more exact than a day.
+   * Of several ended orders of the drug, the latest. That day is the calendar day on the server's
+   * clock. Backend ADR Decision 563 says that clock is the zone OpenMRS stores and the chart shows.
+   * Show the `yyyy-MM-dd` string verbatim and never parse it into a Date, because the viewer's
+   * offset would shift the day. Never render it as more exact than a day.
    */
   endedOrderStopDate?: string | null;
   /**
@@ -307,8 +309,11 @@ export interface AiInteractionClaimPairs {
  * When one cited prescription stopped being in force (openmrs-module-chartsearchai#315, #432).
  *
  * `citation` is the {@link AiReference.index} it belongs to. `stopDate` is the ORDER's own end,
- * `yyyy-MM-dd` in UTC, and not the record's clinical {@link AiReference.date}: the two are
- * different facts, and one must never be shown in place of the other.
+ * the calendar day on the server's clock, shown verbatim as `yyyy-MM-dd`. Backend ADR Decision 563
+ * says that clock is the zone OpenMRS stores and the chart shows. Never parse the string into a
+ * Date, because the viewer's offset would shift the day. It is not the record's clinical
+ * {@link AiReference.date}. The two are different facts, and one must never be shown in place of
+ * the other.
  */
 export interface AiOrderStopDate {
   citation: number;
