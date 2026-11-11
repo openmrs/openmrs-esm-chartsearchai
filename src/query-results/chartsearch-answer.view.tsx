@@ -240,6 +240,15 @@ const ChartSearchAnswerView: React.FC<OmnibarViewProps> = ({
         }),
       ),
     );
+    statements?.unfoundedFindingSeverities?.forEach(({ citation, rating }) =>
+      add(
+        [citation],
+        t('caveatUnfoundedRating', 'The answer rates this {{rating}}. The finding carries no rating.', {
+          rating,
+          interpolation: { escapeValue: false },
+        }),
+      ),
+    );
     add(
       statements?.unstatedSignificanceQualifiers,
       t(

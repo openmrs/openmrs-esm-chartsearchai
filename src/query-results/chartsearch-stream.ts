@@ -188,6 +188,7 @@ export interface ChartSearchStatements {
   unfaithfullyRenderedCitations: Array<number> | null;
   misattributedOrderCitations: Array<number> | null;
   unstatedFindingSeverities: Array<ChartSearchCitedRating> | null;
+  unfoundedFindingSeverities: Array<ChartSearchCitedRating> | null;
   /** Cited findings whose record calls the interaction's significance unknown, unsaid in the answer. */
   unstatedSignificanceQualifiers: Array<number> | null;
   /** The day each cited prescription stopped being in force, `yyyy-MM-dd`; no entry says nothing. */
@@ -322,6 +323,7 @@ export function parseStatements(payload: Record<string, unknown>): ChartSearchSt
     unfaithfullyRenderedCitations: numbersOrNull(payload.unfaithfullyRenderedCitations),
     misattributedOrderCitations: numbersOrNull(payload.misattributedOrderCitations),
     unstatedFindingSeverities: citedRatingsOrNull(payload.unstatedFindingSeverities),
+    unfoundedFindingSeverities: citedRatingsOrNull(payload.unfoundedFindingSeverities),
     unstatedSignificanceQualifiers: numbersOrNull(payload.unstatedSignificanceQualifiers),
     orderStopDates: Array.isArray(payload.orderStopDates)
       ? payload.orderStopDates
