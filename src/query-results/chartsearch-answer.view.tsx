@@ -561,6 +561,11 @@ const Statements: React.FC<{ statements: ChartSearchStatements; headingId: strin
                         : t('aboutAnEndedOrder', 'About an order no longer in force')}
                     </span>
                   )}
+                  {warning.restsOnAnUncorroboratedChartMatch === true && (
+                    <span className={styles.caveat}>
+                      {t('chartMatchUnconfirmed', 'The module could not confirm this against the chart')}
+                    </span>
+                  )}
                   {warning.chartOrderBridges.map((bridge, bridgeIndex) => (
                     <span key={bridgeIndex} className={styles.citationMeta} dir="auto">
                       {t('resolvedFromOrder', '{{substance}} was resolved from the order “{{order}}”', {

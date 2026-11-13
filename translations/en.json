@@ -35,6 +35,7 @@
   "caveatMisattributed": "This citation can’t be the active order the answer names.",
   "caveatUnfaithful": "The answer’s wording of this citation isn’t the record’s wording.",
   "caveatUnstatedRating": "Rated {{rating}}. The answer doesn’t state this rating.",
+  "chartMatchUnconfirmed": "The module could not confirm this against the chart",
   "chartSearchFailed": "ChartSearch couldn’t answer this question.",
   "chartSearchHeading": "ChartSearch",
   "chartSearchSignedOut": "Your session has ended. Log in again, then ask again.",

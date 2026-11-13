@@ -165,6 +165,7 @@ export interface ChartSearchSafetyWarning {
    * already-prescribed tag still shows: this page has no other-medications line.
    */
   aboutAnotherOfHerMedications?: true;
+  restsOnAnUncorroboratedChartMatch?: true;
 }
 
 /** Whether the drug-safety check ran, and its limitation codes. `checked` never says a drug is safe. */
@@ -283,6 +284,7 @@ function parseWarnings(value: unknown): Array<ChartSearchSafetyWarning> {
       if (chip.aboutACurrentMedication === true) warning.aboutACurrentMedication = true;
       if (chip.aboutAnEndedOrder === true) warning.aboutAnEndedOrder = true;
       if (chip.aboutAnotherOfHerMedications === true) warning.aboutAnotherOfHerMedications = true;
+      if (chip.restsOnAnUncorroboratedChartMatch === true) warning.restsOnAnUncorroboratedChartMatch = true;
       return warning;
     });
 }
