@@ -138,12 +138,9 @@ interface InFlightTurn {
 }
 const inFlightByPatient = new Map<string, InFlightTurn>();
 
-/**
- * History reads still in flight for a patient. A failed read records "no conversation" only when
- * it is the last one. Writing that null earlier would make a sibling panel's successful read look
- * superseded, and the restored Hub conversation would be dropped.
- */
 const historyReadsInFlight = new Map<string, number>();
+
+const pendingUnknownHistoryGeneration = new Map<string, number>();
 
 /** How many panels are open on each patient: only closing the last one may stop that patient's turn. */
 const openPanelsByPatient = new Map<string, number>();
@@ -168,6 +165,7 @@ function releaseInFlight(patientUuid: string): string | null {
   if (!turn) return null;
   turn.controller.abort();
   inFlightByPatient.delete(patientUuid);
+  retryUnknownHistory(patientUuid);
   return turn.messageId;
 }
 
@@ -187,24 +185,46 @@ function setSessionUuid(patientUuid: string, uuid: string | null): void {
   });
 }
 
-/** Record that history will not name a conversation. A live turn stores its own session. */
 function settleUnknownHistory(patientUuid: string): void {
-  if (historySettledFor(chatSessionStore.getState(), patientUuid)) return;
-  if (inFlightByPatient.has(patientUuid)) return;
+  const generation = chatSessionUserGeneration();
+  const pendingGeneration = pendingUnknownHistoryGeneration.get(patientUuid);
+  if (pendingGeneration !== undefined && pendingGeneration !== generation) {
+    pendingUnknownHistoryGeneration.delete(patientUuid);
+  }
+  if (historySettledFor(chatSessionStore.getState(), patientUuid)) {
+    pendingUnknownHistoryGeneration.delete(patientUuid);
+    return;
+  }
+  if ((historyReadsInFlight.get(patientUuid) ?? 0) > 0 || inFlightByPatient.has(patientUuid)) {
+    pendingUnknownHistoryGeneration.set(patientUuid, generation);
+    return;
+  }
+  pendingUnknownHistoryGeneration.delete(patientUuid);
   setSessionUuid(patientUuid, null);
 }
 
-function beginHistoryRead(patientUuid: string): (settleIfLast: boolean) => void {
+function retryUnknownHistory(patientUuid: string): void {
+  const pendingGeneration = pendingUnknownHistoryGeneration.get(patientUuid);
+  if (pendingGeneration === undefined) return;
+  if (pendingGeneration !== chatSessionUserGeneration()) {
+    pendingUnknownHistoryGeneration.delete(patientUuid);
+    return;
+  }
+  settleUnknownHistory(patientUuid);
+}
+
+function beginHistoryRead(patientUuid: string): (failed: boolean) => void {
   historyReadsInFlight.set(patientUuid, (historyReadsInFlight.get(patientUuid) ?? 0) + 1);
   let finished = false;
-  return (settleIfLast: boolean) => {
+  return (failed: boolean) => {
     if (finished) return;
     finished = true;
     const remaining = (historyReadsInFlight.get(patientUuid) ?? 1) - 1;
     const last = remaining <= 0;
     if (last) historyReadsInFlight.delete(patientUuid);
     else historyReadsInFlight.set(patientUuid, remaining);
-    if (settleIfLast && last) settleUnknownHistory(patientUuid);
+    if (failed) settleUnknownHistory(patientUuid);
+    else if (last) retryUnknownHistory(patientUuid);
   };
 }
 
@@ -723,6 +743,9 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         if (ownsSession && response.session) {
           setSessionUuid(patientUuid, response.session);
         }
+        if (chatSessionUserGeneration() === turnGeneration) {
+          retryUnknownHistory(patientUuid);
+        }
       };
 
       const fail = (errMessage: string) => {
@@ -764,6 +787,9 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           };
           return updated;
         });
+        if (chatSessionUserGeneration() === turnGeneration) {
+          retryUnknownHistory(patientUuid);
+        }
       };
 
       const answerDone = (response: AiSearchResponse) => {
