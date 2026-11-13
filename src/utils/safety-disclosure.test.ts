@@ -910,6 +910,20 @@ describe('resolveFindingSeverities', () => {
     });
   });
 
+  it('resolves the same map when the wire sends { citation, rating } instead of indexes', () => {
+    // The rating on the object is not what this renders. A pass means each citation was read
+    // and the prose join still produced the map above. Copying `rating` would show "not used".
+    const cited = UNSTATED.map((citation) => ({ citation, rating: 'not used' }));
+    const resolved = resolveFindingSeverities(ANSWER, REFERENCES, SAFETY_WARNINGS, cited);
+    expect(Object.fromEntries(resolved)).toEqual({
+      350: 'Major',
+      351: 'Major',
+      352: 'Moderate',
+      353: 'Moderate',
+      354: 'Moderate',
+    });
+  });
+
   it('pairs each rating with its own finding, not merely the right multiset of ratings', () => {
     // The fixture above cannot catch a permutation among same-rated neighbours: swapping 350
     // and 351 (both Major) leaves its assertion green. Distinct ratings make any mis-mapping
