@@ -763,19 +763,32 @@ describe('prompt-cache warmup', () => {
   const mockOpenmrsFetch = openmrsFetch as Mock;
   const warmupCalls = () => mockOpenmrsFetch.mock.calls.filter(([url]) => url === '/ws/rest/v1/chartsearchai/warmup');
 
+  beforeEach(() => {
+    chatSessionStore.setState(initialChatSessionState());
+  });
+
+  const settleFreshHistory = (...patientUuids: string[]) => {
+    chatSessionStore.setState({
+      sessionUuidByPatient: Object.fromEntries(patientUuids.map((patientUuid) => [patientUuid, null])),
+    });
+  };
+
   it("warms the chart's patient when the chat opens", () => {
+    settleFreshHistory('p1');
     render(<AiChatContent mode="floating" />);
     expect(warmupCalls()).toHaveLength(1);
     expect(warmupCalls()[0][1]).toMatchObject({ method: 'POST', body: JSON.stringify({ patient: 'p1' }) });
   });
 
   it('warms the patient the workspace names', () => {
+    settleFreshHistory('p2');
     render(<AiChatContent mode="workspace" patientUuid="p2" />);
     expect(warmupCalls()).toHaveLength(1);
     expect(warmupCalls()[0][1]).toMatchObject({ body: JSON.stringify({ patient: 'p2' }) });
   });
 
   it('aborts an in-flight warmup when the chat closes', () => {
+    settleFreshHistory('p1');
     const { unmount } = render(<AiChatContent mode="floating" />);
     const { signal } = warmupCalls()[0][1];
     expect(signal.aborted).toBe(false);
@@ -784,6 +797,7 @@ describe('prompt-cache warmup', () => {
   });
 
   it('aborts the old warmup and warms the new patient on a patient switch', () => {
+    settleFreshHistory('p1', 'p2');
     const { rerender } = render(<AiChatContent mode="workspace" patientUuid="p1" />);
     rerender(<AiChatContent mode="workspace" patientUuid="p2" />);
     expect(warmupCalls()).toHaveLength(2);
@@ -797,16 +811,37 @@ describe('prompt-cache warmup', () => {
     expect(warmupCalls()).toHaveLength(0);
   });
 
+  it('sends no warmup until history answers, and none when that answer is a Hub conversation', () => {
+    render(<AiChatContent mode="floating" />);
+    expect(warmupCalls()).toHaveLength(0);
+    act(() =>
+      chatSessionStore.setState({
+        sessionUuidByPatient: { p1: 'sess-hub' },
+        providerByPatient: { p1: 'hub' },
+      }),
+    );
+    expect(warmupCalls()).toHaveLength(0);
+  });
+
+  it('warms a fresh chat once history answers that there is no conversation', () => {
+    render(<AiChatContent mode="floating" />);
+    expect(warmupCalls()).toHaveLength(0);
+    act(() => chatSessionStore.setState({ sessionUuidByPatient: { p1: null } }));
+    expect(warmupCalls()).toHaveLength(1);
+    expect(warmupCalls()[0][1]).toMatchObject({ method: 'POST', body: JSON.stringify({ patient: 'p1' }) });
+  });
+
   describe('with a provider selected', () => {
     afterEach(() => chatSessionStore.setState(initialChatSessionState()));
 
     it('sends no warmup while Hub is selected, since it warms for any provider that is not Hub', () => {
-      chatSessionStore.setState({ selectedProviderId: 'hub' });
+      chatSessionStore.setState({ selectedProviderId: 'hub', sessionUuidByPatient: { p1: null } });
       render(<AiChatContent mode="floating" />);
       expect(warmupCalls()).toHaveLength(0);
     });
 
     it('aborts the warmup when the provider switches to Hub, and warms again on the way back', () => {
+      settleFreshHistory('p1');
       render(<AiChatContent mode="floating" />);
       expect(warmupCalls()).toHaveLength(1);
       act(() => chatSessionStore.setState({ selectedProviderId: 'hub' }));
@@ -817,6 +852,7 @@ describe('prompt-cache warmup', () => {
     });
 
     it('keeps one warmup when the provider resolves to the bundled default', () => {
+      settleFreshHistory('p1');
       render(<AiChatContent mode="floating" />);
       act(() => chatSessionStore.setState({ selectedProviderId: 'bundled' }));
       expect(warmupCalls()).toHaveLength(1);

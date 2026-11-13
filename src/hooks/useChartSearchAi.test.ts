@@ -20,7 +20,12 @@ import {
   fetchChatHistory,
   startNewChat,
 } from '../api/chartsearchai';
-import { chatSessionStore, setupChatSessionLogoutCleanup } from '../store/chat-session.store';
+import {
+  chatSessionStore,
+  historySettledFor,
+  requestProviderFor,
+  setupChatSessionLogoutCleanup,
+} from '../store/chat-session.store';
 import { refreshHubProfiles, useHubProfileDiscovery } from './hub-profile-discovery';
 
 vi.mock('../api/chartsearchai', () => ({
@@ -76,6 +81,87 @@ describe('useChartSearchAi', () => {
     expect(result.current.messages[0].question).toBe('First Q');
     expect(result.current.messages[0].answer).toBe('First A');
     expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('srv-session-1');
+  });
+
+  it('records an empty session when history cannot be read', async () => {
+    mockFetchHistory.mockRejectedValueOnce(new Error('offline'));
+    renderHook(() => useChartSearchAi('patient-uuid'));
+    await waitFor(() => expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBeNull());
+  });
+
+  it('records an empty session when cached messages skip history and no session was stored', () => {
+    chatSessionStore.setState({
+      messagesByPatient: {
+        'patient-uuid': [
+          {
+            id: 'cached',
+            question: 'Earlier question',
+            answer: 'Earlier answer',
+            references: [],
+            ...NO_ANSWER_LIMITS,
+            phase: 'complete',
+            error: null,
+          },
+        ],
+      },
+    });
+    renderHook(() => useChartSearchAi('patient-uuid'));
+    expect(mockFetchHistory).not.toHaveBeenCalled();
+    expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBeNull();
+  });
+
+  it("keeps a sibling panel's restored session when the other history read fails", async () => {
+    let rejectFirst!: (err: Error) => void;
+    let resolveSecond!: (value: { session: string; provider: string; messages: never[] }) => void;
+    mockFetchHistory
+      .mockReturnValueOnce(
+        new Promise((_, reject) => {
+          rejectFirst = reject;
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveSecond = resolve;
+        }),
+      );
+    const { unmount: unmountFirst } = renderHook(() => useChartSearchAi('patient-uuid'));
+    const { unmount: unmountSecond } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await act(async () => {
+      rejectFirst(new Error('offline'));
+    });
+    await act(async () => {
+      resolveSecond({ session: 'sess-hub', provider: 'hub', messages: [] });
+    });
+    expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('sess-hub');
+    expect(chatSessionStore.getState().providerByPatient?.['patient-uuid']).toBe('hub');
+    act(() => {
+      unmountFirst();
+      unmountSecond();
+    });
+    expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('sess-hub');
+  });
+
+  it('settles history for the open panel when the other panel closes during its read', async () => {
+    chatSessionStore.setState({ selectedProviderId: 'bundled' });
+    let rejectFirst!: (err: Error) => void;
+    mockFetchHistory
+      .mockReturnValueOnce(
+        new Promise((_, reject) => {
+          rejectFirst = reject;
+        }),
+      )
+      .mockReturnValueOnce(new Promise(() => {}));
+    renderHook(() => useChartSearchAi('patient-uuid'));
+    const { unmount } = renderHook(() => useChartSearchAi('patient-uuid'));
+    await act(async () => {
+      rejectFirst(new Error('offline'));
+    });
+    expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBeUndefined();
+    act(() => unmount());
+    const state = chatSessionStore.getState();
+    expect(state.sessionUuidByPatient['patient-uuid']).toBeNull();
+    expect(historySettledFor(state, 'patient-uuid')).toBe(true);
+    expect(requestProviderFor(state, 'patient-uuid')).toBe('bundled');
   });
 
   it('hydrates a failed terminal turn as an error with its persisted problem code', async () => {
@@ -487,6 +573,60 @@ describe('useChartSearchAi', () => {
       answer: 'Current answer',
       phase: 'complete',
     });
+  });
+
+  async function questionWhileHistoryResolves(patientUuid = 'patient-uuid') {
+    chatSessionStore.setState({ selectedProviderId: 'bundled' });
+    let resolveHistory!: (response: { session: string | null; messages: never[] }) => void;
+    mockFetchHistory.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveHistory = resolve;
+      }),
+    );
+    mockChatStream.mockImplementation(() => {});
+    const view = renderHook(() => useChartSearchAi(patientUuid));
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+    act(() => view.result.current.submitQuestion(patientUuid, 'Current question'));
+    await act(async () => {
+      resolveHistory({ session: 'srv-late-history', messages: [] });
+    });
+    return view;
+  }
+
+  it('settles history when a question fails before it stores a session', async () => {
+    const { result } = await questionWhileHistoryResolves();
+    expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBeUndefined();
+    act(() => mockChatStream.mock.calls[0][3].onError('provider_failure'));
+    const state = chatSessionStore.getState();
+    expect(state.sessionUuidByPatient['patient-uuid']).toBeNull();
+    expect(historySettledFor(state, 'patient-uuid')).toBe(true);
+    expect(requestProviderFor(state, 'patient-uuid')).toBe('bundled');
+    expect(result.current.messages[0].phase).toBe('error');
+  });
+
+  it('settles history when a question is stopped before it stores a session', async () => {
+    const { result } = await questionWhileHistoryResolves();
+    act(() => result.current.stopCurrent());
+    const state = chatSessionStore.getState();
+    expect(state.sessionUuidByPatient['patient-uuid']).toBeNull();
+    expect(historySettledFor(state, 'patient-uuid')).toBe(true);
+    expect(requestProviderFor(state, 'patient-uuid')).toBe('bundled');
+  });
+
+  it('keeps the session a failed question already stored', async () => {
+    const { result } = await questionWhileHistoryResolves();
+    const callbacks = mockChatStream.mock.calls[0][3];
+    act(() => callbacks.onSession('sess-kept'));
+    act(() => callbacks.onError('provider_failure'));
+    expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('sess-kept');
+    expect(result.current.messages[0].phase).toBe('error');
+  });
+
+  it('keeps the session when a question is stopped after the session is stored', async () => {
+    const { result } = await questionWhileHistoryResolves();
+    act(() => mockChatStream.mock.calls[0][3].onSession('sess-kept'));
+    act(() => result.current.stopCurrent());
+    expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBe('sess-kept');
   });
 
   it('sets the answer whole on answer_done (the hub delivers a complete answer, not tokens)', async () => {
@@ -2834,6 +2974,98 @@ describe('useChartSearchAi history with an unanswered question', () => {
       expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBeUndefined();
       unsubscribe();
     });
+
+    it("does not settle history from the previous user's failed read", async () => {
+      signIn('user-a');
+      const unsubscribe = setupChatSessionLogoutCleanup();
+      let rejectHistory!: (err: Error) => void;
+      mockFetchHistory.mockReturnValueOnce(
+        new Promise((_, reject) => {
+          rejectHistory = reject;
+        }),
+      );
+      renderHook(() => useChartSearchAi('patient-uuid'));
+      await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+      act(() => signIn('user-b'));
+      await act(async () => {
+        rejectHistory(new Error('offline'));
+      });
+      expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBeUndefined();
+      unsubscribe();
+    });
+
+    it('does not settle a remembered history failure onto the next user', async () => {
+      signIn('user-a');
+      const unsubscribe = setupChatSessionLogoutCleanup();
+      let rejectFirst!: (err: Error) => void;
+      mockFetchHistory
+        .mockReturnValueOnce(
+          new Promise((_, reject) => {
+            rejectFirst = reject;
+          }),
+        )
+        .mockReturnValueOnce(new Promise(() => {}));
+      renderHook(() => useChartSearchAi('patient-uuid'));
+      const { unmount } = renderHook(() => useChartSearchAi('patient-uuid'));
+      await act(async () => {
+        rejectFirst(new Error('offline'));
+      });
+      act(() => signIn('user-b'));
+      act(() => unmount());
+      expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBeUndefined();
+      unsubscribe();
+    });
+
+    it('does not settle history from a question the previous user failed', async () => {
+      signIn('user-a');
+      const unsubscribe = setupChatSessionLogoutCleanup();
+      chatSessionStore.setState({ selectedProviderId: 'bundled' });
+      let resolveHistory!: (response: { session: null; messages: never[] }) => void;
+      mockFetchHistory.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveHistory = resolve;
+        }),
+      );
+      mockChatStream.mockImplementation(() => {});
+      const { result } = renderHook(() => useChartSearchAi('patient-uuid'));
+      await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+      act(() => result.current.submitQuestion('patient-uuid', 'Q of A'));
+      await act(async () => {
+        resolveHistory({ session: null, messages: [] });
+      });
+      const callbacks = mockChatStream.mock.calls[0][3];
+      act(() => signIn('user-b'));
+      act(() => callbacks.onError('provider_failure'));
+      expect(chatSessionStore.getState().sessionUuidByPatient['patient-uuid']).toBeUndefined();
+      unsubscribe();
+    });
+  });
+
+  it('does not settle the next patient when the previous patient question fails', async () => {
+    chatSessionStore.setState({ selectedProviderId: 'bundled' });
+    let resolveHistory!: (response: { session: null; messages: never[] }) => void;
+    mockFetchHistory.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveHistory = resolve;
+      }),
+    );
+    mockChatStream.mockImplementation(() => {});
+    const { result, rerender } = renderHook(({ patientUuid }) => useChartSearchAi(patientUuid), {
+      initialProps: { patientUuid: 'patient-a' },
+    });
+    await waitFor(() => expect(mockFetchHistory).toHaveBeenCalled());
+    act(() => result.current.submitQuestion('patient-a', 'Q of A'));
+    await act(async () => {
+      resolveHistory({ session: null, messages: [] });
+    });
+    const callbacks = mockChatStream.mock.calls[0][3];
+    rerender({ patientUuid: 'patient-b' });
+    await waitFor(() =>
+      expect(chatSessionStore.getState().sessionUuidByPatient['patient-b']).toBe('srv-session-default'),
+    );
+    act(() => callbacks.onError('provider_failure'));
+    expect(chatSessionStore.getState().sessionUuidByPatient['patient-b']).toBe('srv-session-default');
+    expect(chatSessionStore.getState().sessionUuidByPatient['patient-a']).toBeNull();
   });
 
   it("leaves a Hub answer's bare unavailable safety result as stored", async () => {

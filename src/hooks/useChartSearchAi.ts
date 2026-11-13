@@ -16,7 +16,12 @@ import {
   startNewChat,
 } from '../api/chartsearchai';
 import { type ChartSearchAiConfig } from '../config-schema';
-import { chatSessionStore, chatSessionUserGeneration, requestProviderFor } from '../store/chat-session.store';
+import {
+  chatSessionStore,
+  chatSessionUserGeneration,
+  historySettledFor,
+  requestProviderFor,
+} from '../store/chat-session.store';
 import { refreshHubProfiles, useHubProfileDiscovery } from './hub-profile-discovery';
 import {
   ANSWER_CHECK_INTERRUPTED_SUMMARY_CODE,
@@ -133,6 +138,10 @@ interface InFlightTurn {
 }
 const inFlightByPatient = new Map<string, InFlightTurn>();
 
+const historyReadsInFlight = new Map<string, number>();
+
+const pendingUnknownHistoryGeneration = new Map<string, number>();
+
 /** How many panels are open on each patient: only closing the last one may stop that patient's turn. */
 const openPanelsByPatient = new Map<string, number>();
 
@@ -156,6 +165,7 @@ function releaseInFlight(patientUuid: string): string | null {
   if (!turn) return null;
   turn.controller.abort();
   inFlightByPatient.delete(patientUuid);
+  retryUnknownHistory(patientUuid);
   return turn.messageId;
 }
 
@@ -173,6 +183,49 @@ function setSessionUuid(patientUuid: string, uuid: string | null): void {
     ...state,
     sessionUuidByPatient: { ...state.sessionUuidByPatient, [patientUuid]: uuid },
   });
+}
+
+function settleUnknownHistory(patientUuid: string): void {
+  const generation = chatSessionUserGeneration();
+  const pendingGeneration = pendingUnknownHistoryGeneration.get(patientUuid);
+  if (pendingGeneration !== undefined && pendingGeneration !== generation) {
+    pendingUnknownHistoryGeneration.delete(patientUuid);
+  }
+  if (historySettledFor(chatSessionStore.getState(), patientUuid)) {
+    pendingUnknownHistoryGeneration.delete(patientUuid);
+    return;
+  }
+  if ((historyReadsInFlight.get(patientUuid) ?? 0) > 0 || inFlightByPatient.has(patientUuid)) {
+    pendingUnknownHistoryGeneration.set(patientUuid, generation);
+    return;
+  }
+  pendingUnknownHistoryGeneration.delete(patientUuid);
+  setSessionUuid(patientUuid, null);
+}
+
+function retryUnknownHistory(patientUuid: string): void {
+  const pendingGeneration = pendingUnknownHistoryGeneration.get(patientUuid);
+  if (pendingGeneration === undefined) return;
+  if (pendingGeneration !== chatSessionUserGeneration()) {
+    pendingUnknownHistoryGeneration.delete(patientUuid);
+    return;
+  }
+  settleUnknownHistory(patientUuid);
+}
+
+function beginHistoryRead(patientUuid: string): (failed: boolean) => void {
+  historyReadsInFlight.set(patientUuid, (historyReadsInFlight.get(patientUuid) ?? 0) + 1);
+  let finished = false;
+  return (failed: boolean) => {
+    if (finished) return;
+    finished = true;
+    const remaining = (historyReadsInFlight.get(patientUuid) ?? 1) - 1;
+    const last = remaining <= 0;
+    if (last) historyReadsInFlight.delete(patientUuid);
+    else historyReadsInFlight.set(patientUuid, remaining);
+    if (failed) settleUnknownHistory(patientUuid);
+    else if (last) retryUnknownHistory(patientUuid);
+  };
 }
 
 function setNewChatPending(patientUuid: string, pending: boolean): void {
@@ -418,46 +471,60 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       chatSessionStore.setState({ selectedProviderId: cachedProvider });
     }
     if (messagesByPatient[patientUuid] && messagesByPatient[patientUuid].length > 0) {
-      // Local cache already populated (e.g. user just submitted a turn);
-      // skip the round-trip.
+      // Local messages already stand in for the read. If no turn stored a session, record that
+      // history has answered so warmup does not wait for a read that will not happen.
+      settleUnknownHistory(patientUuid);
       return;
     }
     const controller = new AbortController();
     const sessionBeforeFetch = chatSessionStore.getState().sessionUuidByPatient[patientUuid];
     const generation = chatSessionUserGeneration();
+    const endHistoryRead = beginHistoryRead(patientUuid);
     fetchChatHistory(patientUuid, controller)
       .then((response) => {
-        if (!isMountedRef.current || controller.signal.aborted) return;
-        // Read for the user signed in when it started; another user's history is not theirs.
-        if (chatSessionUserGeneration() !== generation) return;
-        // A submitted turn owns the transcript even before onSession arrives or when it reuses
-        // the existing session. A late mount-time snapshot must not replace that live message
-        // or change its provider; also reject snapshots from a superseded conversation.
-        const currentState = chatSessionStore.getState();
-        if (
-          currentState.sessionUuidByPatient[patientUuid] !== sessionBeforeFetch ||
-          (currentState.messagesByPatient[patientUuid]?.length ?? 0) > 0
-        ) {
-          return;
-        }
-        setSessionUuid(patientUuid, response.session ?? null);
-        // The picker and per-patient provider map must reflect the provider bound to the restored
-        // conversation. Otherwise switching patients and coming back would send the other patient's
-        // provider with this patient's session and close the conversation.
-        if (response.provider) {
-          setPatientProvider(patientUuid, response.provider);
-          chatSessionStore.setState({ selectedProviderId: response.provider });
-        }
-        const hydrated = hydrateMessages(response.messages ?? [], response.provider);
-        if (hydrated.length > 0) {
-          updateMessages(patientUuid, () => hydrated);
+        try {
+          if (!isMountedRef.current || controller.signal.aborted) return;
+          // Read for the user signed in when it started; another user's history is not theirs.
+          if (chatSessionUserGeneration() !== generation) return;
+          // A submitted turn owns the transcript even before onSession arrives or when it reuses
+          // the existing session. A late mount-time snapshot must not replace that live message
+          // or change its provider; also reject snapshots from a superseded conversation.
+          const currentState = chatSessionStore.getState();
+          if (
+            currentState.sessionUuidByPatient[patientUuid] !== sessionBeforeFetch ||
+            (currentState.messagesByPatient[patientUuid]?.length ?? 0) > 0
+          ) {
+            settleUnknownHistory(patientUuid);
+            return;
+          }
+          setSessionUuid(patientUuid, response.session ?? null);
+          // The picker and per-patient provider map must reflect the provider bound to the restored
+          // conversation. Otherwise switching patients and coming back would send the other patient's
+          // provider with this patient's session and close the conversation.
+          if (response.provider) {
+            setPatientProvider(patientUuid, response.provider);
+            chatSessionStore.setState({ selectedProviderId: response.provider });
+          }
+          const hydrated = hydrateMessages(response.messages ?? [], response.provider);
+          if (hydrated.length > 0) {
+            updateMessages(patientUuid, () => hydrated);
+          }
+        } finally {
+          endHistoryRead(false);
         }
       })
       .catch((err) => {
-        if (err?.name === 'AbortError') return;
-        console.warn('[useChartSearchAi] hydrate failed; starting empty', err);
+        const aborted = err?.name === 'AbortError';
+        const staleUser = chatSessionUserGeneration() !== generation;
+        if (!aborted && !staleUser) {
+          console.warn('[useChartSearchAi] hydrate failed; starting empty', err);
+        }
+        endHistoryRead(!aborted && !staleUser);
       });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      endHistoryRead(false);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patientUuid]);
 
@@ -676,6 +743,9 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
         if (ownsSession && response.session) {
           setSessionUuid(patientUuid, response.session);
         }
+        if (chatSessionUserGeneration() === turnGeneration) {
+          retryUnknownHistory(patientUuid);
+        }
       };
 
       const fail = (errMessage: string) => {
@@ -717,6 +787,9 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
           };
           return updated;
         });
+        if (chatSessionUserGeneration() === turnGeneration) {
+          retryUnknownHistory(patientUuid);
+        }
       };
 
       const answerDone = (response: AiSearchResponse) => {

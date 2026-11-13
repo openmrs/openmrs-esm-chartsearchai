@@ -90,6 +90,16 @@ export function requestProviderFor(state: ChatSessionState, patientUuid?: string
   return conversationProvider ?? state.selectedProviderId;
 }
 
+/**
+ * Whether this patient's history read has settled. The map holds null when the read found no
+ * conversation, and after a failed read, so a missing key is the only "not yet" state.
+ * `requestProviderFor` treats a missing key and a stored null the same, because neither names a
+ * conversation provider.
+ */
+export function historySettledFor(state: ChatSessionState, patientUuid?: string | null): boolean {
+  return patientUuid != null && Object.prototype.hasOwnProperty.call(state.sessionUuidByPatient, patientUuid);
+}
+
 /** A fresh session's state: the store starts from it, and a user change replaces the state with it. */
 export const initialChatSessionState = (): ChatSessionState => ({
   messagesByPatient: {},
