@@ -141,7 +141,7 @@ const humanize = (value: string) => {
   return words ? words.charAt(0).toLocaleUpperCase() + words.slice(1) : value;
 };
 
-/** `yyyy-MM-dd` as the backend wrote it. A Date would shift the day off UTC. */
+/** `yyyy-MM-dd` as the backend wrote it. A Date would shift the day by the viewer's offset. */
 const utcCalendarDay = (value: string | null | undefined) =>
   value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
 

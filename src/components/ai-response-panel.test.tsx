@@ -1440,9 +1440,6 @@ describe('AiResponsePanel current-medication chips', () => {
   });
 });
 
-/** The UTC caveat both ended-order renderings share, because the backend's dates are UTC days. */
-const UTC_CALENDAR_DAY = 'The date is a calendar day in UTC, so it can be a day off the local date.';
-
 type LiveResponse = typeof ENDED_ORDER_NAMED_IN_A_HISTORY_QUESTION | typeof ENDED_ORDER_DRUG_PROPOSED;
 
 /** Renders a captured response the way the chat renders a finished message: every measurement passed. */
@@ -1492,7 +1489,8 @@ describe('AiResponsePanel ended-order chips', () => {
     const marks = endedMarks(rows[0]);
     expect(marks).toHaveLength(1);
     expect(marks[0]).toHaveTextContent(new RegExp(`^${MARK_DATED}$`));
-    expect(marks[0]).toHaveAttribute('title', `${MARK_TITLE} ${UTC_CALENDAR_DAY}`);
+    expect(marks[0]).toHaveAttribute('title', MARK_TITLE);
+    expect(marks[0].getAttribute('title')).not.toMatch(/day off/);
     // A distinct mark from the current-medication tag: the backend keeps the two referents apart.
     expect(within(rows[0]).queryByText(CURRENT_MARK)).not.toBeInTheDocument();
     expect(marks[0].className).not.toContain('currentMedicationTag');
@@ -1526,6 +1524,7 @@ describe('AiResponsePanel ended-order chips', () => {
     expect(marks).toHaveLength(1);
     expect(marks[0]).toHaveTextContent(new RegExp(`^${MARK}$`));
     expect(marks[0]).toHaveAttribute('title', MARK_TITLE);
+    expect(marks[0].getAttribute('title')).not.toMatch(/day off/);
   });
 
   it('never states the end more exactly than a calendar day', () => {
@@ -1564,8 +1563,7 @@ describe('AiResponsePanel ended-order chips', () => {
 describe('AiResponsePanel order stop dates', () => {
   const STOPPED = 'Stopped 2026-09-23';
   const STOPPED_TITLE =
-    'The date this prescription stopped being in force — not the record’s own date shown beside it. ' +
-    UTC_CALENDAR_DAY;
+    'The date this prescription stopped being in force — not the record’s own date shown beside it.';
 
   /** Each reference chip, found by class for the reason `chipRows` is. */
   const referenceItems = () =>
@@ -1581,6 +1579,7 @@ describe('AiResponsePanel order stop dates', () => {
     const item = itemFor(6);
     const stopped = within(item).getByText(STOPPED);
     expect(stopped).toHaveAttribute('title', STOPPED_TITLE);
+    expect(stopped.getAttribute('title')).not.toMatch(/day off/);
     // The record's own date is a different fact and stays where it was, never replaced by this one.
     expect(within(item).getByRole('link')).toHaveTextContent(/^\[6\] drug_order — 2026-06-01$/);
     // Beside the link, not inside the navigation target.

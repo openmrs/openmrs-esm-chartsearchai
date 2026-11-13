@@ -99,10 +99,11 @@ const CALENDAR_DAY = /^\d{4}-\d{2}-\d{2}$/;
 /**
  * An ended order's date as the panel may show it, or null where it must show none.
  *
- * The backend converts every date in UTC, so its `yyyy-MM-dd` can be a day off the local one, and
- * the panel shows it verbatim: never parsed into a `Date`, which would shift it again by the
- * viewer's own offset. Anything but that one shape is withheld rather than trimmed, so nothing more
- * exact than a calendar day reaches the screen.
+ * The value is the calendar day on the server's clock. Backend ADR Decision 563 says that clock
+ * is the zone OpenMRS stores and the chart shows. The panel shows the `yyyy-MM-dd` string
+ * verbatim and never parses it into a Date, because the viewer's offset would shift the day.
+ * Anything but that one shape is withheld rather than trimmed, so nothing more exact than a
+ * calendar day reaches the screen.
  */
 function calendarDay(value: unknown): string | null {
   return typeof value === 'string' && CALENDAR_DAY.test(value) ? value : null;
@@ -985,11 +986,6 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     'aboutAnEndedOrderTitle',
     'The chart records this drug only as an order no longer in force, so the finding is about what giving it again would mean — not about a medication the patient is taking now.',
   );
-  // Said of both ended-order dates: the backend converts them in UTC.
-  const utcDayTitle = t(
-    'utcCalendarDayTitle',
-    'The date is a calendar day in UTC, so it can be a day off the local date.',
-  );
 
   // The API, hook and stream layers emit stable codes for session expiry, profile discovery
   // and turn_error problem codes so the wording can be localized here; human-readable error
@@ -1186,10 +1182,7 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
           {warning.aboutAnEndedOrder === true && (
             <>
               {' '}
-              <span
-                className={styles.endedOrderTag}
-                title={endedOn ? `${endedOrderTitle} ${utcDayTitle}` : endedOrderTitle}
-              >
+              <span className={styles.endedOrderTag} title={endedOrderTitle}>
                 {endedOn
                   ? t('aboutAnEndedOrderOn', 'About an order no longer in force, ended {{stopDate}}', {
                       stopDate: endedOn,
@@ -1512,7 +1505,10 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
                   {stopDate && (
                     <span
                       className={styles.orderStopDateTag}
-                      title={`${t('orderStopDateTitle', 'The date this prescription stopped being in force — not the record’s own date shown beside it.')} ${utcDayTitle}`}
+                      title={t(
+                        'orderStopDateTitle',
+                        'The date this prescription stopped being in force — not the record’s own date shown beside it.',
+                      )}
                     >
                       {t('orderStopDate', 'Stopped {{stopDate}}', { stopDate, interpolation: { escapeValue: false } })}
                     </span>
