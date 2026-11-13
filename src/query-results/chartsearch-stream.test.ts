@@ -132,12 +132,30 @@ describe('reading ChartSearch payloads', () => {
       unfaithfullyRenderedCitations: [7],
       misattributedOrderCitations: null,
       unstatedFindingSeverities: [{ citation: 350, rating: 'Major' }],
+      unfoundedFindingSeverities: null,
       activeOrderClaims: null,
       unsupportedEndedOrderClaims: ['Nevirapine'],
       unstatedSignificanceQualifiers: [46],
       orderStopDates: [{ citation: 3, stopDate: '2026-09-23' }],
       conditionRuleCoverage: 'absent',
     });
+  });
+
+  it('keeps ratings the answer wrote for findings that carry none, and drops what is not one', () => {
+    expect(
+      parseStatements({
+        unfoundedFindingSeverities: [
+          { citation: 2, rating: ' Major ' },
+          3,
+          { citation: 4 },
+          { rating: 'Minor' },
+          { citation: 5, rating: '   ' },
+          null,
+        ],
+      }).unfoundedFindingSeverities,
+    ).toEqual([{ citation: 2, rating: 'Major' }]);
+    expect(parseStatements({ unfoundedFindingSeverities: 'Major' }).unfoundedFindingSeverities).toBeNull();
+    expect(parseStatements({}).unfoundedFindingSeverities).toBeNull();
   });
 
   it('keeps a current medication and an ended order on a finding, and drops what is not one', () => {

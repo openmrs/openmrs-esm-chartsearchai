@@ -385,6 +385,40 @@ describe('the Ask ChartSearch view', () => {
     expect(reference).not.toHaveTextContent('Not checked');
   });
 
+  it('flags a citation the answer rated when that finding carries no rating, and leaves the others alone', async () => {
+    const user = userEvent.setup();
+    const stream = streamingResponse();
+    fetchMock.mockResolvedValue(stream.response);
+    const answer = 'The finding is Major [2]. The order is listed [1].';
+    renderView('is this finding major?');
+
+    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+    await act(async () =>
+      stream.write(
+        frame(
+          'done',
+          done({
+            answer,
+            references: [
+              { index: 1, resourceType: 'drug_order', date: '2024-03-03', grounded: true, group: 'chart' },
+              { index: 2, resourceType: 'safety_finding', date: null, grounded: true, group: 'chart' },
+            ],
+            unfoundedFindingSeverities: [{ citation: 2, rating: 'Major' }],
+          }),
+        ),
+      ),
+    );
+    await act(async () => stream.end());
+
+    expect(await screen.findByText(answer)).toBeInTheDocument();
+    const records = screen.getByRole('list', { name: 'Records cited' });
+    const items = within(records).getAllByRole('listitem');
+    const rated = items.find((item) => item.textContent?.includes('[2]'));
+    const other = items.find((item) => item.textContent?.includes('[1]'));
+    expect(rated).toHaveTextContent('The answer rates this Major. The finding carries no rating.');
+    expect(other).not.toHaveTextContent('The finding carries no rating.');
+  });
+
   it('marks a contraindication about a drug she already takes, and an order no longer in force', async () => {
     const user = userEvent.setup();
     const stream = streamingResponse();
