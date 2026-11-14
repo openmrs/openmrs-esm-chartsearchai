@@ -146,7 +146,7 @@ const ChartSearchAnswerView: React.FC<ChartSearchAnswerViewProps> = ({
           },
           onPreliminary: (delta) => {
             updateIfCurrent((prev) => {
-              if (isTerminal(prev.phase) || prev.reasoning || prev.answer) return prev;
+              if (!showReasoning || isTerminal(prev.phase) || prev.reasoning || prev.answer) return prev;
               return {
                 ...prev,
                 preliminaryReasoning: stripPreviewCitations((prev.preliminaryReasoning ?? '') + delta),

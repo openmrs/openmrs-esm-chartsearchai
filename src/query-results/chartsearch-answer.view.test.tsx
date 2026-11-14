@@ -456,10 +456,15 @@ describe('the Ask ChartSearch view', () => {
       renderView();
 
       await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+      await act(async () => stream.write(frame('preliminary_delta', 'Secret preview')));
+      expect(screen.queryByText('Secret preview')).not.toBeInTheDocument();
+      expect(screen.getByText('Reviewing the most relevant records…')).toBeInTheDocument();
+
       await act(async () =>
         stream.write(frame('reasoning_delta', 'Secret reasoning chain') + frame('answer_delta', 'ART started')),
       );
       expect(await screen.findByText('ART started')).toBeInTheDocument();
+      expect(screen.queryByText('Secret preview')).not.toBeInTheDocument();
       expect(screen.queryByText('Secret reasoning chain')).not.toBeInTheDocument();
     });
   });
