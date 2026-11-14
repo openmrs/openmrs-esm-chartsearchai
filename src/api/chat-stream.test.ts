@@ -247,14 +247,38 @@ describe('chatPatientChartStream', () => {
     expect(sentBody()).toMatchObject({ session: 'sess-1' });
   });
 
-  it('rejects an empty hub profile instead of relying on a relay fallback', () => {
+  it('omits profile when hub has no explicit selection so the server resolves its default profile', () => {
     const cb = makeCallbacks();
-    fetchSpy = vi.spyOn(window, 'fetch');
+    fetchSpy = vi.spyOn(window, 'fetch').mockReturnValue(new Promise(() => {}));
 
-    expect(() => chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, '', 'hub')).toThrow(
-      'A product profile is required',
-    );
-    expect(window.fetch).not.toHaveBeenCalled();
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, '', 'hub');
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [, init] = fetchSpy.mock.calls[0];
+    const body = JSON.parse(init!.body as string);
+    expect(body).toEqual({ patient: 'uuid-1', question: 'q?', provider: 'hub' });
+    expect(body).not.toHaveProperty('profile');
+    expect(body).not.toHaveProperty('ephemeral');
+  });
+
+  it('includes ephemeral: true in the JSON body only when requested', () => {
+    const cb = makeCallbacks();
+    fetchSpy = vi.spyOn(window, 'fetch').mockReturnValue(new Promise(() => {}));
+
+    chatPatientChartStream('uuid-1', null, 'q?', cb, undefined, 'default-profile', 'hub', undefined, {
+      ephemeral: true,
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [, init] = fetchSpy.mock.calls[0];
+    const body = JSON.parse(init!.body as string);
+    expect(body).toEqual({
+      patient: 'uuid-1',
+      question: 'q?',
+      profile: 'default-profile',
+      provider: 'hub',
+      ephemeral: true,
+    });
   });
 
   // A response that is not a controller error (no JSON body, or a redirect) does not say why it

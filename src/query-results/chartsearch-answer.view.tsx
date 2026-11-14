@@ -1,603 +1,435 @@
-import React, { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, InlineLoading } from '@carbon/react';
-import { SESSION_EXPIRED_ERROR_CODE, sessionExpiredOr } from '../api/chartsearchai';
-import { isServerUnreachable } from '../omnibar-contract/server-unreachable';
-import { type OmnibarViewProps, type OmnibarViewState } from '../omnibar-contract/types';
-import { safetyIssueText, safetyStatusTag, SUPPRESSED_SAFETY_ISSUES } from '../utils/safety-check-wording';
-import { useChartSearchOffer } from './chartsearch-offer';
+import { useConfig } from '@openmrs/esm-framework';
+import { chatPatientChartStream, type AiSearchResponse } from '../api/chartsearchai';
+import AiReasoningDisclosure from '../components/ai-reasoning-disclosure.component';
+import AiResponsePanel from '../components/ai-response-panel.component';
+import { type ChartSearchAiConfig } from '../config-schema';
+import { refreshSystemProvider, useSystemProviderDiscovery } from '../hooks/system-provider-discovery';
+import { isAwaitingAnswer, isTerminal } from '../hooks/turn-phase';
 import {
-  type ChartSearchReference,
-  type ChartSearchStatements,
-  maxAnswerCharacters,
-  parseJson,
-  parseReferences,
-  parseStatements,
-  type SseEvent,
-  streamChartSearch,
-} from './chartsearch-stream';
+  applyTurnEnvelope,
+  interruptAnswerValidation,
+  interruptGroundingChecks,
+  interruptInDepth,
+  isCheckPendingOnAnswerDone,
+  isUnsettledBundledSafetyCheck,
+  stripPreviewCitations,
+  type ChatMessage,
+  type TurnEnvelope,
+} from '../hooks/useChartSearchAi';
+import { type OmnibarViewProps } from '../omnibar-contract/types';
+import { chatSessionStore } from '../store/chat-session.store';
+import { answerLimitsOf, NO_ANSWER_LIMITS } from '../utils/answer-limits';
+import { useChartSearchOffer } from './chartsearch-offer';
 import styles from './chartsearch-answer.scss';
 
+function createPendingAssistantMessage(id: string, question: string): ChatMessage {
+  return {
+    id,
+    question,
+    answer: '',
+    references: [],
+    reasoning: '',
+    preliminaryReasoning: '',
+    phase: 'answering',
+    error: null,
+    ...NO_ANSWER_LIMITS,
+  };
+}
+
 /**
- * ChartSearch, on the Query results page. For a question-like query the user just submitted (Enter in
- * the bar, its "see all results" line, or an earlier query on the page), it sends the question, with
- * the chart's patient, to ChartSearch's streaming endpoint, and the answer streams into the page. The
- * bar's hint says Enter will ask ChartSearch, so Enter is the request. A page reloaded, reached with
- * back or forward, or opened from a link sends nothing until the clinician presses Ask. Typing alone
- * never sends anything, and the answer is never stored.
- *
- * Ported from the omnibar, which had it as a prototype. It keeps its own state rather than using
- * `useChartSearchAi`, so an answer here never enters the chat's transcript or blocks it. It draws
- * ChartSearch's statements about the answer as the module's README asks: citations as unverified
- * until verdicts arrive, reference material apart from chart evidence, safety findings whole, and each
- * caveat as a caveat, never as a verdict.
+ * Omnibar Query Results must never echo free-text server error prose (which can quote the query
+ * or chart data); keep structured client (`chartsearchai:*`) and problem codes only.
  */
-
-type Phase = 'ready' | 'asking' | 'answering' | 'answered' | 'final' | Failure;
-type Failure = 'failed' | 'unavailable' | 'signedOut';
-
-interface AnswerState {
-  phase: Phase;
-  text: string;
-  references: Array<ChartSearchReference>;
-  /** From `done`, then `grounded`. Drawn only once the stream has ended, when they're final. */
-  statements: ChartSearchStatements | null;
-  disclaimer: string | null;
+function sanitizeOmnibarErrorCode(code: string): string {
+  return /^(chartsearchai:[a-z0-9-]+|[a-z0-9]+(?:_[a-z0-9]+)*)$/.test(code) ? code : 'provider_failure';
 }
 
-type Action = { type: 'ask' } | { type: 'event'; event: SseEvent } | { type: 'end' } | { type: 'fail'; phase: Failure };
+export type ChartSearchAnswerViewProps = OmnibarViewProps;
 
-const initialState: AnswerState = { phase: 'ready', text: '', references: [], statements: null, disclaimer: null };
-
-const cap = (text: string) => (text.length > maxAnswerCharacters ? text.slice(0, maxAnswerCharacters) : text);
-
-function reducer(state: AnswerState, action: Action): AnswerState {
-  switch (action.type) {
-    case 'ask':
-      return { ...initialState, phase: 'asking' };
-    case 'fail':
-      return { ...state, phase: action.phase };
-    case 'end':
-      // A stream that ends before `done` didn't finish its answer.
-      return state.phase === 'answered' ? { ...state, phase: 'final' } : { ...state, phase: 'failed' };
-    case 'event': {
-      if (state.phase === 'final' || isFailure(state.phase)) {
-        return state;
-      }
-      const { event, data } = action.event;
-      switch (event) {
-        case 'thinking':
-        case 'preliminary':
-          // Reasoning and previews aren't the answer and aren't drawn; they say work has started.
-          return state.phase === 'asking' ? { ...state, phase: 'answering' } : state;
-        case 'token':
-          return {
-            ...state,
-            phase: state.phase === 'answered' ? 'answered' : 'answering',
-            text: cap(state.text + data),
-          };
-        case 'references': {
-          const references = parseReferences(parseJson(data)?.references);
-          return references ? { ...state, references } : state;
-        }
-        case 'done': {
-          const payload = parseJson(data);
-          if (!payload) {
-            return { ...state, phase: 'failed' };
-          }
-          return {
-            ...state,
-            phase: 'answered',
-            text: typeof payload.answer === 'string' ? cap(payload.answer) : state.text,
-            references: parseReferences(payload.references) ?? state.references,
-            statements: parseStatements(payload),
-            disclaimer:
-              typeof payload.disclaimer === 'string'
-                ? Array.from(payload.disclaimer).slice(0, maxDisclaimerCharacters).join('')
-                : null,
-          };
-        }
-        case 'grounded': {
-          // Sent after `done` when ChartSearch verifies citations later: it replaces the references and
-          // the statements `done` couldn't make yet. It comes on the same stream, before it ends, so it
-          // always finds the answer here; the page shows verdicts only once the stream has ended, so a
-          // stream that ends early leaves citations marked unverified, never wrongly verified.
-          const payload = parseJson(data);
-          if (!payload || state.phase !== 'answered') {
-            return state;
-          }
-          return {
-            ...state,
-            references: parseReferences(payload.references) ?? state.references,
-            statements: parseStatements(payload),
-          };
-        }
-        case 'error':
-          // Never ChartSearch's own words: the page says only that it failed.
-          return { ...state, phase: 'failed' };
-        default:
-          return state;
-      }
-    }
-  }
-}
-
-const isFailure = (phase: Phase): phase is Failure =>
-  phase === 'failed' || phase === 'unavailable' || phase === 'signedOut';
-const maxDisclaimerCharacters = 1_000;
-
-/** How a failed request is told: the server out of reach, the session ended, or anything else. */
-async function failureOf(error: unknown): Promise<Failure> {
-  if (isServerUnreachable(error)) return 'unavailable';
-  // A raw fetch doesn't send the user to the login page as openmrsFetch would, so the page says why.
-  if ((error as { response?: { status?: number } })?.response?.status === 401) return 'signedOut';
-  // An ended session rarely answers 401: a timed-out one gets an HTML 500 and a logged-out one the
-  // login page, so the server is asked.
-  return (await sessionExpiredOr('failed')) === SESSION_EXPIRED_ERROR_CODE ? 'signedOut' : 'failed';
-}
-
-const humanize = (value: string) => {
-  const words = value.replace(/[_-]+/g, ' ').trim();
-  return words ? words.charAt(0).toLocaleUpperCase() + words.slice(1) : value;
-};
-
-/** `yyyy-MM-dd` as the backend wrote it. A Date would shift the day off UTC. */
-const utcCalendarDay = (value: string | null | undefined) =>
-  value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
-
-const ChartSearchAnswerView: React.FC<OmnibarViewProps> = ({
+const ChartSearchAnswerView: React.FC<ChartSearchAnswerViewProps> = ({
   query,
   context,
   reportState,
-  submitted,
   hints,
+  submitted,
   signal,
 }) => {
   const { t } = useTranslation();
-  const patientUuid = context.scope === 'patient' ? context.patientUuid : undefined;
-  const question = query.trim();
-  // Mounted under /ask, or for a plain query. Under /ask any text is a question.
-  const offered = useChartSearchOffer(question, patientUuid, hints, context.command?.id === 'ask');
+  const headingId = useId();
+  const config = useConfig<ChartSearchAiConfig>();
+  const systemProvider = useSystemProviderDiscovery();
 
-  const [state, dispatch] = useReducer(reducer, initialState);
-  const controller = useRef<AbortController | null>(null);
-  const asked = useRef(false);
-  // Leaving stops the answer. A remount, which React's development checks do on purpose, may then ask
-  // again, rather than leave the section waiting on a request it stopped.
-  useEffect(
-    () => () => {
-      controller.current?.abort();
-      asked.current = false;
+  const patientUuid = context.scope === 'patient' ? context.patientUuid : undefined;
+  const trimmedQuestion = query.trim();
+  const showReasoning = config?.showReasoning !== false;
+
+  const [message, setMessage] = useState<ChatMessage | null>(null);
+  const [hasRequested, setHasRequested] = useState(Boolean(submitted));
+  const [attempt, setAttempt] = useState(0);
+
+  const shouldOffer = useChartSearchOffer(trimmedQuestion, patientUuid, hints, context.command?.id === 'ask');
+
+  const abortRef = useRef<AbortController | null>(null);
+  const turnSeqRef = useRef(0);
+  const msgCounterRef = useRef(0);
+  const pendingSafetyRef = useRef<Pick<AiSearchResponse, 'safetyStatus' | 'safetyCheck'> | null>(null);
+  const systemProviderIdRef = useRef<string | null>(systemProvider.providerId);
+  systemProviderIdRef.current = systemProvider.providerId;
+  const providerUnavailableRef = useRef(false);
+
+  const abortInFlight = useCallback(() => {
+    turnSeqRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    pendingSafetyRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (!signal) return undefined;
+    const onHostAbort = () => {
+      abortInFlight();
+    };
+    if (signal.aborted) {
+      abortInFlight();
+      return undefined;
+    }
+    signal.addEventListener('abort', onHostAbort);
+    return () => signal.removeEventListener('abort', onHostAbort);
+  }, [signal, abortInFlight]);
+
+  useEffect(() => {
+    setMessage(null);
+    setHasRequested(Boolean(submitted));
+    setAttempt(0);
+  }, [patientUuid, trimmedQuestion, submitted]);
+
+  const providerResolved = systemProvider.status !== 'loading';
+  const providerExplicitlyUnavailable = systemProvider.status === 'unavailable' && Boolean(systemProvider.providerId);
+  providerUnavailableRef.current = providerExplicitlyUnavailable;
+
+  const startTurn = useCallback(
+    (targetPatientUuid: string, targetQuestion: string) => {
+      if (signal?.aborted) return;
+
+      abortInFlight();
+      const seq = turnSeqRef.current;
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      const storeState = chatSessionStore.getState();
+      const providerId = systemProviderIdRef.current ?? storeState.selectedProviderId ?? undefined;
+      const profileId =
+        providerId === 'hub' && storeState.profileDiscoveryStatus === 'ready' && storeState.selectedProfileId
+          ? storeState.selectedProfileId
+          : undefined;
+      const capabilities = providerId ? storeState.providerCapabilities?.[providerId] : undefined;
+
+      msgCounterRef.current += 1;
+      const messageId = `omnibar-${seq}-${msgCounterRef.current}`;
+      setMessage(createPendingAssistantMessage(messageId, targetQuestion));
+
+      const updateIfCurrent = (updater: (prev: ChatMessage) => ChatMessage) => {
+        if (turnSeqRef.current !== seq || controller.signal.aborted) return;
+        setMessage((prev) => (prev ? updater(prev) : prev));
+      };
+
+      chatPatientChartStream(
+        targetPatientUuid,
+        null,
+        targetQuestion,
+        {
+          onSession: () => {
+            // Ephemeral query-results turns are intentionally stateless (`session: null`).
+          },
+          onPreliminary: (delta) => {
+            updateIfCurrent((prev) => {
+              if (isTerminal(prev.phase) || prev.reasoning || prev.answer) return prev;
+              return {
+                ...prev,
+                preliminaryReasoning: stripPreviewCitations((prev.preliminaryReasoning ?? '') + delta),
+              };
+            });
+          },
+          onReasoning: (delta) => {
+            if (!showReasoning) return;
+            updateIfCurrent((prev) => {
+              if (isTerminal(prev.phase) || prev.answer) return prev;
+              return {
+                ...prev,
+                preliminaryReasoning: '',
+                reasoning: (prev.reasoning ?? '') + delta,
+              };
+            });
+          },
+          onToken: (delta) => {
+            updateIfCurrent((prev) => {
+              if (isTerminal(prev.phase)) return prev;
+              return {
+                ...prev,
+                phase: 'answering',
+                preliminaryReasoning: '',
+                answer: prev.answer + delta,
+              };
+            });
+          },
+          onAnswerDone: (response) => {
+            updateIfCurrent((prev) => {
+              if (isTerminal(prev.phase)) return prev;
+              const unsettled = isUnsettledBundledSafetyCheck(response);
+              pendingSafetyRef.current = unsettled
+                ? { safetyStatus: response.safetyStatus, safetyCheck: response.safetyCheck }
+                : null;
+              const effectiveResponse: TurnEnvelope = unsettled
+                ? { ...response, safetyStatus: undefined, safetyCheck: undefined }
+                : response;
+              const nextPhase = isCheckPendingOnAnswerDone(response) ? 'checking' : 'settled';
+              return {
+                ...applyTurnEnvelope(prev, effectiveResponse, nextPhase),
+                preliminaryReasoning: '',
+                safetyCheckPending: unsettled,
+              };
+            });
+          },
+          onAnswerValidation: (response) => {
+            updateIfCurrent((prev) => {
+              if (isTerminal(prev.phase)) return prev;
+              const nextPhase = prev.inDepth?.status === 'pending' ? 'in-depth' : 'settled';
+              return applyTurnEnvelope(prev, response, nextPhase);
+            });
+          },
+          onEvidenceUpdated: (response) => {
+            updateIfCurrent((prev) => {
+              if (isTerminal(prev.phase)) return prev;
+              if (response.safetyStatus !== undefined || response.safetyCheck !== undefined) {
+                pendingSafetyRef.current = null;
+              }
+              const nextPhase =
+                prev.answerValidation?.status === 'checking'
+                  ? 'checking'
+                  : prev.inDepth?.status === 'pending'
+                    ? 'in-depth'
+                    : 'settled';
+              return {
+                ...applyTurnEnvelope(prev, response, nextPhase),
+                ...(response.safetyStatus !== undefined || response.safetyCheck !== undefined
+                  ? { safetyCheckPending: false }
+                  : {}),
+              };
+            });
+          },
+          onInDepthPending: (payload) => {
+            updateIfCurrent((prev) => {
+              if (isTerminal(prev.phase)) return prev;
+              return applyTurnEnvelope(
+                prev,
+                {
+                  ...payload,
+                  inDepth: payload.inDepth ?? { status: 'pending', answer: prev.inDepth?.answer ?? '' },
+                },
+                'in-depth',
+              );
+            });
+          },
+          onInDepthDone: (payload) => {
+            updateIfCurrent((prev) => {
+              if (isTerminal(prev.phase)) return prev;
+              return applyTurnEnvelope(prev, payload, 'settled');
+            });
+          },
+          onInDepthError: (payload) => {
+            updateIfCurrent((prev) => {
+              if (isTerminal(prev.phase)) return prev;
+              return applyTurnEnvelope(prev, payload, 'settled');
+            });
+          },
+          onDone: (response) => {
+            updateIfCurrent((prev) => {
+              const deferredSafety =
+                prev.safetyCheckPending && !response.safetyStatus && !response.safetyCheck
+                  ? pendingSafetyRef.current
+                  : null;
+              pendingSafetyRef.current = null;
+              const final = applyTurnEnvelope(prev, { ...deferredSafety, ...response }, 'complete');
+              return {
+                ...final,
+                preliminaryReasoning: '',
+                answerValidation: interruptAnswerValidation(final.answerValidation),
+                inDepth: interruptInDepth(final.inDepth),
+                references: interruptGroundingChecks(final.references),
+                safetyCheckPending: false,
+              };
+            });
+          },
+          onError: (errorCode) => {
+            pendingSafetyRef.current = null;
+            const safeCode = sanitizeOmnibarErrorCode(errorCode);
+            updateIfCurrent((prev) => ({
+              ...prev,
+              phase: 'error',
+              error: safeCode,
+              preliminaryReasoning: '',
+              answerValidation: interruptAnswerValidation(prev.answerValidation),
+              inDepth: interruptInDepth(prev.inDepth),
+              references: interruptGroundingChecks(prev.references),
+              ...(prev.safetyCheckPending
+                ? {
+                    safetyStatus: 'unavailable' as const,
+                    safetyCheck: { status: 'unavailable' as const, issues: ['execution_failed'] },
+                    safetyCheckPending: false,
+                  }
+                : {}),
+            }));
+          },
+        },
+        controller,
+        profileId,
+        providerId,
+        capabilities,
+        { ephemeral: true },
+      );
     },
-    [],
+    [abortInFlight, showReasoning, signal],
   );
 
-  // The host aborts its signal once it has moved past this mount, which stops the answer as leaving does.
   useEffect(() => {
-    if (!signal) return;
-    const stop = () => controller.current?.abort();
-    signal.addEventListener('abort', stop);
-    return () => signal.removeEventListener('abort', stop);
+    if (!shouldOffer || !patientUuid || !trimmedQuestion || !hasRequested || signal?.aborted || !providerResolved) {
+      return undefined;
+    }
+    if (providerUnavailableRef.current) {
+      return undefined;
+    }
+    startTurn(patientUuid, trimmedQuestion);
+    return () => {
+      abortInFlight();
+    };
+  }, [
+    shouldOffer,
+    patientUuid,
+    trimmedQuestion,
+    hasRequested,
+    attempt,
+    signal,
+    providerResolved,
+    startTurn,
+    abortInFlight,
+  ]);
+
+  const wasUnavailableRef = useRef(false);
+  useEffect(() => {
+    const wasUnavailable = wasUnavailableRef.current;
+    wasUnavailableRef.current = providerExplicitlyUnavailable;
+    if (wasUnavailable && !providerExplicitlyUnavailable && hasRequested && !message) {
+      setAttempt((n) => n + 1);
+    }
+  }, [providerExplicitlyUnavailable, hasRequested, message]);
+
+  useEffect(() => {
+    reportState(!shouldOffer ? 'empty' : providerExplicitlyUnavailable && !message ? 'unavailable' : 'ready');
+  }, [shouldOffer, providerExplicitlyUnavailable, message, reportState]);
+
+  const requestTurn = useCallback(() => {
+    if (signal?.aborted) return;
+    if (providerUnavailableRef.current) {
+      refreshSystemProvider();
+    }
+    setHasRequested(true);
+    setAttempt((n) => n + 1);
   }, [signal]);
 
-  const ask = useCallback(() => {
-    if (!offered || !patientUuid || signal?.aborted) return;
-    controller.current?.abort();
-    const current = new AbortController();
-    controller.current = current;
-    dispatch({ type: 'ask' });
-    streamChartSearch(patientUuid, question, (event) => dispatch({ type: 'event', event }), current.signal).then(
-      () => current.signal.aborted || dispatch({ type: 'end' }),
-      (error) =>
-        current.signal.aborted ||
-        failureOf(error).then((phase) => current.signal.aborted || dispatch({ type: 'fail', phase })),
-    );
-  }, [offered, patientUuid, question, signal]);
-
-  // A query the user just submitted is asked at once: Enter was the request. A page reloaded, reached
-  // with back or forward, or opened from a link asks only when the clinician presses the button, so
-  // nothing sends the question again on its own. Each query is a new mount, so this runs once.
-  // An answer no longer offered, say the section switched off, is stopped rather than read to the end
-  // unseen.
-  useEffect(() => {
-    if (!offered) {
-      controller.current?.abort();
-    }
-  }, [offered]);
-
-  useEffect(() => {
-    if (submitted && offered && !asked.current) {
-      asked.current = true;
-      ask();
-    }
-  }, [submitted, offered, ask]);
-
-  const viewState: OmnibarViewState = !offered ? 'empty' : 'ready';
-  useEffect(() => {
-    reportState(viewState);
-  }, [reportState, viewState]);
-
-  const headingId = `ask-chartsearch-${patientUuid}`;
-  const statements = state.phase === 'final' ? state.statements : null;
-  const caveats = useMemo(() => {
-    const byIndex = new Map<number, Array<string>>();
-    const add = (indexes: Array<number> | null | undefined, caveat: string) =>
-      indexes?.forEach((index) => byIndex.set(index, [...(byIndex.get(index) ?? []), caveat]));
-    add(
-      statements?.unfaithfullyRenderedCitations,
-      t('caveatUnfaithful', 'The answer’s wording of this citation isn’t the record’s wording.'),
-    );
-    add(
-      statements?.misattributedOrderCitations,
-      t('caveatMisattributed', 'This citation can’t be the active order the answer names.'),
-    );
-    statements?.unstatedFindingSeverities?.forEach(({ citation, rating }) =>
-      add(
-        [citation],
-        t('caveatUnstatedRating', 'Rated {{rating}}. The answer doesn’t state this rating.', {
-          rating,
-          interpolation: { escapeValue: false },
-        }),
-      ),
-    );
-    add(
-      statements?.unstatedSignificanceQualifiers,
-      t(
-        'significanceUnknownTitle',
-        'The finding this cites says the clinical significance of the interaction is unknown. The answer leaves that out.',
-      ),
-    );
-    return byIndex;
-  }, [statements, t]);
-
-  if (!offered) {
+  if (!shouldOffer || !patientUuid) {
     return null;
   }
 
-  const final = state.phase === 'final';
-  const unsourced = final && state.references.length === 0;
-  const streaming = state.phase === 'asking' || state.phase === 'answering' || state.phase === 'answered';
-  const chartRefs = state.references.filter((ref) => ref.group === 'chart');
-  const referenceRefs = state.references.filter((ref) => ref.group === 'reference');
-  const otherRefs = state.references.filter((ref) => ref.group !== 'chart' && ref.group !== 'reference');
-
-  const verdictOf = (ref: ChartSearchReference) => {
-    if (!final) return t('citationUnverified', 'Unverified');
-    if (ref.grounded === true) return t('citationSupported', 'Checked against the record');
-    if (ref.grounded === false) return t('citationNotSupported', 'The record may not support this statement');
-    if (ref.attachedByTheModule) return t('citationAttached', 'Added by ChartSearch from a safety finding');
-    return t('citationNotChecked', 'Not checked');
-  };
-
-  const citation = (ref: ChartSearchReference, chart: boolean) => {
-    const date = utcCalendarDay(ref.date);
-    const stopDate = utcCalendarDay(
-      statements?.orderStopDates?.find((entry) => entry.citation === ref.index)?.stopDate,
-    );
-    const notes = caveats.get(ref.index) ?? [];
-    return (
-      <li key={`${ref.group}:${ref.index}`} className={styles.citation}>
-        <span className={styles.citationIndex}>[{ref.index}]</span>
-        <span className={styles.citationText}>
-          <span dir="auto">{humanize(ref.resourceType)}</span>
-          {date && <span className={styles.citationDate}>{date}</span>}
-          {stopDate && (
-            <span
-              className={styles.citationMeta}
-              title={t(
-                'orderStopDateTitle',
-                'The date this prescription stopped being in force — not the record’s own date shown beside it.',
-              )}
-            >
-              {t('orderStopDate', 'Stopped {{stopDate}}', { stopDate, interpolation: { escapeValue: false } })}
-            </span>
-          )}
-          {chart ? (
-            <span className={ref.grounded === false && final ? styles.verdictWarn : styles.verdict}>
-              {verdictOf(ref)}
-            </span>
-          ) : null}
-          {ref.source && (
-            <span className={styles.citationMeta} dir="auto">
-              {t('citationSource', 'Source: {{source}}', { source: ref.source, interpolation: { escapeValue: false } })}
-            </span>
-          )}
-          {ref.withheldInteractions > 0 && (
-            <span className={styles.citationMeta}>
-              {t('citationSubset', 'Shows some of this entry’s interaction partners')}
-            </span>
-          )}
-          {notes.map((note) => (
-            <span key={note} className={styles.caveat}>
-              {note}
-            </span>
-          ))}
-        </span>
-      </li>
-    );
-  };
+  const awaitingFirstToken = Boolean(message && isAwaitingAnswer(message.phase) && !message.answer && !message.error);
+  const showPanel = Boolean(message && (!awaitingFirstToken || message.answer || message.error));
+  const isStreamingReasoning = Boolean(message && isAwaitingAnswer(message.phase) && !message.answer && !message.error);
 
   return (
-    <div className={styles.card}>
+    <section aria-labelledby={headingId} className={styles.section}>
       <h3 id={headingId} className={styles.heading}>
         {t('chartSearchHeading', 'ChartSearch')}
       </h3>
       <p className={styles.question} dir="auto">
-        {question}
+        {trimmedQuestion}
       </p>
 
-      {state.phase === 'ready' && (
-        <>
+      {providerExplicitlyUnavailable && !message ? (
+        <div className={styles.unavailableBox} role="status">
+          <p className={styles.unavailableTitle}>{t('providerUnavailable', 'Unavailable right now')}</p>
+          {systemProvider.unavailableReason ? (
+            <p className={styles.unavailableReason}>{systemProvider.unavailableReason}</p>
+          ) : null}
+          <Button kind="ghost" size="sm" onClick={requestTurn}>
+            {t('tryAgain', 'Try again')}
+          </Button>
+        </div>
+      ) : !hasRequested ? (
+        <div className={styles.promptBox}>
           <p className={styles.note}>
             {t(
               'askChartSearchAgainNote',
               'ChartSearch answers from this chart using AI. It isn’t asked again when this page is reopened.',
             )}
           </p>
-          <Button kind="primary" size="md" onClick={ask}>
+          <Button kind="secondary" size="sm" onClick={requestTurn}>
             {t('askChartSearchButton', 'Ask ChartSearch')}
           </Button>
-        </>
-      )}
+        </div>
+      ) : message ? (
+        <div className={styles.answerBody}>
+          {showReasoning && message.reasoning ? (
+            <AiReasoningDisclosure reasoning={message.reasoning} isStreaming={isStreamingReasoning} />
+          ) : null}
 
-      {isFailure(state.phase) && (
-        <>
-          <p className={styles.note} role="status">
-            {state.phase === 'unavailable'
-              ? t('providerUnavailable', 'Unavailable right now')
-              : state.phase === 'signedOut'
-                ? t('chartSearchSignedOut', 'Your session has ended. Log in again, then ask again.')
-                : t('chartSearchFailed', 'ChartSearch couldn’t answer this question.')}
-          </p>
-          <Button kind="tertiary" size="sm" onClick={ask}>
-            {t('tryAgain', 'Try again')}
-          </Button>
-        </>
-      )}
-
-      {state.phase !== 'ready' && !isFailure(state.phase) && (
-        <section className={styles.answer} aria-live="polite" aria-busy={streaming}>
-          {!state.text && streaming && <InlineLoading description={t('thinking', 'Working on an answer')} />}
-          {state.text && (
-            <p className={styles.answerText} dir="auto">
-              {state.text}
-            </p>
-          )}
-          {unsourced && <p className={styles.note}>{t('citesNoRecords', 'Cites no records. Check the chart.')}</p>}
-          {state.text && streaming && state.phase === 'answered' && (
-            <InlineLoading description={t('checkingAnswer', 'Checking the answer')} />
-          )}
-          {statements && <AnswerNotes statements={statements} />}
-
-          {/* ChartSearch's own findings, which an answer citing nothing doesn't take with it. */}
-          {statements && <Statements statements={statements} headingId={headingId} />}
-
-          {!unsourced && state.references.length > 0 && (
-            <div className={styles.citations}>
-              {chartRefs.length > 0 && (
-                <>
-                  <h4 className={styles.subheading} id={`${headingId}-chart`}>
-                    {t('citedRecords', 'Records cited')}
-                  </h4>
-                  <ul aria-labelledby={`${headingId}-chart`}>{chartRefs.map((ref) => citation(ref, true))}</ul>
-                </>
-              )}
-              {referenceRefs.length > 0 && (
-                <>
-                  <h4 className={styles.subheading} id={`${headingId}-reference`}>
-                    {t('citedReference', 'Reference material, not this patient’s record')}
-                  </h4>
-                  <ul aria-labelledby={`${headingId}-reference`}>{referenceRefs.map((ref) => citation(ref, false))}</ul>
-                </>
-              )}
-              {otherRefs.length > 0 && (
-                <>
-                  <h4 className={styles.subheading} id={`${headingId}-other`}>
-                    {t('citedOther', 'Other sources')}
-                  </h4>
-                  <ul aria-labelledby={`${headingId}-other`}>{otherRefs.map((ref) => citation(ref, false))}</ul>
-                </>
-              )}
+          {awaitingFirstToken ? (
+            <div className={styles.loadingRow} role="status">
+              <InlineLoading
+                description={
+                  message.preliminaryReasoning || t('preliminaryReasoning', 'Reviewing the most relevant records…')
+                }
+              />
             </div>
-          )}
+          ) : null}
 
-          {(final || state.phase === 'answered') && (
-            <p className={styles.disclaimer} dir="auto">
-              {state.disclaimer || t('aiDisclaimer', 'This answer is AI-generated and may not be accurate.')}
+          {showPanel ? (
+            <AiResponsePanel
+              answer={message.answer}
+              references={message.references}
+              safetyWarnings={message.safetyWarnings}
+              {...answerLimitsOf(message)}
+              error={message.error}
+              phase={message.phase}
+              safetyStatus={message.safetyStatus}
+              safetyCheck={message.safetyCheck}
+              blocks={message.blocks}
+              confidence={message.confidence}
+              answerValidation={message.answerValidation}
+              inDepth={message.inDepth}
+              auditLogId={message.auditLogId}
+              resolvedModel={message.resolvedModel}
+              patientUuid={patientUuid}
+            />
+          ) : null}
+
+          {message.error ? (
+            <div className={styles.retryRow}>
+              <Button kind="ghost" size="sm" onClick={requestTurn}>
+                {t('tryAgain', 'Try again')}
+              </Button>
+            </div>
+          ) : null}
+
+          {!message.error && message.answer ? (
+            <p className={styles.disclaimer}>
+              {t('aiDisclaimer', 'This answer is AI-generated and may not be accurate.')}
             </p>
-          )}
-        </section>
-      )}
-    </div>
-  );
-};
-
-/** What ChartSearch says about the answer's own claims, drawn only with the answer. */
-const AnswerNotes: React.FC<{ statements: ChartSearchStatements }> = ({ statements }) => {
-  const { t } = useTranslation();
-  const { activeOrderClaims, unsupportedEndedOrderClaims } = statements;
-  const lines: Array<string> = [];
-  if (unsupportedEndedOrderClaims?.length) {
-    lines.push(
-      t(
-        'unsupportedEndedOrderClaim',
-        'No record says the {{drugs}} order has ended — the answer states it without one.',
-        {
-          drugs: unsupportedEndedOrderClaims.join(', '),
-          count: unsupportedEndedOrderClaims.length,
-          defaultValue_other: 'No record says the {{drugs}} orders have ended — the answer states it without one.',
-          interpolation: { escapeValue: false },
-        },
-      ),
-    );
-  }
-  if (activeOrderClaims && activeOrderClaims.stated > 0 && activeOrderClaims.uncited > 0) {
-    lines.push(
-      t('activeOrderClaimsUncited', '{{uncited}} of {{stated}} statements about active orders cite no chart record.', {
-        uncited: activeOrderClaims.uncited,
-        stated: activeOrderClaims.stated,
-        interpolation: { escapeValue: false },
-      }),
-    );
-  }
-  return (
-    <>
-      {lines.map((line) => (
-        <p key={line} className={styles.note} dir="auto">
-          {line}
-        </p>
-      ))}
-    </>
-  );
-};
-
-/** ChartSearch's own statements: its drug-safety findings and the limits of its checks. */
-const Statements: React.FC<{ statements: ChartSearchStatements; headingId: string }> = ({ statements, headingId }) => {
-  const { t } = useTranslation();
-  const typeLabel = (type: string) => {
-    switch (type) {
-      case 'overdose':
-        return t('safetyOverdose', 'Dose');
-      case 'interaction':
-        return t('safetyInteraction', 'Interaction');
-      case 'contraindication':
-        return t('safetyContraindication', 'Contraindication');
-      default:
-        return type ? humanize(type) : t('safetyFinding', 'Safety finding');
-    }
-  };
-  const { safetyWarnings, safetyCheck, interactionPairs, unresolvedDrugClass } = statements;
-  // As the chat does: codes it deliberately leaves unreported, such as a check switched off, say
-  // nothing on their own, and a check that ran clean says nothing either.
-  const issues = (safetyCheck?.issues ?? []).filter((issue) => !SUPPRESSED_SAFETY_ISSUES.has(issue));
-  const onlySuppressedIssues = Boolean(safetyCheck?.issues.length) && !issues.length;
-  const status = onlySuppressedIssues ? null : safetyCheck?.status;
-  const checkHeading =
-    status && status !== 'checked'
-      ? safetyStatusTag(status, t).label
-      : issues.length
-        ? t('safetyCheckDetails', 'Medication safety details')
-        : null;
-  const lines: Array<string> = [];
-  if (interactionPairs && interactionPairs.found > interactionPairs.reported) {
-    lines.push(
-      t('interactionPairsShown', '{{reported}} of {{found}} interaction pairs are shown.', {
-        reported: interactionPairs.reported,
-        found: interactionPairs.found,
-        interpolation: { escapeValue: false },
-      }),
-    );
-  }
-  if (unresolvedDrugClass) {
-    lines.push(
-      t(
-        'unresolvedDrugClass',
-        'The question names a drug class, “{{drugClass}}”. Reference entries are listed by individual drug, so the class wasn’t matched to any of them. Ask about a specific drug by name.',
-        { drugClass: unresolvedDrugClass, interpolation: { escapeValue: false } },
-      ),
-    );
-  }
-  if (!safetyWarnings.length && !checkHeading && !lines.length) {
-    return null;
-  }
-  return (
-    <div className={styles.safety}>
-      {safetyWarnings.length > 0 && (
-        <>
-          <h4 className={styles.subheading} id={`${headingId}-safety`}>
-            {t('safetyFindings', 'Safety findings')}
-          </h4>
-          <ul aria-labelledby={`${headingId}-safety`}>
-            {safetyWarnings.map((warning, index) => {
-              const orders = warning.currentMedicationOrders
-                .map((order) => (typeof order.orderDisplay === 'string' ? order.orderDisplay.trim() : ''))
-                .filter((name) => name.length > 0);
-              // The chip's words do not say she already takes the drug. Not on an interaction,
-              // whose words already say "active order". Shown for another of her medications
-              // too: this page has no other-medications line, so the tag is what names her order.
-              const showPrescribed = warning.aboutACurrentMedication === true && warning.type === 'contraindication';
-              return (
-                <li key={index} className={styles.warning}>
-                  <span className={styles.warningType}>
-                    {typeLabel(warning.type)}
-                    {warning.severity && (
-                      <span className={styles.severity} dir="auto">
-                        {warning.severity}
-                      </span>
-                    )}
-                  </span>
-                  <span className={styles.warningDetail} dir="auto">
-                    {warning.detail}
-                  </span>
-                  {showPrescribed && (
-                    <span
-                      className={styles.currentMedicationTag}
-                      title={t(
-                        'alreadyPrescribedTitle',
-                        'The patient has an active order for this drug, so this finding is about a medication already prescribed, not one being proposed. The drug shown is the substance the module matched that order to, which the order itself may name differently — a brand name, for example.',
-                      )}
-                    >
-                      {orders.length > 0
-                        ? t('alreadyPrescribedOrders', 'Already prescribed: {{orders}}', {
-                            orders: orders.join(', '),
-                            interpolation: { escapeValue: false },
-                          })
-                        : t('alreadyPrescribed', 'Already prescribed')}
-                    </span>
-                  )}
-                  {warning.aboutAnEndedOrder === true && (
-                    <span
-                      className={styles.endedOrderTag}
-                      title={t(
-                        'aboutAnEndedOrderTitle',
-                        'The chart records this drug only as an order no longer in force, so the finding is about what giving it again would mean — not about a medication the patient is taking now.',
-                      )}
-                    >
-                      {warning.endedOrderStopDate
-                        ? t('aboutAnEndedOrderOn', 'About an order no longer in force, ended {{stopDate}}', {
-                            stopDate: warning.endedOrderStopDate,
-                            interpolation: { escapeValue: false },
-                          })
-                        : t('aboutAnEndedOrder', 'About an order no longer in force')}
-                    </span>
-                  )}
-                  {warning.chartOrderBridges.map((bridge, bridgeIndex) => (
-                    <span key={bridgeIndex} className={styles.citationMeta} dir="auto">
-                      {t('resolvedFromOrder', '{{substance}} was resolved from the order “{{order}}”', {
-                        substance: bridge.substance,
-                        order: bridge.orderDisplay,
-                        interpolation: { escapeValue: false },
-                      })}
-                    </span>
-                  ))}
-                </li>
-              );
-            })}
-          </ul>
-        </>
-      )}
-      {checkHeading && (
-        <>
-          <h4 className={styles.subheading} id={`${headingId}-check`}>
-            {checkHeading}
-          </h4>
-          {issues.length > 0 && (
-            <ul aria-labelledby={`${headingId}-check`}>
-              {issues.map((issue) => (
-                <li key={issue} className={styles.note} dir="auto">
-                  {safetyIssueText(issue, t)}
-                </li>
-              ))}
-            </ul>
-          )}
-        </>
-      )}
-      {lines.map((line) => (
-        <p key={line} className={styles.note} dir="auto">
-          {line}
-        </p>
-      ))}
-    </div>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
   );
 };
 

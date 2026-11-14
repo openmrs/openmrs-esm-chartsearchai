@@ -763,19 +763,26 @@ describe('prompt-cache warmup', () => {
   const mockOpenmrsFetch = openmrsFetch as Mock;
   const warmupCalls = () => mockOpenmrsFetch.mock.calls.filter(([url]) => url === '/ws/rest/v1/chartsearchai/warmup');
 
-  it("warms the chart's patient when the chat opens", () => {
+  afterEach(() => {
+    chatSessionStore.setState(initialChatSessionState());
+  });
+
+  it("warms the chart's patient when the chat opens and bundled is the active provider", () => {
+    chatSessionStore.setState({ selectedProviderId: 'bundled' });
     render(<AiChatContent mode="floating" />);
     expect(warmupCalls()).toHaveLength(1);
     expect(warmupCalls()[0][1]).toMatchObject({ method: 'POST', body: JSON.stringify({ patient: 'p1' }) });
   });
 
-  it('warms the patient the workspace names', () => {
+  it('warms the patient the workspace names when bundled is active', () => {
+    chatSessionStore.setState({ selectedProviderId: 'bundled' });
     render(<AiChatContent mode="workspace" patientUuid="p2" />);
     expect(warmupCalls()).toHaveLength(1);
     expect(warmupCalls()[0][1]).toMatchObject({ body: JSON.stringify({ patient: 'p2' }) });
   });
 
   it('aborts an in-flight warmup when the chat closes', () => {
+    chatSessionStore.setState({ selectedProviderId: 'bundled' });
     const { unmount } = render(<AiChatContent mode="floating" />);
     const { signal } = warmupCalls()[0][1];
     expect(signal.aborted).toBe(false);
@@ -784,6 +791,7 @@ describe('prompt-cache warmup', () => {
   });
 
   it('aborts the old warmup and warms the new patient on a patient switch', () => {
+    chatSessionStore.setState({ selectedProviderId: 'bundled' });
     const { rerender } = render(<AiChatContent mode="workspace" patientUuid="p1" />);
     rerender(<AiChatContent mode="workspace" patientUuid="p2" />);
     expect(warmupCalls()).toHaveLength(2);
@@ -792,21 +800,26 @@ describe('prompt-cache warmup', () => {
   });
 
   it('sends no warmup without a patient', () => {
+    chatSessionStore.setState({ selectedProviderId: 'bundled' });
     mockUsePatient.mockReturnValue({ patient: null, isLoading: false });
     render(<AiChatContent mode="floating" />);
     expect(warmupCalls()).toHaveLength(0);
   });
 
-  describe('with a provider selected', () => {
-    afterEach(() => chatSessionStore.setState(initialChatSessionState()));
+  describe('with a system provider resolved', () => {
+    it('sends no warmup before the system provider resolves', () => {
+      render(<AiChatContent mode="floating" />);
+      expect(warmupCalls()).toHaveLength(0);
+    });
 
-    it('sends no warmup while Hub is selected, since it warms for any provider that is not Hub', () => {
+    it('sends no warmup while Hub is the active system provider', () => {
       chatSessionStore.setState({ selectedProviderId: 'hub' });
       render(<AiChatContent mode="floating" />);
       expect(warmupCalls()).toHaveLength(0);
     });
 
-    it('aborts the warmup when the provider switches to Hub, and warms again on the way back', () => {
+    it('aborts the warmup when the system provider changes to Hub, and warms again on the way back', () => {
+      chatSessionStore.setState({ selectedProviderId: 'bundled' });
       render(<AiChatContent mode="floating" />);
       expect(warmupCalls()).toHaveLength(1);
       act(() => chatSessionStore.setState({ selectedProviderId: 'hub' }));
@@ -816,11 +829,62 @@ describe('prompt-cache warmup', () => {
       expect(warmupCalls()).toHaveLength(2);
     });
 
-    it('keeps one warmup when the provider resolves to the bundled default', () => {
+    it('waits to warm until the system provider resolves to bundled', () => {
       render(<AiChatContent mode="floating" />);
+      expect(warmupCalls()).toHaveLength(0);
       act(() => chatSessionStore.setState({ selectedProviderId: 'bundled' }));
       expect(warmupCalls()).toHaveLength(1);
       expect(warmupCalls()[0][1].signal.aborted).toBe(false);
     });
+  });
+});
+
+describe('system provider enforcement', () => {
+  const mockOpenmrsFetch = openmrsFetch as Mock;
+  let previousImpl: ((...args: unknown[]) => unknown) | undefined;
+
+  beforeEach(() => {
+    previousImpl = mockOpenmrsFetch.getMockImplementation();
+  });
+
+  afterEach(() => {
+    chatSessionStore.setState(initialChatSessionState());
+    if (previousImpl) {
+      mockOpenmrsFetch.mockImplementation(previousImpl);
+    }
+  });
+
+  it('never renders a user-facing AI provider picker', () => {
+    chatSessionStore.setState({ selectedProviderId: 'hub' });
+    render(<AiChatContent mode="floating" />);
+    expect(screen.queryByText(/ai provider/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: /provider/i })).not.toBeInTheDocument();
+  });
+
+  it('announces provider unavailability via role="status" when /providers reports ready: false', async () => {
+    mockOpenmrsFetch.mockImplementation((url: string) => {
+      if (url.includes('/ws/rest/v1/chartsearchai/providers')) {
+        return Promise.resolve({
+          data: {
+            providers: [
+              {
+                id: 'hub',
+                name: 'AI Hub',
+                enabled: true,
+                ready: false,
+                unavailableReason: 'med-agent-hub offline',
+              },
+            ],
+            defaultProvider: 'hub',
+            pickerVisible: false,
+          },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(<AiChatContent mode="floating" />);
+    const status = await screen.findByRole('status');
+    expect(status).toHaveTextContent('med-agent-hub offline');
   });
 });

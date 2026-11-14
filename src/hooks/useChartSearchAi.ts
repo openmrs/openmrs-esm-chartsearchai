@@ -288,12 +288,12 @@ function normalizeInDepth(inDepth?: AiInDepth): AiInDepth | undefined {
   return answer === inDepth.answer ? inDepth : { ...inDepth, answer };
 }
 
-function interruptInDepth(inDepth?: AiInDepth): AiInDepth | undefined {
+export function interruptInDepth(inDepth?: AiInDepth): AiInDepth | undefined {
   if (!inDepth || inDepth.status !== 'pending') return inDepth;
   return { ...inDepth, status: 'failed', error: IN_DEPTH_INTERRUPTED_ERROR_CODE };
 }
 
-function interruptAnswerValidation(
+export function interruptAnswerValidation(
   validation?: AiSearchResponse['answerValidation'],
 ): AiSearchResponse['answerValidation'] | undefined {
   if (!validation || validation.status !== 'checking') return validation;
@@ -306,13 +306,13 @@ function interruptAnswerValidation(
 }
 
 /** A citation check a stopped turn will never finish is unchecked, not still checking. */
-function interruptGroundingChecks(references: AiReference[]): AiReference[] {
+export function interruptGroundingChecks(references: AiReference[]): AiReference[] {
   return references.some((ref) => ref.groundingStatus === 'checking')
     ? references.map((ref) => (ref.groundingStatus === 'checking' ? { ...ref, groundingStatus: 'unchecked' } : ref))
     : references;
 }
 
-function isUnsettledBundledSafetyCheck(
+export function isUnsettledBundledSafetyCheck(
   response: Pick<AiSearchResponse, 'safetyCheck' | 'safetyStatus' | 'safetyWarnings'>,
 ): boolean {
   const status = response.safetyCheck?.status ?? response.safetyStatus;
@@ -325,7 +325,7 @@ function isUnsettledBundledSafetyCheck(
   );
 }
 
-function isCheckPendingOnAnswerDone(response: AiSearchResponse): boolean {
+export function isCheckPendingOnAnswerDone(response: AiSearchResponse): boolean {
   return (
     response.answerValidation?.status === 'checking' ||
     response.references?.some((ref) => ref.groundingStatus === 'checking') === true ||
@@ -333,7 +333,7 @@ function isCheckPendingOnAnswerDone(response: AiSearchResponse): boolean {
   );
 }
 
-type TurnEnvelope = Partial<AiSearchResponse> & { messageId?: string; inDepth?: AiInDepth };
+export type TurnEnvelope = Partial<AiSearchResponse> & { messageId?: string; inDepth?: AiInDepth };
 
 /**
  * Removes citation markers ([3], [1, 2], …) from the PREVIEW text only. The preview reasons over an
@@ -343,11 +343,11 @@ type TurnEnvelope = Partial<AiSearchResponse> & { messageId?: string; inDepth?: 
  * resolver's pattern, so marker syntax has one home, and does NOT trim: the preview accumulates
  * chunk by chunk and a trailing space must survive between them.
  */
-function stripPreviewCitations(text: string): string {
+export function stripPreviewCitations(text: string): string {
   return text.replace(citationStripPattern(), '');
 }
 
-function applyTurnEnvelope(message: ChatMessage, payload: TurnEnvelope, phase: TurnPhase): ChatMessage {
+export function applyTurnEnvelope(message: ChatMessage, payload: TurnEnvelope, phase: TurnPhase): ChatMessage {
   return {
     ...message,
     answer: payload.answer ?? message.answer,
@@ -830,102 +830,95 @@ export function useChartSearchAi(patientUuid?: string): UseChartSearchAiReturn {
       const sessionUuid = sessionUuidByPatient[patientUuid] ?? null;
       // Null means "no explicit selection" — the backend applies its configured
       // default provider, never a silent cross-provider fallback.
-      try {
-        // Multi-turn streaming: chat history is reconstructed server-side
-        // from the session uuid; we only send the new question.
-        chatPatientChartStream(
-          patientUuid,
-          sessionUuid,
-          question,
-          {
-            // Token streaming from a provider that declares it (the bundled engine). Additive while the
-            // turn is still answering; ignored once it settled or the user stopped it (both leave the
-            // phase past 'answering'). `answer_done` then restates the whole answer, so a provider that
-            // streams nothing (the hub) renders exactly as before.
-            onToken: (chunk) => {
-              if (!config.useStreaming) return;
-              updateMessages(patientUuid, (prev) => {
-                const idx = prev.findIndex((m) => m.id === messageId);
-                if (idx === -1 || prev[idx].phase !== 'answering') return prev;
-                const updated = [...prev];
-                // The answer supersedes the provisional preview.
-                updated[idx] = { ...updated[idx], answer: updated[idx].answer + chunk, preliminaryReasoning: '' };
-                return updated;
-              });
-            },
-            onPreliminary: (chunk) => {
-              if (!config.useStreaming || !showReasoningRef.current || !isCurrentRequest()) return;
-              updateMessages(patientUuid, (prev) => {
-                const idx = prev.findIndex((m) => m.id === messageId);
-                if (idx === -1 || prev[idx].phase !== 'answering') return prev;
-                const updated = [...prev];
-                updated[idx] = {
-                  ...updated[idx],
-                  preliminaryReasoning: stripPreviewCitations((updated[idx].preliminaryReasoning ?? '') + chunk),
-                };
-                return updated;
-              });
-            },
-            onReasoning: (chunk) => {
-              if (!showReasoningRef.current || !isCurrentRequest()) return;
-              if (!config.useStreaming) {
-                completedReasoning += chunk;
-                return;
-              }
-              updateMessages(patientUuid, (prev) => {
-                const idx = prev.findIndex((m) => m.id === messageId);
-                if (idx === -1 || prev[idx].phase !== 'answering') return prev;
-                const updated = [...prev];
-                // Committed reasoning REPLACES the preview rather than continuing it.
-                updated[idx] = {
-                  ...updated[idx],
-                  reasoning: (updated[idx].reasoning ?? '') + chunk,
-                  preliminaryReasoning: '',
-                };
-                return updated;
-              });
-            },
-            onSession: (uuid) => {
-              if (!isCurrentRequest()) return;
-              // Defense in depth alongside the hydration-time provider sync: if the backend
-              // returns a DIFFERENT session than the one this turn was sent with, it silently
-              // started a new conversation (e.g. a provider mismatch the backend correctly
-              // refuses to write into the old one — see ConversationServiceImpl.openOrCreate).
-              // The old conversation's turns must not stay visible glued to this one.
-              if (sessionUuid && uuid && uuid !== sessionUuid) {
-                updateMessages(patientUuid, (prev) => prev.filter((m) => m.id === messageId));
-              }
-              setSessionUuid(patientUuid, uuid);
-              if (selectedProviderId) {
-                setPatientProvider(patientUuid, selectedProviderId);
-              }
-            },
-            onTurnStarted: (meta) => {
-              if (!isCurrentRequest()) return;
-              if (meta.provider) {
-                setPatientProvider(patientUuid, meta.provider);
-              }
-            },
-            onAnswerDone: answerDone,
-            onAnswerValidation: answerValidation,
-            onEvidenceUpdated: evidenceUpdated,
-            onInDepthPending: inDepthPending,
-            onInDepthDone: inDepthDone,
-            onInDepthError: inDepthError,
-            onDone: done,
-            onError: fail,
+      // Multi-turn streaming: chat history is reconstructed server-side
+      // from the session uuid; we only send the new question.
+      chatPatientChartStream(
+        patientUuid,
+        sessionUuid,
+        question,
+        {
+          // Token streaming from a provider that declares it (the bundled engine). Additive while the
+          // turn is still answering; ignored once it settled or the user stopped it (both leave the
+          // phase past 'answering'). `answer_done` then restates the whole answer, so a provider that
+          // streams nothing (the hub) renders exactly as before.
+          onToken: (chunk) => {
+            if (!config.useStreaming) return;
+            updateMessages(patientUuid, (prev) => {
+              const idx = prev.findIndex((m) => m.id === messageId);
+              if (idx === -1 || prev[idx].phase !== 'answering') return prev;
+              const updated = [...prev];
+              // The answer supersedes the provisional preview.
+              updated[idx] = { ...updated[idx], answer: updated[idx].answer + chunk, preliminaryReasoning: '' };
+              return updated;
+            });
           },
-          abortController,
-          selectedProfileId,
-          selectedProviderId,
-          selectedProviderId ? state.providerCapabilities?.[selectedProviderId] : undefined,
-        );
-      } catch {
-        // The client throws only for a Hub request without a profile, which the guard above
-        // already refuses; report it with the same code rather than an untranslated message.
-        finishInFlight();
-        fail(PROFILE_REQUIRED_ERROR_CODE);
-      }
+          onPreliminary: (chunk) => {
+            if (!config.useStreaming || !showReasoningRef.current || !isCurrentRequest()) return;
+            updateMessages(patientUuid, (prev) => {
+              const idx = prev.findIndex((m) => m.id === messageId);
+              if (idx === -1 || prev[idx].phase !== 'answering') return prev;
+              const updated = [...prev];
+              updated[idx] = {
+                ...updated[idx],
+                preliminaryReasoning: stripPreviewCitations((updated[idx].preliminaryReasoning ?? '') + chunk),
+              };
+              return updated;
+            });
+          },
+          onReasoning: (chunk) => {
+            if (!showReasoningRef.current || !isCurrentRequest()) return;
+            if (!config.useStreaming) {
+              completedReasoning += chunk;
+              return;
+            }
+            updateMessages(patientUuid, (prev) => {
+              const idx = prev.findIndex((m) => m.id === messageId);
+              if (idx === -1 || prev[idx].phase !== 'answering') return prev;
+              const updated = [...prev];
+              // Committed reasoning REPLACES the preview rather than continuing it.
+              updated[idx] = {
+                ...updated[idx],
+                reasoning: (updated[idx].reasoning ?? '') + chunk,
+                preliminaryReasoning: '',
+              };
+              return updated;
+            });
+          },
+          onSession: (uuid) => {
+            if (!isCurrentRequest()) return;
+            // Defense in depth alongside the hydration-time provider sync: if the backend
+            // returns a DIFFERENT session than the one this turn was sent with, it silently
+            // started a new conversation (e.g. a provider mismatch the backend correctly
+            // refuses to write into the old one — see ConversationServiceImpl.openOrCreate).
+            // The old conversation's turns must not stay visible glued to this one.
+            if (sessionUuid && uuid && uuid !== sessionUuid) {
+              updateMessages(patientUuid, (prev) => prev.filter((m) => m.id === messageId));
+            }
+            setSessionUuid(patientUuid, uuid);
+            if (selectedProviderId) {
+              setPatientProvider(patientUuid, selectedProviderId);
+            }
+          },
+          onTurnStarted: (meta) => {
+            if (!isCurrentRequest()) return;
+            if (meta.provider) {
+              setPatientProvider(patientUuid, meta.provider);
+            }
+          },
+          onAnswerDone: answerDone,
+          onAnswerValidation: answerValidation,
+          onEvidenceUpdated: evidenceUpdated,
+          onInDepthPending: inDepthPending,
+          onInDepthDone: inDepthDone,
+          onInDepthError: inDepthError,
+          onDone: done,
+          onError: fail,
+        },
+        abortController,
+        selectedProfileId,
+        selectedProviderId,
+        selectedProviderId ? state.providerCapabilities?.[selectedProviderId] : undefined,
+      );
     },
     [sessionUuidByPatient, config.useStreaming, stopCurrent],
   );

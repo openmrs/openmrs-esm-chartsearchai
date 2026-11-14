@@ -1,10 +1,11 @@
 import React from 'react';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getDefaultsFromConfigSchema, useConfig } from '@openmrs/esm-framework';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { getDefaultsFromConfigSchema, openmrsFetch, useConfig } from '@openmrs/esm-framework';
 import { type ChartSearchAiConfig, configSchema } from '../config-schema';
 import { type OmnibarViewProps, type OmnibarViewState } from '../omnibar-contract/types';
+import { chatSessionStore, initialChatSessionState } from '../store/chat-session.store';
 import ChartSearchAnswerView from './chartsearch-answer.view';
 
 vi.mock('@openmrs/esm-framework', async (importOriginal) => ({
@@ -24,11 +25,10 @@ const frame = (event: string, data: unknown) =>
     .join('\n')}\n\n`;
 
 /** A response whose body is written by the test, a chunk at a time, then ended. */
-function streamingResponse(init: { status?: number; contentType?: string } = {}) {
+function streamingResponse(init: { status?: number; contentType?: string; bodyText?: string } = {}) {
   const encoder = new TextEncoder();
   const queue: Array<Uint8Array | null> = [];
   let wake: () => void = () => {};
-  // Like a real fetch, a stopped request's reads fail, so a stopped request reads nothing more.
   let signal: AbortSignal | undefined;
   const next = () =>
     new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
@@ -50,13 +50,15 @@ function streamingResponse(init: { status?: number; contentType?: string } = {})
     ok: (init.status ?? 200) < 400,
     status: init.status ?? 200,
     headers: new Headers({ 'content-type': init.contentType ?? 'text/event-stream;charset=UTF-8' }),
-    body: { getReader: () => ({ read: next, releaseLock: () => {} }) },
+    body: { getReader: () => ({ read: next, cancel: vi.fn().mockResolvedValue(undefined), releaseLock: () => {} }) },
+    json: init.bodyText
+      ? async () => JSON.parse(init.bodyText as string)
+      : async () => Promise.reject(new Error('non-JSON body')),
   };
   return {
     response,
-    /** The fetch to give fetchMock: it ties the response to the request's signal. */
-    fetch: (_url: string, init: { signal?: AbortSignal }) => {
-      signal = init.signal;
+    fetch: (_url: string, requestInit: { signal?: AbortSignal }) => {
+      signal = requestInit.signal;
       signal?.addEventListener('abort', () => wake());
       return Promise.resolve(response);
     },
@@ -71,22 +73,25 @@ function streamingResponse(init: { status?: number; contentType?: string } = {})
   };
 }
 
-/** The server's answer to `GET /session`, which the page asks when a request fails for no stated reason. */
 const sessionResponse = (authenticated: boolean) => ({ ok: true, status: 200, json: async () => ({ authenticated }) });
 const isSessionCheck = (url: string) => url.includes('/session?');
 
-const done = (overrides: Record<string, unknown> = {}) => ({
+const turnEnvelope = (overrides: Record<string, unknown> = {}) => ({
   answer: 'ART started on 3 March 2024 [1].',
-  disclaimer: 'This response is AI-generated and may not be accurate.',
-  references: [{ index: 1, resourceType: 'drug_order', date: '2024-03-03', grounded: null, group: 'chart' }],
+  references: [
+    {
+      index: 1,
+      resourceType: 'DrugOrder',
+      date: '2024-03-03',
+      grounded: null,
+      group: 'chart',
+      text: 'Tenofovir / Lamivudine / Dolutegravir',
+    },
+  ],
   safetyWarnings: [],
-  interactionPairs: null,
-  unresolvedDrugClass: null,
-  unfaithfullyRenderedCitations: [],
-  misattributedOrderCitations: [],
-  unstatedFindingSeverities: [],
-  activeOrderClaims: { stated: 0, uncited: 0 },
-  conditionRuleCoverage: 'unloaded',
+  safetyStatus: 'ok',
+  session: null,
+  messageId: 'omnibar-msg-1',
   ...overrides,
 });
 
@@ -107,16 +112,41 @@ const renderView = (query = question, submitted = false, extra: Partial<OmnibarV
 };
 
 describe('the Ask ChartSearch view', () => {
+  const mockOpenmrsFetch = openmrsFetch as Mock;
+  let previousOpenmrsFetchImpl: ((...args: unknown[]) => unknown) | undefined;
   let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.mocked(useConfig).mockReturnValue(defaults());
+    chatSessionStore.setState(initialChatSessionState());
+    previousOpenmrsFetchImpl = mockOpenmrsFetch.getMockImplementation();
+    mockOpenmrsFetch.mockImplementation((url: string) => {
+      if (url.includes('/ws/rest/v1/chartsearchai/providers')) {
+        return Promise.resolve({
+          data: {
+            providers: [
+              { id: 'bundled', name: 'Bundled', enabled: true, ready: true, capabilities: ['token_streaming'] },
+            ],
+            defaultProvider: 'bundled',
+            pickerVisible: false,
+          },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
   });
-  afterEach(() => vi.unstubAllGlobals());
 
-  it('asks at once about a question the user just submitted, with no Ask button, and only once', async () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    chatSessionStore.setState(initialChatSessionState());
+    if (previousOpenmrsFetchImpl) {
+      mockOpenmrsFetch.mockImplementation(previousOpenmrsFetchImpl);
+    }
+  });
+
+  it('asks at once about a submitted question via ephemeral /chat/stream, without touching chat store history', async () => {
     const stream = streamingResponse();
     fetchMock.mockResolvedValue(stream.response);
     const { states, rerender } = renderView(question, true);
@@ -124,7 +154,13 @@ describe('the Ask ChartSearch view', () => {
     expect(await screen.findByRole('heading', { name: 'ChartSearch' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Ask ChartSearch' })).not.toBeInTheDocument();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ patient: humprey, question });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain('/ws/rest/v1/chartsearchai/chat/stream');
+    expect(url).not.toContain('/search/stream');
+    expect(init).toMatchObject({ method: 'POST', credentials: 'include' });
+    expect(JSON.parse(init.body)).toMatchObject({ patient: humprey, question, ephemeral: true });
+    expect(JSON.parse(init.body)).not.toHaveProperty('session');
     await waitFor(() => expect(states.at(-1)).toBe('ready'));
 
     rerender(
@@ -136,10 +172,13 @@ describe('the Ask ChartSearch view', () => {
         submitted
       />,
     );
-    await act(async () => stream.write(frame('done', done())));
+    await act(async () => stream.write(frame('turn_done', turnEnvelope())));
     await act(async () => stream.end());
-    expect(await screen.findByText('ART started on 3 March 2024 [1].')).toBeInTheDocument();
+
+    expect(await screen.findByText(/ART started on 3 March 2024/)).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(chatSessionStore.getState().messagesByPatient).toEqual({});
+    expect(chatSessionStore.getState().sessionUuidByPatient).toEqual({});
   });
 
   it('on a page nobody just asked for, such as a reload, sends nothing until Ask is pressed', async () => {
@@ -168,9 +207,9 @@ describe('the Ask ChartSearch view', () => {
       </React.StrictMode>,
     );
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    await act(async () => stream.write(frame('done', done())));
+    await act(async () => stream.write(frame('turn_done', turnEnvelope())));
     await act(async () => stream.end());
-    expect(await screen.findByText('ART started on 3 March 2024 [1].')).toBeInTheDocument();
+    expect(await screen.findByText(/ART started on 3 March 2024/)).toBeInTheDocument();
   });
 
   it('never asks past the site’s own question limit', async () => {
@@ -191,26 +230,21 @@ describe('the Ask ChartSearch view', () => {
         states.push(state);
       },
     };
-    expect(props).not.toHaveProperty('submitted');
     render(<ChartSearchAnswerView {...props} />);
-
-    expect(await screen.findByRole('button', { name: 'Ask ChartSearch' })).toBeInTheDocument();
     await waitFor(() => expect(states.at(-1)).toBe('ready'));
+    expect(screen.getByRole('button', { name: 'Ask ChartSearch' })).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('takes the host’s word on whether the query is a question', async () => {
-    const { states: offered, unmount } = renderView('cd4 trend', false, {
-      hints: { looksLikeIdentifier: false, looksLikeQuestion: true },
+    const stream = streamingResponse();
+    fetchMock.mockResolvedValue(stream.response);
+    const { states, container } = renderView('cd4', true, {
+      hints: { looksLikeQuestion: true, looksLikeIdentifier: false },
     });
-    await waitFor(() => expect(offered.at(-1)).toBe('ready'));
-    unmount();
-
-    const { states: notOffered } = renderView(question, true, {
-      hints: { looksLikeIdentifier: false, looksLikeQuestion: false },
-    });
-    await waitFor(() => expect(notOffered.at(-1)).toBe('empty'));
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await screen.findByRole('heading', { name: 'ChartSearch' })).toBeInTheDocument();
+    expect(container).not.toBeEmptyDOMElement();
+    await waitFor(() => expect(states.at(-1)).toBe('ready'));
   });
 
   it('with the section switched off, reports empty and never asks', async () => {
@@ -221,7 +255,7 @@ describe('the Ask ChartSearch view', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('never asks about a submitted query that isn’t a question', async () => {
+  it('never asks about a submitted query that isn’t a question outside /ask', async () => {
     const { states } = renderView('cd4', true);
     await waitFor(() => expect(states.at(-1)).toBe('empty'));
     expect(fetchMock).not.toHaveBeenCalled();
@@ -230,23 +264,20 @@ describe('the Ask ChartSearch view', () => {
   it('under /ask, asks about any submitted text, question or not, once', async () => {
     const stream = streamingResponse();
     fetchMock.mockResolvedValue(stream.response);
-    const props: OmnibarViewProps = {
-      query: 'cd4',
+    renderView('pancytopenia', true, {
       context: { scope: 'patient', patientUuid: humprey, locale: 'en', command: { id: 'ask' } },
-      contractVersion: 1,
-      reportState: () => {},
-      submitted: true,
-    };
-    const { rerender } = render(<ChartSearchAnswerView {...props} />);
+    });
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ patient: humprey, question: 'cd4' });
-    rerender(<ChartSearchAnswerView {...props} />);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      patient: humprey,
+      question: 'pancytopenia',
+      ephemeral: true,
+    });
   });
 
   it.each([
-    ['an ID-shaped query under /ask', '100GEJ', true],
+    ['a clinical code even under /ask', '100GEJ', true],
     ['text under /ask nobody just asked for', 'cd4', false],
   ])('doesn’t ask about %s', async (_, query, submitted) => {
     const { states } = renderView(query, submitted, {
@@ -256,615 +287,370 @@ describe('the Ask ChartSearch view', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ['a query that isn’t a question', () => renderView('cd4')],
-    ['a question longer than ChartSearch takes', () => renderView(`what ${'x'.repeat(1000)}?`)],
-  ])('isn’t offered for %s', async (_, renderIt) => {
-    const { states, container } = renderIt();
-    await waitFor(() => expect(states.at(-1)).toBe('empty'));
-    expect(container).toBeEmptyDOMElement();
+  describe('system provider & Hub profile integration', () => {
+    it('forwards Chat selectedProfileId when Hub is active and profileDiscoveryStatus is ready', async () => {
+      mockOpenmrsFetch.mockImplementation((url: string) => {
+        if (url.includes('/ws/rest/v1/chartsearchai/providers')) {
+          return Promise.resolve({
+            data: {
+              providers: [{ id: 'hub', name: 'AI Hub', enabled: true, ready: true }],
+              defaultProvider: 'hub',
+              pickerVisible: false,
+            },
+          });
+        }
+        return Promise.resolve({ data: {} });
+      });
+      chatSessionStore.setState({
+        selectedProviderId: 'hub',
+        profileDiscoveryStatus: 'ready',
+        selectedProfileId: 'hiv-care',
+      });
+      const stream = streamingResponse();
+      fetchMock.mockResolvedValue(stream.response);
+
+      const user = userEvent.setup();
+      renderView();
+      await waitFor(() => expect(chatSessionStore.getState().selectedProviderId).toBe('hub'));
+      await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+        patient: humprey,
+        question,
+        provider: 'hub',
+        profile: 'hiv-care',
+        ephemeral: true,
+      });
+    });
+
+    it('omits profile when Hub profile discovery is not ready so the backend resolves its default', async () => {
+      mockOpenmrsFetch.mockImplementation((url: string) => {
+        if (url.includes('/ws/rest/v1/chartsearchai/providers')) {
+          return Promise.resolve({
+            data: {
+              providers: [{ id: 'hub', name: 'AI Hub', enabled: true, ready: true }],
+              defaultProvider: 'hub',
+              pickerVisible: false,
+            },
+          });
+        }
+        return Promise.resolve({ data: {} });
+      });
+      chatSessionStore.setState({
+        selectedProviderId: 'hub',
+        profileDiscoveryStatus: 'loading',
+        selectedProfileId: 'stale-profile',
+      });
+      const stream = streamingResponse();
+      fetchMock.mockResolvedValue(stream.response);
+
+      const user = userEvent.setup();
+      renderView();
+      await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+      expect(body).toEqual({
+        patient: humprey,
+        question,
+        provider: 'hub',
+        ephemeral: true,
+      });
+      expect(body).not.toHaveProperty('profile');
+    });
+
+    it('reports unavailable and displays the system provider unavailable reason without posting /chat/stream', async () => {
+      mockOpenmrsFetch.mockImplementation((url: string) => {
+        if (url.includes('/ws/rest/v1/chartsearchai/providers')) {
+          return Promise.resolve({
+            data: {
+              providers: [
+                {
+                  id: 'hub',
+                  name: 'AI Hub',
+                  enabled: true,
+                  ready: false,
+                  unavailableReason: 'med-agent-hub offline',
+                },
+              ],
+              defaultProvider: 'hub',
+              pickerVisible: false,
+            },
+          });
+        }
+        return Promise.resolve({ data: {} });
+      });
+
+      const { states } = renderView(question, true);
+      expect(await screen.findByText('Unavailable right now')).toBeInTheDocument();
+      expect(screen.getByText('med-agent-hub offline')).toBeInTheDocument();
+      await waitFor(() => expect(states.at(-1)).toBe('unavailable'));
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
   });
 
-  it('streams the answer into the page, citations unverified until the stream ends', async () => {
-    const user = userEvent.setup();
-    const stream = streamingResponse();
-    fetchMock.mockResolvedValue(stream.response);
-    renderView();
-
-    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('/openmrs/ws/rest/v1/chartsearchai/search/stream');
-    expect(init).toMatchObject({ method: 'POST', credentials: 'same-origin' });
-    expect(JSON.parse(init.body)).toEqual({ patient: humprey, question });
-
-    await act(async () =>
-      stream.write(': keep-alive\n\n' + frame('thinking', 'Looking at orders') + frame('token', 'ART started')),
-    );
-    expect(await screen.findByText('ART started')).toBeInTheDocument();
-    expect(screen.queryByText('Looking at orders')).not.toBeInTheDocument();
-
-    await act(async () => stream.write(frame('done', done())));
-    expect(await screen.findByText('ART started on 3 March 2024 [1].')).toBeInTheDocument();
-    expect(screen.getByText('Unverified')).toBeInTheDocument();
-    expect(screen.getByText('This response is AI-generated and may not be accurate.')).toBeInTheDocument();
-
-    await act(async () => stream.end());
-    expect(await screen.findByText('Not checked')).toBeInTheDocument();
-    expect(screen.getByText('Drug order')).toBeInTheDocument();
-  });
-
-  it('takes the verdicts and statements ChartSearch sends after done', async () => {
-    const user = userEvent.setup();
-    const stream = streamingResponse();
-    fetchMock.mockResolvedValue(stream.response);
-    renderView();
-
-    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
-    await act(async () =>
-      stream.write(
-        frame('done', done({ unfaithfullyRenderedCitations: null, activeOrderClaims: null })) +
-          frame('grounded', {
-            references: [{ index: 1, resourceType: 'drug_order', date: '2024-03-03', grounded: false, group: 'chart' }],
-            safetyWarnings: [],
-            unfaithfullyRenderedCitations: [1],
-          }),
-      ),
-    );
-    await act(async () => stream.end());
-
-    expect(await screen.findByText('The record may not support this statement')).toBeInTheDocument();
-    expect(screen.getByText('The answer’s wording of this citation isn’t the record’s wording.')).toBeInTheDocument();
-  });
-
-  it('draws safety findings whole, reference material apart, and the limits of its checks', async () => {
-    const user = userEvent.setup();
-    const stream = streamingResponse();
-    fetchMock.mockResolvedValue(stream.response);
-    renderView('can I give him ibuprofen?');
-
-    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
-    await act(async () =>
-      stream.write(
-        frame(
-          'done',
-          done({
-            answer: 'Ibuprofen interacts with active order Warfarin [2].',
-            references: [
-              {
-                index: 1,
-                resourceType: 'allergy',
-                date: null,
-                grounded: null,
-                group: 'chart',
-                attachedByTheModule: true,
-              },
-              {
-                index: 2,
-                resourceType: 'safety_finding',
-                date: null,
-                grounded: null,
-                group: 'reference',
-                source: 'DDInter 2.0',
-              },
-            ],
-            safetyWarnings: [
-              {
-                type: 'interaction',
-                drug: 'Ibuprofen',
-                detail: 'Ibuprofen interacts with active order Warfarin. Major. Raises bleeding risk.',
-                severity: 'Major',
-                chartOrderBridges: [{ substance: 'Ibuprofen', orderDisplay: 'Advil 400mg' }],
-              },
-            ],
-            interactionPairs: { found: 18, reported: 10 },
-            unresolvedDrugClass: 'NSAID',
-            conditionRuleCoverage: 'absent',
-            activeOrderClaims: { stated: 4, uncited: 2 },
-            unstatedFindingSeverities: [{ citation: 2, rating: 'Major' }],
-          }),
-        ),
-      ),
-    );
-    await act(async () => stream.end());
-
-    const warning = within(await screen.findByRole('list', { name: 'Safety findings' })).getByRole('listitem');
-    expect(
-      within(warning).getByText('Ibuprofen interacts with active order Warfarin. Major. Raises bleeding risk.'),
-    ).toBeInTheDocument();
-    expect(within(warning).getByText('Major')).toBeInTheDocument();
-    expect(within(warning).getByText('Ibuprofen was resolved from the order “Advil 400mg”')).toBeInTheDocument();
-    expect(screen.getByText('10 of 18 interaction pairs are shown.')).toBeInTheDocument();
-    expect(screen.getByText('2 of 4 statements about active orders cite no chart record.')).toBeInTheDocument();
-    expect(screen.getByText(/names a drug class, “NSAID”/)).toBeInTheDocument();
-    expect(screen.queryByText(/conditions weren’t screened/)).not.toBeInTheDocument();
-    expect(screen.getByText('Added by ChartSearch from a safety finding')).toBeInTheDocument();
-    const reference = screen.getByRole('list', { name: 'Reference material, not this patient’s record' });
-    expect(reference).toHaveTextContent('Safety finding');
-    expect(reference).toHaveTextContent('Source: DDInter 2.0');
-    expect(reference).toHaveTextContent('Rated Major. The answer doesn’t state this rating.');
-    expect(reference).not.toHaveTextContent('Not checked');
-  });
-
-  it('marks a contraindication about a drug she already takes, and an order no longer in force', async () => {
-    const user = userEvent.setup();
-    const stream = streamingResponse();
-    fetchMock.mockResolvedValue(stream.response);
-    renderView('is her lidocaine safe given her allergies?');
-
-    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
-    await act(async () =>
-      stream.write(
-        frame(
-          'done',
-          done({
-            answer: 'The patient has a recorded allergy to Lidocaine [1].',
-            safetyWarnings: [
-              {
-                type: 'contraindication',
-                drug: 'Lidocaine',
-                detail: 'The patient has a recorded allergy to Lidocaine.',
-                aboutACurrentMedication: true,
-                currentMedicationOrders: [{ orderDisplay: 'Lidocaine', orderUuid: 'uuid-lidocaine' }],
-                aboutAnotherOfHerMedications: false,
-              },
-              {
-                type: 'contraindication',
-                drug: 'Ibuprofen',
-                detail: 'The patient has a recorded allergy to Ibuprofen.',
-                aboutACurrentMedication: true,
-                currentMedicationOrders: [],
-              },
-              {
-                type: 'interaction',
-                drug: 'Lidocaine',
-                detail: 'Lidocaine interacts with active order Metoclopramide.',
-                aboutACurrentMedication: true,
-                currentMedicationOrders: [{ orderDisplay: 'Lidocaine' }],
-              },
-              {
-                type: 'contraindication',
-                drug: 'Tiotropium',
-                detail: 'The patient has a recorded allergy to Tiotropium.',
-                aboutACurrentMedication: true,
-                aboutAnotherOfHerMedications: true,
-                currentMedicationOrders: [{ orderDisplay: 'Tiotropium' }],
-              },
-              {
-                type: 'interaction',
-                drug: 'Rifampicin',
-                detail: 'Rifampicin interacts with active order Nevirapine.',
-                aboutAnEndedOrder: true,
-                endedOrderStopDate: '2026-09-23',
-              },
-              {
-                type: 'interaction',
-                drug: 'Stavudine',
-                detail: 'Stavudine interacts with active order Nevirapine.',
-                aboutAnEndedOrder: true,
-                endedOrderStopDate: 'yesterday',
-              },
-            ],
-          }),
-        ),
-      ),
-    );
-    await act(async () => stream.end());
-
-    const findings = within(await screen.findByRole('list', { name: 'Safety findings' })).getAllByRole('listitem');
-    const prescribedTitle =
-      'The patient has an active order for this drug, so this finding is about a medication already prescribed, not one being proposed. The drug shown is the substance the module matched that order to, which the order itself may name differently — a brand name, for example.';
-    const endedTitle =
-      'The chart records this drug only as an order no longer in force, so the finding is about what giving it again would mean — not about a medication the patient is taking now.';
-
-    const named = within(findings[0]).getByText('Already prescribed: Lidocaine');
-    expect(named).toHaveAttribute('title', prescribedTitle);
-    expect(named).toHaveClass('currentMedicationTag');
-    expect(within(findings[1]).getByText('Already prescribed')).toHaveAttribute('title', prescribedTitle);
-    expect(within(findings[2]).queryByText(/^Already prescribed/)).not.toBeInTheDocument();
-    expect(within(findings[3]).getByText('Already prescribed: Tiotropium')).toHaveAttribute('title', prescribedTitle);
-
-    const endedOn = within(findings[4]).getByText('About an order no longer in force, ended 2026-09-23');
-    expect(endedOn).toHaveAttribute('title', endedTitle);
-    expect(endedOn).toHaveClass('endedOrderTag');
-    expect(endedOn.getAttribute('title')).not.toMatch(/day off/);
-    const ended = within(findings[5]).getByText('About an order no longer in force');
-    expect(ended).toHaveAttribute('title', endedTitle);
-    expect(ended.getAttribute('title')).not.toMatch(/day off/);
-  });
-
-  it.each([
-    [
-      'a limited check',
-      { safetyStatus: 'limited', safetyCheck: { status: 'limited', issues: ['weight_unavailable'] } },
-      'Limited safety check',
-      ['A weight-based dose check could not run because the patient weight was unavailable.'],
-    ],
-    [
-      'a failed check',
-      { safetyStatus: 'unavailable', safetyCheck: { status: 'unavailable', issues: ['execution_failed'] } },
-      'Safety check unavailable',
-      ['The medication-safety check did not complete.'],
-    ],
-    ['a limited check stated only by safetyStatus', { safetyStatus: 'limited' }, 'Limited safety check', []],
-  ])('says so when ChartSearch reports %s, rather than look clean', async (_, check, heading, issues) => {
-    const user = userEvent.setup();
-    const stream = streamingResponse();
-    fetchMock.mockResolvedValue(stream.response);
-    renderView();
-
-    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
-    await act(async () => stream.write(frame('done', done(check))));
-    await act(async () => stream.end());
-
-    expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
-    const list = screen.queryByRole('list', { name: heading });
-    expect(
-      list
-        ? within(list)
-            .getAllByRole('listitem')
-            .map((item) => item.textContent)
-        : [],
-    ).toEqual(issues);
-  });
-
-  it('says a bare unavailable check is unavailable only once the answer is final, not while grounding runs', async () => {
-    const user = userEvent.setup();
-    const stream = streamingResponse();
-    fetchMock.mockResolvedValue(stream.response);
-    renderView();
-
-    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
-    await act(async () =>
-      stream.write(
-        frame('done', done({ safetyStatus: 'unavailable', safetyCheck: { status: 'unavailable', issues: [] } })),
-      ),
-    );
-    expect(await screen.findByText('ART started on 3 March 2024 [1].')).toBeInTheDocument();
-    expect(screen.getByText('Checking the answer')).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Safety check unavailable' })).not.toBeInTheDocument();
-
-    await act(async () => stream.end());
-    expect(await screen.findByRole('heading', { name: 'Safety check unavailable' })).toBeInTheDocument();
-  });
-
-  it.each([
-    ['a clean check', { safetyStatus: 'checked', safetyCheck: { status: 'checked', issues: [] } }],
-    [
-      'a check switched off',
-      { safetyStatus: 'unavailable', safetyCheck: { status: 'unavailable', issues: ['check_disabled'] } },
-    ],
-  ])('says nothing of the safety check for %s', async (_, check) => {
-    const user = userEvent.setup();
-    const stream = streamingResponse();
-    fetchMock.mockResolvedValue(stream.response);
-    renderView();
-
-    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
-    await act(async () => stream.write(frame('done', done(check))));
-    await act(async () => stream.end());
-
-    expect(await screen.findByText('Not checked')).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: /safety check|safety details/i })).not.toBeInTheDocument();
-  });
-
-  it('says so under the answer when it claims an order ended that no record says has', async () => {
-    const user = userEvent.setup();
-    const stream = streamingResponse();
-    fetchMock.mockResolvedValue(stream.response);
-    renderView('is it safe to give rifampicin?');
-
-    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
-    await act(async () =>
-      stream.write(
-        frame(
-          'done',
-          done({
-            answer: 'Nevirapine’s order is no longer in force, but it interacts with Rifampicin [1].',
-            unsupportedEndedOrderClaims: ['Nevirapine'],
-          }),
-        ),
-      ),
-    );
-    await act(async () => stream.end());
-
-    expect(
-      await screen.findByText('No record says the Nevirapine order has ended — the answer states it without one.'),
-    ).toBeInTheDocument();
-  });
-
-  it('notes beside a cited finding the unknown significance its record states and the answer leaves out', async () => {
-    const user = userEvent.setup();
-    const stream = streamingResponse();
-    fetchMock.mockResolvedValue(stream.response);
-    renderView('is aspirin safe for her?');
-
-    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
-    await act(async () =>
-      stream.write(
-        frame(
-          'done',
-          done({
-            answer: 'Aspirin interacts with active order Metoclopramide [46].',
-            references: [{ index: 46, resourceType: 'safety_finding', date: null, grounded: null, group: 'reference' }],
-            unstatedSignificanceQualifiers: [46],
-          }),
-        ),
-      ),
-    );
-    await act(async () => stream.end());
-
-    expect(
-      await screen.findByRole('list', { name: 'Reference material, not this patient’s record' }),
-    ).toHaveTextContent(
-      'The finding this cites says the clinical significance of the interaction is unknown. The answer leaves that out.',
-    );
-  });
-
-  it('says beside a cited prescription the day it stopped, apart from the record’s own date', async () => {
-    const user = userEvent.setup();
-    const stream = streamingResponse();
-    fetchMock.mockResolvedValue(stream.response);
-    renderView('is he still on nevirapine?');
-
-    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
-    await act(async () =>
-      stream.write(
-        frame(
-          'done',
-          done({
-            answer: 'Nevirapine was stopped [1].',
-            references: [{ index: 1, resourceType: 'drug_order', date: '2026-06-01', grounded: null, group: 'chart' }],
-            orderStopDates: [{ citation: 1, stopDate: '2026-09-23' }],
-          }),
-        ),
-      ),
-    );
-    await act(async () => stream.end());
-
-    const cited = within(await screen.findByRole('list', { name: 'Records cited' })).getByRole('listitem');
-    const stopped = within(cited).getByText('Stopped 2026-09-23');
-    expect(stopped).toHaveAttribute(
-      'title',
-      'The date this prescription stopped being in force — not the record’s own date shown beside it.',
-    );
-    expect(within(cited).getByText('2026-06-01')).toBeInTheDocument();
-  });
-
-  it('shows an answer that cites no records, and says to check the chart', async () => {
-    const user = userEvent.setup();
-    const stream = streamingResponse();
-    fetchMock.mockResolvedValue(stream.response);
-    renderView();
-
-    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
-    await act(async () => stream.write(frame('done', done({ references: [] }))));
-    await act(async () => stream.end());
-
-    expect(await screen.findByText('ART started on 3 March 2024 [1].')).toBeInTheDocument();
-    expect(screen.getByText('Cites no records. Check the chart.')).toBeInTheDocument();
-  });
-
-  it('keeps ChartSearch’s own safety findings beside an answer that cites nothing', async () => {
-    const user = userEvent.setup();
-    const stream = streamingResponse();
-    fetchMock.mockResolvedValue(stream.response);
-    renderView('can I give him clarithromycin?');
-
-    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
-    await act(async () =>
-      stream.write(
-        frame(
-          'done',
-          done({
-            answer: 'Clarithromycin can be given.',
-            references: [],
-            safetyWarnings: [
-              {
-                type: 'interaction',
-                drug: 'Clarithromycin',
-                detail: 'Clarithromycin interacts with active order Simvastatin. Major.',
-                severity: 'Major',
-              },
-            ],
-            unresolvedDrugClass: 'macrolide',
-            activeOrderClaims: { stated: 1, uncited: 1 },
-            unsupportedEndedOrderClaims: ['Nevirapine'],
-          }),
-        ),
-      ),
-    );
-    await act(async () => stream.end());
-
-    expect(await screen.findByText('Clarithromycin can be given.')).toBeInTheDocument();
-    expect(screen.getByText('Cites no records. Check the chart.')).toBeInTheDocument();
-    const warning = within(screen.getByRole('list', { name: 'Safety findings' })).getByRole('listitem');
-    expect(
-      within(warning).getByText('Clarithromycin interacts with active order Simvastatin. Major.'),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/names a drug class, “macrolide”/)).toBeInTheDocument();
-    expect(screen.getByText('1 of 1 statements about active orders cite no chart record.')).toBeInTheDocument();
-    expect(
-      screen.getByText('No record says the Nevirapine order has ended — the answer states it without one.'),
-    ).toBeInTheDocument();
-  });
-
-  it('never shows ChartSearch’s own error text', async () => {
-    const user = userEvent.setup();
-    const stream = streamingResponse();
-    fetchMock.mockResolvedValue(stream.response);
-    renderView();
-
-    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
-    await act(async () => stream.write(frame('error', "This patient's chart is too large to process.")));
-    await act(async () => stream.end());
-
-    expect(await screen.findByText('ChartSearch couldn’t answer this question.')).toBeInTheDocument();
-    expect(screen.queryByText(/too large/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
-  });
-
-  it('treats a stream that ends before done as a failure', async () => {
-    const user = userEvent.setup();
-    const stream = streamingResponse();
-    fetchMock.mockResolvedValue(stream.response);
-    renderView();
-
-    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
-    await act(async () => stream.write(frame('token', 'ART')));
-    await act(async () => stream.end());
-    expect(await screen.findByText('ChartSearch couldn’t answer this question.')).toBeInTheDocument();
-  });
-
-  it.each([
-    [503, 'Unavailable right now'],
-    [429, 'ChartSearch couldn’t answer this question.'],
-    [403, 'ChartSearch couldn’t answer this question.'],
-    [401, 'Your session has ended. Log in again, then ask again.'],
-  ])('says only what the page says when the server answers %s', async (status, message) => {
-    const user = userEvent.setup();
-    fetchMock.mockResolvedValue(streamingResponse({ status }).response);
-    renderView();
-
-    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
-    expect(await screen.findByText(message)).toBeInTheDocument();
-  });
-
-  it.each([
-    ['a bare HTML 500', { status: 500, contentType: 'text/html' }],
-    ['the login page it was redirected to', { contentType: 'text/html' }],
-  ])('says the session has ended when ChartSearch answers %s and the server says so', async (_, init) => {
-    const user = userEvent.setup();
-    fetchMock.mockImplementation((url: string) =>
-      Promise.resolve(isSessionCheck(url) ? sessionResponse(false) : streamingResponse(init).response),
-    );
-    renderView();
-
-    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
-    expect(await screen.findByText('Your session has ended. Log in again, then ask again.')).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/ws/rest/v1/session?'), expect.anything());
-  });
-
-  it.each([
-    ['says the session is live', () => Promise.resolve(sessionResponse(true))],
-    ['can’t be asked', () => Promise.reject(new TypeError('Failed to fetch'))],
-  ])('says only that ChartSearch couldn’t answer when a 500’s session check %s', async (_, check) => {
-    const user = userEvent.setup();
-    fetchMock.mockImplementation((url: string) =>
-      isSessionCheck(url) ? check() : Promise.resolve(streamingResponse({ status: 500 }).response),
-    );
-    renderView();
-
-    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
-    expect(await screen.findByText('ChartSearch couldn’t answer this question.')).toBeInTheDocument();
-  });
-
-  it('refuses a response that isn’t an event stream', async () => {
-    const user = userEvent.setup();
-    fetchMock.mockResolvedValue(streamingResponse({ contentType: 'text/html' }).response);
-    renderView();
-
-    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
-    expect(await screen.findByText('ChartSearch couldn’t answer this question.')).toBeInTheDocument();
-  });
-
-  it('stops an answer that is no longer offered', async () => {
-    const stream = streamingResponse();
-    fetchMock.mockImplementation(stream.fetch);
-    const { rerender } = renderView(question, true);
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const { signal } = fetchMock.mock.calls[0][1];
-
-    vi.mocked(useConfig).mockReturnValue({ ...defaults(), queryResultsAnswer: { enabled: false } });
-    rerender(
-      <ChartSearchAnswerView
-        query={question}
-        context={{ scope: 'patient', patientUuid: humprey, locale: 'en' }}
-        contractVersion={1}
-        reportState={() => {}}
-        submitted
-      />,
-    );
-    expect(signal.aborted).toBe(true);
-  });
-
-  it('stops reading when the page moves on', async () => {
-    const user = userEvent.setup();
-    const stream = streamingResponse();
-    fetchMock.mockResolvedValue(stream.response);
-    const { unmount } = renderView();
-
-    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
-    const { signal } = fetchMock.mock.calls[0][1];
-    expect(signal.aborted).toBe(false);
-    unmount();
-    expect(signal.aborted).toBe(true);
-  });
-
-  it('stops reading when the host aborts its signal, and never asks under a signal already aborted', async () => {
-    const user = userEvent.setup();
-    const stream = streamingResponse();
-    fetchMock.mockImplementation(stream.fetch);
-    const host = new AbortController();
-    renderView(question, true, { signal: host.signal });
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    const { signal } = fetchMock.mock.calls[0][1];
-
-    await act(async () => stream.write(frame('token', 'ART started')));
-    expect(await screen.findByText('ART started')).toBeInTheDocument();
-    await act(async () => host.abort());
-    expect(signal.aborted).toBe(true);
-    await act(async () => stream.write(frame('token', ' on 3 March')));
-    expect(screen.queryByText(/on 3 March/)).not.toBeInTheDocument();
-
-    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
-    renderView(question, false, { signal: host.signal });
-    await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('stops an automatic request on unmount even when the host’s signal is still live', async () => {
-    const stream = streamingResponse();
-    fetchMock.mockImplementation(stream.fetch);
-    const host = new AbortController();
-    const { unmount } = renderView(question, true, { signal: host.signal });
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const { signal } = fetchMock.mock.calls[0][1];
-
-    unmount();
-    expect(host.signal.aborted).toBe(false);
-    expect(signal.aborted).toBe(true);
-  });
-
-  it('logs nothing when ChartSearch fails, whatever the failure', async () => {
-    const consoleSpies = (['log', 'info', 'debug', 'warn', 'error'] as const).map((method) =>
-      vi.spyOn(console, method).mockImplementation(() => {}),
-    );
-    try {
+  describe('streaming via shared AiResponsePanel & AiReasoningDisclosure', () => {
+    it('streams preliminary reasoning, committed reasoning, answer tokens, evidence updates, and feedback auditLogId', async () => {
       const user = userEvent.setup();
       const stream = streamingResponse();
-      const asks = vi
-        .fn()
-        .mockResolvedValueOnce(stream.response)
-        .mockResolvedValueOnce(streamingResponse({ status: 500 }).response)
-        .mockRejectedValueOnce(new TypeError('Failed to fetch'));
-      fetchMock.mockImplementation((url: string) => (isSessionCheck(url) ? sessionResponse(true) : asks()));
+      fetchMock.mockResolvedValue(stream.response);
       renderView();
 
       await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
-      await act(async () => stream.write(frame('error', "This patient's chart is too large to process.")));
+      expect(await screen.findByText('Reviewing the most relevant records…')).toBeInTheDocument();
+
+      await act(async () => stream.write(frame('preliminary_delta', 'Checking orders [99]...')));
+      expect(await screen.findByText(/Checking orders/)).toBeInTheDocument();
+      expect(screen.queryByText(/\[99\]/)).not.toBeInTheDocument();
+
+      await act(async () => stream.write(frame('reasoning_delta', 'Reviewing active ART regimens')));
+      expect(await screen.findByText('Reviewing active ART regimens')).toBeInTheDocument();
+
+      await act(async () => stream.write(frame('answer_delta', 'ART started')));
+      expect(await screen.findByText(/ART started/)).toBeInTheDocument();
+      expect(screen.getByText('Model reasoning')).toBeInTheDocument();
+      expect(screen.getByText('Reviewing active ART regimens')).not.toBeVisible();
+
+      await act(async () => stream.write(frame('answer_done', turnEnvelope())));
+      expect(await screen.findByText(/ART started on 3 March 2024/)).toBeInTheDocument();
+      expect(screen.getByText('This answer is AI-generated and may not be accurate.')).toBeInTheDocument();
+
+      await act(async () =>
+        stream.write(
+          frame(
+            'evidence_updated',
+            turnEnvelope({
+              references: [
+                {
+                  index: 1,
+                  resourceType: 'DrugOrder',
+                  date: '2024-03-03',
+                  grounded: false,
+                  group: 'chart',
+                },
+              ],
+              safetyStatus: 'limited',
+              safetyWarnings: [
+                { type: 'drug_interaction', drug: 'Ibuprofen', interactingDrug: 'Warfarin', detail: 'Bleeding risk' },
+              ],
+            }),
+          ),
+        ),
+      );
+      expect(await screen.findByText('Unsupported')).toBeInTheDocument();
+      const safetyBox = screen.getByTestId('ai-response-safety');
+      expect(safetyBox).toHaveTextContent('Limited safety check');
+      expect(safetyBox).toHaveTextContent('Ibuprofen: Bleeding risk');
+
+      await act(async () => stream.write(frame('turn_done', turnEnvelope({ auditLogId: 42 }))));
       await act(async () => stream.end());
-      expect(await screen.findByText('ChartSearch couldn’t answer this question.')).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: 'Helpful' })).toBeInTheDocument();
+    });
 
-      await user.click(screen.getByRole('button', { name: 'Try again' }));
-      await waitFor(() => expect(asks).toHaveBeenCalledTimes(2));
-      expect(await screen.findByText('ChartSearch couldn’t answer this question.')).toBeInTheDocument();
+    it('hides reasoning when showReasoning config is false', async () => {
+      vi.mocked(useConfig).mockReturnValue({ ...defaults(), showReasoning: false });
+      const user = userEvent.setup();
+      const stream = streamingResponse();
+      fetchMock.mockResolvedValue(stream.response);
+      renderView();
 
-      await user.click(screen.getByRole('button', { name: 'Try again' }));
-      expect(await screen.findByText('Unavailable right now')).toBeInTheDocument();
+      await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+      await act(async () =>
+        stream.write(frame('reasoning_delta', 'Secret reasoning chain') + frame('answer_delta', 'ART started')),
+      );
+      expect(await screen.findByText('ART started')).toBeInTheDocument();
+      expect(screen.queryByText('Secret reasoning chain')).not.toBeInTheDocument();
+    });
+  });
 
-      consoleSpies.forEach((spy) => expect(spy).not.toHaveBeenCalled());
-    } finally {
-      consoleSpies.forEach((spy) => spy.mockRestore());
-    }
+  describe('error sanitization, session handling, abort, and logging', () => {
+    it('sanitizes free-text turn_error prose so chart or query text never leaks', async () => {
+      const user = userEvent.setup();
+      const stream = streamingResponse();
+      fetchMock.mockResolvedValue(stream.response);
+      renderView();
+
+      await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+      await act(async () =>
+        stream.write(frame('turn_error', { error: "This patient's chart is too large to process." })),
+      );
+      await act(async () => stream.end());
+
+      expect(
+        await screen.findByText('Chart search failed. Please try again or contact your administrator.'),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/too large/)).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    });
+
+    it('treats a stream that ends before turn_done as incomplete', async () => {
+      const user = userEvent.setup();
+      const stream = streamingResponse();
+      fetchMock.mockResolvedValue(stream.response);
+      renderView();
+
+      await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+      await act(async () => stream.write(frame('answer_delta', 'ART')));
+      await act(async () => stream.end());
+
+      expect(await screen.findByText(/The response ended before it finished\. Please try again\./)).toBeInTheDocument();
+    });
+
+    it.each([
+      [
+        409,
+        JSON.stringify({ error: 'provider_not_enabled' }),
+        'The selected AI provider is not available. Contact your administrator.',
+      ],
+      [
+        503,
+        JSON.stringify({ error: 'provider_not_ready' }),
+        'The selected AI provider is not available. Contact your administrator.',
+      ],
+      [
+        429,
+        JSON.stringify({ error: 'rate_limited' }),
+        'Chart search failed. Please try again or contact your administrator.',
+      ],
+    ])('renders structured HTTP %s problem errors cleanly', async (status, bodyText, expectedMessage) => {
+      const user = userEvent.setup();
+      fetchMock.mockResolvedValue(streamingResponse({ status, contentType: 'application/json', bodyText }).response);
+      renderView();
+
+      await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+      expect(await screen.findByText(expectedMessage)).toBeInTheDocument();
+    });
+
+    it.each([
+      ['a bare HTML 500', { status: 500, contentType: 'text/html' }],
+      ['the login page it was redirected to', { contentType: 'text/html' }],
+      ['a bare 401 response', { status: 401, contentType: 'text/html' }],
+    ])('says the session has ended when ChartSearch answers %s and /session confirms logout', async (_, init) => {
+      const user = userEvent.setup();
+      fetchMock.mockImplementation((url: string) =>
+        Promise.resolve(isSessionCheck(url) ? sessionResponse(false) : streamingResponse(init).response),
+      );
+      renderView();
+
+      await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+      expect(await screen.findByText('Your session has expired. Please log in again.')).toBeInTheDocument();
+      expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/ws/rest/v1/session?'), expect.anything());
+    });
+
+    it('refuses a non-SSE HTTP 200 HTML response when session is still active', async () => {
+      const user = userEvent.setup();
+      fetchMock.mockImplementation((url: string) =>
+        Promise.resolve(
+          isSessionCheck(url) ? sessionResponse(true) : streamingResponse({ contentType: 'text/html' }).response,
+        ),
+      );
+      renderView();
+
+      await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+      expect(
+        await screen.findByText(
+          'The server could not process the request. Please try again or contact your administrator.',
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it('stops an answer that is no longer offered', async () => {
+      const stream = streamingResponse();
+      fetchMock.mockImplementation(stream.fetch);
+      const { rerender } = renderView(question, true);
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      const { signal } = fetchMock.mock.calls[0][1];
+
+      vi.mocked(useConfig).mockReturnValue({ ...defaults(), queryResultsAnswer: { enabled: false } });
+      rerender(
+        <ChartSearchAnswerView
+          query={question}
+          context={{ scope: 'patient', patientUuid: humprey, locale: 'en' }}
+          contractVersion={1}
+          reportState={() => {}}
+          submitted
+        />,
+      );
+      expect(signal.aborted).toBe(true);
+    });
+
+    it('stops reading when the host aborts its signal, and never asks under a signal already aborted', async () => {
+      const user = userEvent.setup();
+      const stream = streamingResponse();
+      fetchMock.mockImplementation(stream.fetch);
+      const host = new AbortController();
+      renderView(question, true, { signal: host.signal });
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      const { signal } = fetchMock.mock.calls[0][1];
+
+      await act(async () => stream.write(frame('answer_delta', 'ART started')));
+      expect(await screen.findByText('ART started')).toBeInTheDocument();
+      await act(async () => host.abort());
+      expect(signal.aborted).toBe(true);
+      await act(async () => stream.write(frame('answer_delta', ' on 3 March')));
+      expect(screen.queryByText(/on 3 March/)).not.toBeInTheDocument();
+
+      expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+      renderView(question, false, { signal: host.signal });
+      await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops an automatic request on unmount even when the host’s signal is still live', async () => {
+      const stream = streamingResponse();
+      fetchMock.mockImplementation(stream.fetch);
+      const host = new AbortController();
+      const { unmount } = renderView(question, true, { signal: host.signal });
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      const { signal } = fetchMock.mock.calls[0][1];
+
+      unmount();
+      expect(host.signal.aborted).toBe(false);
+      expect(signal.aborted).toBe(true);
+    });
+
+    it('logs nothing when ChartSearch fails, whatever the failure', async () => {
+      const consoleSpies = (['log', 'info', 'debug', 'warn', 'error'] as const).map((method) =>
+        vi.spyOn(console, method).mockImplementation(() => {}),
+      );
+      try {
+        const user = userEvent.setup();
+        const stream = streamingResponse();
+        const asks = vi
+          .fn()
+          .mockResolvedValueOnce(stream.response)
+          .mockResolvedValueOnce(streamingResponse({ status: 500 }).response)
+          .mockRejectedValueOnce(new TypeError('Failed to fetch'));
+        fetchMock.mockImplementation((url: string) => (isSessionCheck(url) ? sessionResponse(true) : asks()));
+        renderView();
+
+        await user.click(await screen.findByRole('button', { name: 'Ask ChartSearch' }));
+        await act(async () =>
+          stream.write(frame('turn_error', { error: "This patient's chart is too large to process." })),
+        );
+        await act(async () => stream.end());
+        expect(
+          await screen.findByText('Chart search failed. Please try again or contact your administrator.'),
+        ).toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'Try again' }));
+        await waitFor(() => expect(asks).toHaveBeenCalledTimes(2));
+        expect(
+          await screen.findByText(
+            'The server could not process the request. Please try again or contact your administrator.',
+          ),
+        ).toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'Try again' }));
+        expect(
+          await screen.findByText('Could not reach the server. Check the connection and try again.'),
+        ).toBeInTheDocument();
+
+        consoleSpies.forEach((spy) => expect(spy).not.toHaveBeenCalled());
+      } finally {
+        consoleSpies.forEach((spy) => spy.mockRestore());
+      }
+    });
   });
 });
