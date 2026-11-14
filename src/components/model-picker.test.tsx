@@ -14,20 +14,20 @@ const mockFetch = fetchProfiles as Mock;
 const mockUseConfig = useConfig as unknown as Mock;
 
 const profile = (overrides: Partial<HubProfileMetadata>): HubProfileMetadata => ({
-  id: 'single-e4b-checked',
-  label: 'Fast checked answer (E4B)',
+  id: 'standard',
+  label: 'Standard answer',
   staged: true,
   validation: true,
   temporal_enforcement: 'enforce',
   available: true,
   default: false,
-  selection_priority: 10,
+  selection_priority: 20,
   topology: 'single',
   visibility: 'product',
-  stages: ['context', 'answer', 'gate', 'review', 'indepth'],
-  required_models: ['gemma-e4b'],
-  context_window: 24576,
-  exact_tokenizer: true,
+  stages: ['answer', 'indepth'],
+  required_models: ['gemma-4-12b'],
+  context_window: 16384,
+  exact_tokenizer: false,
   unavailable_reasons: [],
   ...overrides,
 });
@@ -35,22 +35,27 @@ const profile = (overrides: Partial<HubProfileMetadata>): HubProfileMetadata => 
 const PROFILE_DATA = {
   object: 'list',
   data: [
-    profile({ default: true }),
-    profile({ id: 'single-12b-checked', label: 'Checked answer (12B)', required_models: ['gemma-4-12b'] }),
-    profile({ id: 'team-med-checked', label: 'Checked medical team', topology: 'team' }),
+    profile({ id: 'quick', label: 'Quick answer', selection_priority: 10, staged: false, validation: false }),
+    profile({ id: 'standard', label: 'Standard answer', default: true, selection_priority: 20 }),
     profile({
-      id: 'team-high-unavailable',
-      label: 'High checked team',
-      topology: 'team',
-      available: false,
-      unavailable_reasons: ['model_not_loaded:gemma-31b'],
+      id: 'verified',
+      label: 'Cross-checked answer',
+      selection_priority: 30,
+      required_models: ['gemma-4-12b', 'qwen3.5-9b'],
     }),
-    profile({ id: 'answer:gemma-e4b', label: 'Raw answer leg', visibility: 'internal' }),
+    profile({
+      id: 'verified-unavailable',
+      label: 'Heavy cross-checked answer',
+      selection_priority: 40,
+      available: false,
+      unavailable_reasons: ['model_unavailable:gemma-26b'],
+    }),
+    profile({ id: 'answer:gemma-4-12b', label: 'Raw answer leg', visibility: 'internal' }),
   ],
 };
 
 const openMenu = async () => {
-  const trigger = await screen.findByRole('button', { name: /^AI profile: Fast checked answer \(E4B\)$/i });
+  const trigger = await screen.findByRole('button', { name: /^AI profile: Standard answer$/i });
   fireEvent.click(trigger);
   return screen.findByRole('menu');
 };
@@ -94,37 +99,38 @@ describe('ModelPicker', () => {
     mockFetch.mockResolvedValueOnce(PROFILE_DATA);
     const { container } = render(<ModelPicker />);
 
-    await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('single-e4b-checked'));
+    await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('standard'));
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
     expect(mockFetch).toHaveBeenCalledOnce();
     expect(container).toBeEmptyDOMElement();
   });
 
   it('shows an unavailable state and preserves selection when profile discovery fails', async () => {
-    chatSessionStore.setState({ selectedProfileId: 'team-med-checked', profileExplicitlySelected: true });
+    chatSessionStore.setState({ selectedProfileId: 'verified', profileExplicitlySelected: true });
     mockFetch.mockRejectedValueOnce(new Error('unavailable'));
     render(<ModelPicker />);
 
     expect(await screen.findByRole('status')).toHaveTextContent(/AI profiles unavailable/i);
-    expect(chatSessionStore.getState().selectedProfileId).toBe('team-med-checked');
+    expect(chatSessionStore.getState().selectedProfileId).toBe('verified');
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('unavailable');
   });
 
-  it('uses the available hub-advertised default and authoritative labels', async () => {
+  it('renders a flat list of configured presets using the default and authoritative labels', async () => {
     mockFetch.mockResolvedValueOnce(PROFILE_DATA);
     render(<ModelPicker />);
 
-    await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('single-e4b-checked'));
+    await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('standard'));
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
     await openMenu();
-    expect(screen.getByRole('group', { name: 'Single profiles' })).toBeInTheDocument();
-    expect(screen.getByRole('group', { name: 'Team profiles' })).toBeInTheDocument();
-    // The visible section headings are not announced as disabled menu choices.
+    expect(screen.getByRole('group', { name: 'AI profile' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Single profiles' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Team profiles' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Single profiles')).not.toBeInTheDocument();
+    expect(screen.queryByText('Team profiles')).not.toBeInTheDocument();
     expect(screen.queryByRole('menuitem')).not.toBeInTheDocument();
-    expect(screen.getByText('Single profiles')).toHaveAttribute('aria-hidden', 'true');
-    expect(screen.getByRole('menuitemradio', { name: /Fast checked answer \(E4B\).*default/i })).toBeChecked();
-    expect(screen.getByRole('menuitemradio', { name: /Checked answer \(12B\)/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitemradio', { name: /Checked medical team/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitemradio', { name: /^Quick answer$/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitemradio', { name: /Standard answer.*default/i })).toBeChecked();
+    expect(screen.getByRole('menuitemradio', { name: /^Cross-checked answer$/i })).toBeInTheDocument();
     expect(screen.queryByText(/Raw answer leg/i)).not.toBeInTheDocument();
   });
 
@@ -133,8 +139,8 @@ describe('ModelPicker', () => {
     render(<ModelPicker />);
     await openMenu();
 
-    fireEvent.click(screen.getByRole('menuitemradio', { name: /Checked medical team/i }));
-    await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('team-med-checked'));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /^Cross-checked answer$/i }));
+    await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('verified'));
     expect(chatSessionStore.getState().profileExplicitlySelected).toBe(true);
   });
 
@@ -154,28 +160,28 @@ describe('ModelPicker', () => {
     render(<ModelPicker />);
     await openMenu();
 
-    fireEvent.click(screen.getByRole('menuitemradio', { name: /Checked medical team/i }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /^Quick answer$/i }));
 
-    await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('team-med-checked'));
+    await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('quick'));
     expect(chatSessionStore.getState().selectedProviderId).toBe('hub');
   });
 
-  it('lists only the profiles the Hub currently advertises as available', async () => {
+  it('lists only the presets currently advertised as available', async () => {
     mockFetch.mockResolvedValueOnce(PROFILE_DATA);
     render(<ModelPicker />);
     const menu = await openMenu();
 
     expect(screen.getAllByRole('menuitemradio')).toHaveLength(3);
-    expect(menu).not.toHaveTextContent(/High checked team/i);
+    expect(menu).not.toHaveTextContent(/Heavy cross-checked answer/i);
     expect(menu).not.toHaveTextContent(/unavailable/i);
   });
 
   it('replaces a non-explicit unavailable selection with the advertised default', async () => {
-    chatSessionStore.setState({ selectedProfileId: 'team-high-unavailable', profileExplicitlySelected: false });
+    chatSessionStore.setState({ selectedProfileId: 'verified-unavailable', profileExplicitlySelected: false });
     mockFetch.mockResolvedValueOnce(PROFILE_DATA);
     render(<ModelPicker />);
 
-    await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('single-e4b-checked'));
+    await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('standard'));
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
   });
 
@@ -183,29 +189,29 @@ describe('ModelPicker', () => {
     mockFetch.mockResolvedValueOnce(PROFILE_DATA);
     const { unmount } = render(<ModelPicker />);
     await openMenu();
-    fireEvent.click(screen.getByRole('menuitemradio', { name: /Checked medical team/i }));
-    await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('team-med-checked'));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /^Cross-checked answer$/i }));
+    await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('verified'));
     unmount();
 
     mockFetch.mockResolvedValueOnce({
       object: 'list',
       data: [
         profile({ default: true }),
-        profile({ id: 'team-med-checked', label: 'Checked medical team', topology: 'team', available: false }),
+        profile({ id: 'verified', label: 'Cross-checked answer', available: false }),
       ],
     });
     const { unmount: unmountUnavailable } = render(<ModelPicker />);
     expect(
-      await screen.findByRole('button', { name: /^AI profile: Checked medical team \(unavailable\)$/i }),
+      await screen.findByRole('button', { name: /^AI profile: Cross-checked answer \(unavailable\)$/i }),
     ).toBeInTheDocument();
-    expect(chatSessionStore.getState().selectedProfileId).toBe('team-med-checked');
+    expect(chatSessionStore.getState().selectedProfileId).toBe('verified');
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('selection-unavailable');
     unmountUnavailable();
 
     mockFetch.mockResolvedValueOnce(PROFILE_DATA);
     render(<ModelPicker />);
-    expect(await screen.findByRole('button', { name: /^AI profile: Checked medical team$/i })).toBeInTheDocument();
-    expect(chatSessionStore.getState().selectedProfileId).toBe('team-med-checked');
+    expect(await screen.findByRole('button', { name: /^AI profile: Cross-checked answer$/i })).toBeInTheDocument();
+    expect(chatSessionStore.getState().selectedProfileId).toBe('verified');
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
   });
 
@@ -214,7 +220,7 @@ describe('ModelPicker', () => {
       object: 'list',
       data: [
         profile({ available: false, default: true }),
-        profile({ id: 'single-12b-checked', label: 'Checked answer (12B)', default: false }),
+        profile({ id: 'quick', label: 'Quick answer', default: false }),
       ],
     });
     render(<ModelPicker />);
@@ -223,8 +229,8 @@ describe('ModelPicker', () => {
     expect(chatSessionStore.getState().selectedProfileId).toBeNull();
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('unavailable');
     fireEvent.click(await screen.findByRole('button', { name: /^AI profile: Choose AI profile$/i }));
-    fireEvent.click(screen.getByRole('menuitemradio', { name: /Checked answer \(12B\)/i }));
-    await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('single-12b-checked'));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /^Quick answer$/i }));
+    await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('quick'));
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
     expect(chatSessionStore.getState().selectedProviderId).toBe('hub');
   });
@@ -250,8 +256,8 @@ describe('ModelPicker', () => {
     await waitFor(() => expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready'));
     await act(async () => rejectOld(new Error('obsolete request failed')));
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
-    expect(chatSessionStore.getState().selectedProfileId).toBe('single-e4b-checked');
-    expect(screen.getByRole('button', { name: /Fast checked answer/ })).toBeInTheDocument();
+    expect(chatSessionStore.getState().selectedProfileId).toBe('standard');
+    expect(screen.getByRole('button', { name: /Standard answer/ })).toBeInTheDocument();
   });
   it('ignores a successful obsolete discovery after switching away from and back to Hub', async () => {
     let resolveOld: (data: typeof PROFILE_DATA) => void;
@@ -269,19 +275,19 @@ describe('ModelPicker', () => {
     await act(async () =>
       resolveOld({
         object: 'list',
-        data: [profile({ id: 'single-12b-checked', label: 'Checked answer (12B)', default: true })],
+        data: [profile({ id: 'quick', label: 'Quick answer', default: true })],
       }),
     );
     expect(chatSessionStore.getState().hubProfiles).toBe(current);
-    expect(chatSessionStore.getState().selectedProfileId).toBe('single-e4b-checked');
+    expect(chatSessionStore.getState().selectedProfileId).toBe('standard');
   });
   it('replaces an explicit pick that became unavailable with the default when the picker is hidden', async () => {
     mockUseConfig.mockReturnValue({ showModelPicker: false });
-    chatSessionStore.setState({ selectedProfileId: 'team-high-unavailable', profileExplicitlySelected: true });
+    chatSessionStore.setState({ selectedProfileId: 'verified-unavailable', profileExplicitlySelected: true });
     mockFetch.mockResolvedValueOnce(PROFILE_DATA);
     const { unmount } = render(<ModelPicker />);
 
-    await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('single-e4b-checked'));
+    await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('standard'));
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
     expect(chatSessionStore.getState().profileExplicitlySelected).toBe(false);
     unmount();
@@ -292,11 +298,11 @@ describe('ModelPicker', () => {
       object: 'list',
       data: [
         profile({ available: false, default: true }),
-        profile({ id: 'single-12b-checked', label: 'Checked answer (12B)', default: true }),
+        profile({ id: 'quick', label: 'Quick answer', default: true }),
       ],
     });
     render(<ModelPicker />);
-    await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('single-12b-checked'));
+    await waitFor(() => expect(chatSessionStore.getState().selectedProfileId).toBe('quick'));
     expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
   });
   it('retries discovery after a failed fetch and recovers while the panel stays open', async () => {
@@ -314,7 +320,7 @@ describe('ModelPicker', () => {
       });
       expect(mockFetch).toHaveBeenCalledTimes(2);
       expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
-      expect(chatSessionStore.getState().selectedProfileId).toBe('single-e4b-checked');
+      expect(chatSessionStore.getState().selectedProfileId).toBe('standard');
     } finally {
       vi.useRealTimers();
     }
@@ -322,12 +328,12 @@ describe('ModelPicker', () => {
   it('reads profiles again when only the explicit pick dropped out, and restores ready on recovery', async () => {
     vi.useFakeTimers();
     try {
-      chatSessionStore.setState({ selectedProfileId: 'team-med-checked', profileExplicitlySelected: true });
+      chatSessionStore.setState({ selectedProfileId: 'verified', profileExplicitlySelected: true });
       mockFetch.mockResolvedValueOnce({
         object: 'list',
         data: [
           profile({ default: true }),
-          profile({ id: 'team-med-checked', label: 'Checked medical team', topology: 'team', available: false }),
+          profile({ id: 'verified', label: 'Cross-checked answer', available: false }),
         ],
       });
       mockFetch.mockResolvedValueOnce(PROFILE_DATA);
@@ -339,7 +345,7 @@ describe('ModelPicker', () => {
         await vi.advanceTimersByTimeAsync(PROFILE_DISCOVERY_RETRY_MS);
       });
       expect(mockFetch).toHaveBeenCalledTimes(2);
-      expect(chatSessionStore.getState().selectedProfileId).toBe('team-med-checked');
+      expect(chatSessionStore.getState().selectedProfileId).toBe('verified');
       expect(chatSessionStore.getState().profileDiscoveryStatus).toBe('ready');
     } finally {
       vi.useRealTimers();
