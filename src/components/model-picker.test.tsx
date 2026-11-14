@@ -195,10 +195,7 @@ describe('ModelPicker', () => {
 
     mockFetch.mockResolvedValueOnce({
       object: 'list',
-      data: [
-        profile({ default: true }),
-        profile({ id: 'verified', label: 'Cross-checked answer', available: false }),
-      ],
+      data: [profile({ default: true }), profile({ id: 'verified', label: 'Cross-checked answer', available: false })],
     });
     const { unmount: unmountUnavailable } = render(<ModelPicker />);
     expect(
