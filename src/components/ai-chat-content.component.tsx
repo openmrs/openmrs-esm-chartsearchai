@@ -10,10 +10,10 @@ import { answerLimitsOf } from '../utils/answer-limits';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { type ChartSearchAiConfig } from '../config-schema';
 import { chatSessionStore, requestProviderFor } from '../store/chat-session.store';
+import { useSystemProviderDiscovery } from '../hooks/system-provider-discovery';
 import AiReasoningDisclosure from './ai-reasoning-disclosure.component';
 import AiResponsePanel from './ai-response-panel.component';
 import ModelPicker from './model-picker.component';
-import ProviderPicker from './provider-picker.component';
 import styles from './ai-chat-content.scss';
 
 interface AiChatContentProps {
@@ -52,21 +52,18 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
     }
   }, [isStartingSession, sessionError]);
 
-  const sendsToHub = requestProviderFor(useStore(chatSessionStore), patientUuid) === 'hub';
+  const systemProvider = useSystemProviderDiscovery();
+  const sendsToBundled = requestProviderFor(useStore(chatSessionStore), patientUuid) === 'bundled';
 
-  // Pre-warm the server-side LLM prompt cache while the clinician types, so the first question
-  // skips the full chart prefill. Fired when the chat opens, not when the chart does: every chart
-  // open used to spend a request, including charts where nobody asks anything. It warms for any
-  // provider that is not Hub, and nothing is sent while Hub is selected. Keyed on Hub-or-not
-  // rather than the provider id: the id starts null and the provider picker then records the
-  // default, and a warmup the server has already queued cannot be recalled by aborting it. The
-  // cleanup aborts an in-flight warmup on a patient switch, a switch to Hub, or when the chat closes.
+  // Pre-warm the server-side LLM prompt cache while the clinician types when the bundled provider
+  // is active for this patient. Non-bundled deployments (Hub) skip /warmup entirely rather than
+  // issuing requests while provider discovery is still pending.
   useEffect(() => {
-    if (!patientUuid || sendsToHub) return;
+    if (!patientUuid || !sendsToBundled) return;
     const controller = new AbortController();
     warmupPatient(patientUuid, controller.signal);
     return () => controller.abort();
-  }, [patientUuid, sendsToHub]);
+  }, [patientUuid, sendsToBundled]);
 
   const questionRef = useRef(question);
   questionRef.current = question;
@@ -253,17 +250,6 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
     inputRef.current?.focus();
   }, [patientUuid, startNewChatSession]);
 
-  // A provider switch starts a fresh conversation: the backend attributes each
-  // conversation to a single provider and closes it on switch.
-  const handleProviderSelected = useCallback(
-    (providerId: string) => {
-      if (!patientUuid) return;
-      pendingNewChatClearRef.current = true;
-      startNewChatSession(patientUuid, providerId);
-    },
-    [patientUuid, startNewChatSession],
-  );
-
   return (
     <div
       className={`${styles.chatRoot} ${mode === 'floating' ? styles.chatRootFloating : styles.chatRootWorkspace}`}
@@ -406,7 +392,12 @@ const AiChatContent: React.FC<AiChatContentProps> = ({ mode, onClose, patientUui
       )}
 
       <div className={styles.modelPickerRow}>
-        <ProviderPicker onSelect={handleProviderSelected} disabled={isStartingSession} patientUuid={patientUuid} />
+        {systemProvider.status === 'unavailable' && (
+          <div className={styles.infoText} role="status">
+            {systemProvider.unavailableReason ||
+              t('providerUnavailableError', 'The selected AI provider is not available. Contact your administrator.')}
+          </div>
+        )}
         <ModelPicker patientUuid={patientUuid} />
       </div>
 

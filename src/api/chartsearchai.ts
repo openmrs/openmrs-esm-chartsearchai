@@ -1,4 +1,4 @@
-import { openmrsFetch, restBaseUrl } from '@openmrs/esm-framework';
+import { makeUrl, openmrsFetch, restBaseUrl } from '@openmrs/esm-framework';
 
 const BASE_PATH = `${restBaseUrl}/chartsearchai`;
 
@@ -784,7 +784,9 @@ const POST_DELTA_STAGE = 4;
  * ReadableStream). The staged endpoint emits answer/validation/in-depth boundary events:
  *   - sends an optional {@code session} uuid so the server can reuse the
  *     prior conversation thread
- *   - forwards a supplied nonblank product profile; med-agent-hub requests require one
+ *   - forwards a supplied nonblank product profile; when omitted on med-agent-hub,
+ *     the server resolves its default
+ *   - accepts optional turn flags such as {@code ephemeral} for stateless callers
  *   - accepts the canonical {@code turn_started} session marker
  *
  * The server is the source of truth for conversation history — the client
@@ -831,13 +833,11 @@ export function chatPatientChartStream(
    * checked.
    */
   providerCapabilities?: readonly string[],
+  options?: { ephemeral?: boolean },
 ): void {
-  if (providerId === 'hub' && !profileId?.trim()) {
-    throw new Error('A product profile is required');
-  }
-
-  const url = `${window.openmrsBase}${BASE_PATH}/chat/stream`;
-  const body: Record<string, string> = { patient: patientUuid, question };
+  const path = `${BASE_PATH}/chat/stream`;
+  const url = window.openmrsBase ? `${window.openmrsBase}${path}` : makeUrl(path);
+  const body: Record<string, string | boolean> = { patient: patientUuid, question };
   if (profileId?.trim()) {
     body.profile = profileId;
   }
@@ -848,6 +848,9 @@ export function chatPatientChartStream(
   }
   if (sessionUuid) {
     body.session = sessionUuid;
+  }
+  if (options?.ephemeral === true) {
+    body.ephemeral = true;
   }
 
   window
@@ -864,6 +867,10 @@ export function chatPatientChartStream(
       signal: abortController?.signal,
     })
     .then(async (response) => {
+      if (abortController?.signal.aborted) {
+        return;
+      }
+
       if (response.type === 'opaqueredirect' || response.status === 0) {
         callbacks.onError(await sessionExpiredOr(STREAM_REQUEST_FAILED_ERROR_CODE));
         return;
@@ -871,6 +878,12 @@ export function chatPatientChartStream(
 
       if (!response.ok) {
         callbacks.onError(await streamRequestError(response));
+        return;
+      }
+
+      const contentType = response.headers?.get?.('content-type') ?? response.headers?.get?.('Content-Type');
+      if (contentType && !contentType.toLowerCase().includes('text/event-stream')) {
+        callbacks.onError(await sessionExpiredOr(STREAM_REQUEST_FAILED_ERROR_CODE));
         return;
       }
 

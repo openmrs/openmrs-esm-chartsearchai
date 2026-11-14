@@ -52,8 +52,8 @@ vi.mock('../hooks/useSpeechRecognition', () => ({
 vi.mock('../api/chartsearchai', async (importActual) => ({
   ...(await importActual<typeof import('../api/chartsearchai')>()),
   submitFeedback: vi.fn().mockResolvedValue(undefined),
-  // ModelPicker/ProviderPicker (mounted inside AiChatContent) import fetchProfiles
-  // and fetchProviders. Reject them so the pickers hide themselves silently —
+  // ModelPicker and useSystemProviderDiscovery (mounted inside AiChatContent) import fetchProfiles
+  // and fetchProviders. Reject them so discovery stays quiet unless a test mocks them —
   // keeps these tests focused on the panel flow, not the pickers.
   fetchProfiles: vi.fn().mockRejectedValue(new Error('not mocked')),
   fetchProviders: vi.fn().mockRejectedValue(new Error('not mocked')),

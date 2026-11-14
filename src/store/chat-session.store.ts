@@ -42,7 +42,7 @@ export interface ChatSessionState {
    */
   selectedProviderId: string | null;
   /**
-   * The capabilities each provider advertises on `/providers`, recorded by the provider picker.
+   * The capabilities each provider advertises on `/providers`, recorded by `useSystemProviderDiscovery`.
    * Passed with each turn so the stream client can reject events the provider never declared;
    * absent until `/providers` has been read, in which case only the event order is checked.
    */
